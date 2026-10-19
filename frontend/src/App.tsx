@@ -1,0 +1,23 @@
+
+import { ChakraProvider } from '@chakra-ui/react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { theme } from './theme';
+import DashboardPage from './pages/DashboardPage';
+import LoginPage from './pages/LoginPage';
+
+function App() {
+  return (
+    <ChakraProvider theme={theme}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/organization/dashboard" element={<DashboardPage role="organization" />} />
+          <Route path="/admin/dashboard" element={<DashboardPage role="admin" />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </ChakraProvider>
+  );
+}
+
+export default App;

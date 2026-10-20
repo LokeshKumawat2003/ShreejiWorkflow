@@ -23,7 +23,11 @@ function createApp() {
       return callback(new Error('Origin is not allowed by CORS.'));
     },
   }));
-  app.use(express.json({ limit: '10kb' }));
+  const defaultJsonParser = express.json({ limit: '10kb' });
+  const bulkAttendanceJsonParser = express.json({ limit: '512kb' });
+  app.use((req, res, next) => (
+    req.path === '/api/attendance/bulk' ? bulkAttendanceJsonParser : defaultJsonParser
+  )(req, res, next));
   if (process.env.NODE_ENV !== 'test') {
     app.use(morgan('dev'));
   }

@@ -1,4 +1,4 @@
-import { EditIcon, SearchIcon } from '@chakra-ui/icons';
+import { DownloadIcon, EditIcon, SearchIcon } from '@chakra-ui/icons';
 import {
   Alert,
   Badge,
@@ -36,12 +36,14 @@ import { useEffect, useState } from 'react';
 import Pagination from '../../../components/common/Pagination';
 import { ApiError } from '../../../services/api';
 import {
+  getAttendanceRegister,
   listAttendanceHistory,
   markAttendance,
   type AttendanceHistoryEntry,
   type AttendanceStatus,
 } from '../../../services/attendanceService';
 import ActionButton from '../../../components/common/ActionButton';
+import { exportRegisterExcel, exportRegisterPdf } from './attendanceRegisterExport';
 
 type OrganizationAttendanceHistoryProps = {
   organizationId?: string;
@@ -67,6 +69,11 @@ function formatDateTime(value?: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
+function currentMonth() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
 function OrganizationAttendanceHistory({ organizationId, locationId, canEdit = false }: OrganizationAttendanceHistoryProps) {
   const [records, setRecords] = useState<AttendanceHistoryEntry[]>([]);
   const [search, setSearch] = useState('');
@@ -83,6 +90,25 @@ function OrganizationAttendanceHistory({ organizationId, locationId, canEdit = f
   const [isSaving, setIsSaving] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [registerMonth, setRegisterMonth] = useState(currentMonth);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | null>(null);
+  const [exportError, setExportError] = useState('');
+  const canExportRegister = Boolean(organizationId && locationId);
+
+  async function exportRegister(format: 'pdf' | 'excel') {
+    if (!organizationId || !locationId || !registerMonth) return;
+    setExportingFormat(format);
+    setExportError('');
+    try {
+      const register = await getAttendanceRegister({ organizationId, locationId, month: registerMonth });
+      if (format === 'pdf') await exportRegisterPdf(register);
+      else await exportRegisterExcel(register);
+    } catch (error) {
+      setExportError(error instanceof ApiError ? error.message : 'Unable to export the attendance register.');
+    } finally {
+      setExportingFormat(null);
+    }
+  }
 
   useEffect(() => {
     let isActive = true;
@@ -205,6 +231,60 @@ function OrganizationAttendanceHistory({ organizationId, locationId, canEdit = f
           </Box>
         </HStack>
       </HStack>
+
+      {canExportRegister && (
+        <HStack
+          justify="space-between"
+          align="flex-end"
+          flexWrap="wrap"
+          gap={3}
+          px={{ base: 3, md: 4 }}
+          py={3}
+          bg="slate.50"
+          borderBottom="1px solid"
+          borderColor="slate.100"
+        >
+          <Box>
+            <Text fontSize="sm" fontWeight="600" color="slate.800">Form XVI attendance register</Text>
+            <Text fontSize="xs" color="slate.500">Monthly register with day-wise P/A, total present, and total mandays.</Text>
+          </Box>
+          <HStack flexWrap="wrap" spacing={3} align="flex-end">
+            <Box>
+              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Month</Text>
+              <Input
+                aria-label="Attendance register month"
+                type="month"
+                h="40px"
+                w="170px"
+                fontSize="sm"
+                bg="white"
+                value={registerMonth}
+                max={currentMonth()}
+                onChange={(event) => setRegisterMonth(event.target.value)}
+              />
+            </Box>
+            <ActionButton
+              tone="neutral"
+              leftIcon={<DownloadIcon />}
+              isLoading={exportingFormat === 'pdf'}
+              isDisabled={!registerMonth || exportingFormat !== null}
+              onClick={() => void exportRegister('pdf')}
+            >
+              Register PDF
+            </ActionButton>
+            <ActionButton
+              tone="neutral"
+              leftIcon={<DownloadIcon />}
+              isLoading={exportingFormat === 'excel'}
+              isDisabled={!registerMonth || exportingFormat !== null}
+              onClick={() => void exportRegister('excel')}
+            >
+              Register Excel
+            </ActionButton>
+          </HStack>
+        </HStack>
+      )}
+      {exportError && <Alert status="error">{exportError}</Alert>}
 
       {loadError ? (
         <Alert status="error">{loadError}</Alert>

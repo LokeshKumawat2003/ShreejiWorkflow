@@ -116,6 +116,138 @@ export async function getPayroll(
   return data;
 }
 
+export type AttendanceRegisterMark = 'P' | 'A' | '';
+
+export type AttendanceRegisterRow = {
+  serial: number;
+  employeeId: string;
+  name: string;
+  parentName: string;
+  skillCategory: string;
+  days: AttendanceRegisterMark[];
+  totalPresent: number;
+};
+
+export type AttendanceRegister = {
+  month: string;
+  periodLabel: string;
+  daysInMonth: number;
+  contractor: { name: string; address: string; signatory: string };
+  organizationName: string;
+  location: { workName: string; name: string; address: string; opNumber: string };
+  rows: AttendanceRegisterRow[];
+  totalMandays: number;
+};
+
+export async function getAttendanceRegister(params: { organizationId: string; locationId: string; month: string }) {
+  const { data } = await api.get<AttendanceRegister>('/attendance/register', { params });
+  return data;
+}
+
+export type AttendanceMatch = 'exact' | 'fuzzy' | 'ambiguous' | 'unmatched';
+
+export type AttendanceParseEmployee = {
+  employeeId: string;
+  employeeName: string;
+  parentName: string;
+};
+
+export type AttendanceParseRow = {
+  extractedName: string;
+  extractedParentName: string;
+  employeeId: string | null;
+  employeeName: string;
+  parentName: string;
+  status: AttendanceStatus | null;
+  match: AttendanceMatch;
+  alreadyMarked: boolean;
+  existingStatus: AttendanceStatus | null;
+};
+
+export type AttendancePeriod = {
+  month: number;
+  year: number;
+  label: string;
+};
+
+export type AttendanceParseResponse = {
+  date: string;
+  dayColumn: number;
+  selectedPeriod: AttendancePeriod;
+  sheetPeriod: AttendancePeriod | null;
+  warning: string;
+  employees: AttendanceParseEmployee[];
+  rows: AttendanceParseRow[];
+};
+
+export type AttendanceBulkResponse = {
+  saved: number;
+  updated: number;
+  skippedDuplicates: number;
+  skippedInvalid: number;
+};
+
+export async function parseAttendanceSheet(
+  file: File,
+  input: { date: string; organizationId: string; locationId: string },
+) {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('date', input.date);
+  body.append('organizationId', input.organizationId);
+  body.append('locationId', input.locationId);
+  const { data } = await api.post<AttendanceParseResponse>('/attendance/parse', body);
+  return data;
+}
+
+export type AttendanceMonthParseRow = {
+  extractedName: string;
+  extractedParentName: string;
+  employeeId: string | null;
+  employeeName: string;
+  parentName: string;
+  match: AttendanceMatch;
+  marks: (AttendanceStatus | null)[];
+  existing: (AttendanceStatus | null)[];
+};
+
+export type AttendanceMonthParseResponse = {
+  month: string;
+  periodLabel: string;
+  daysInMonth: number;
+  lastImportableDay: number;
+  sheetDays: number[];
+  skippedFutureDays: number[];
+  sheetPeriod: AttendancePeriod | null;
+  warning: string;
+  employees: AttendanceParseEmployee[];
+  rows: AttendanceMonthParseRow[];
+};
+
+export async function parseAttendanceMonth(
+  file: File,
+  input: { month: string; organizationId: string; locationId: string },
+) {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('month', input.month);
+  body.append('organizationId', input.organizationId);
+  body.append('locationId', input.locationId);
+  body.append('timeZone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const { data } = await api.post<AttendanceMonthParseResponse>('/attendance/parse-month', body);
+  return data;
+}
+
+export async function bulkMarkAttendance(input: {
+  date?: string;
+  organizationId: string;
+  locationId: string;
+  entries: { employeeId: string; status: AttendanceStatus; date?: string; replace?: boolean }[];
+}) {
+  const { data } = await api.post<AttendanceBulkResponse>('/attendance/bulk', input);
+  return data;
+}
+
 export async function markAttendance(input: {
   employeeId: string;
   date: string;

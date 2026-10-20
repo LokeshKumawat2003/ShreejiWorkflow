@@ -1,4 +1,4 @@
-import { CalendarIcon } from '@chakra-ui/icons';
+import { AttachmentIcon, CalendarIcon, DownloadIcon } from '@chakra-ui/icons';
 import {
   Alert,
   Badge,
@@ -18,9 +18,11 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
+import ActionButton from '../../../components/common/ActionButton';
 import { ApiError } from '../../../services/api';
 import { listAttendance, markAttendance, type AttendanceEntry, type AttendanceStatus } from '../../../services/attendanceService';
 import type { UserRole } from '../../../types';
+import AttendanceUploadDialog from './AttendanceUploadDialog';
 
 type AttendancePageProps = {
   role: UserRole;
@@ -52,9 +54,12 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [savingAttendance, setSavingAttendance] = useState<{ employeeId: string; status: AttendanceStatus } | null>(null);
   const isOrganizationUser = role === 'organization';
   const canMarkAttendance = isOrganizationUser || Boolean(organizationId);
+  const canUploadAttendance = role === 'admin' && Boolean(organizationId) && Boolean(locationId);
 
   useEffect(() => {
     if (!isOrganizationUser) return undefined;
@@ -83,7 +88,49 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
       isActive = false;
       controller.abort();
     };
-  }, [date, locationId, organizationId]);
+  }, [date, locationId, organizationId, refreshToken]);
+
+  async function exportPdf() {
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    const document = new jsPDF({ orientation: 'landscape' });
+    document.setFontSize(16);
+    document.text('Attendance report', 14, 16);
+    document.setFontSize(10);
+    document.text(`Date: ${date}`, 14, 23);
+    autoTable(document, {
+      startY: 29,
+      head: [['Employee', 'Email', 'Department', 'Job title', 'Status']],
+      body: entries.map((entry) => [
+        entry.name,
+        entry.email,
+        entry.department || '—',
+        entry.jobTitle || '—',
+        entry.status ? entry.status.toUpperCase() : 'NOT MARKED',
+      ]),
+      styles: { fontSize: 8, cellPadding: 2.5 },
+      headStyles: { fillColor: [79, 70, 229] },
+      theme: 'grid',
+    });
+    document.save(`attendance-${date}.pdf`);
+  }
+
+  async function exportExcel() {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.utils.book_new();
+    const sheet = XLSX.utils.json_to_sheet(entries.map((entry) => ({
+      Employee: entry.name,
+      Email: entry.email,
+      Department: entry.department || '',
+      'Job title': entry.jobTitle || '',
+      Status: entry.status ? entry.status.toUpperCase() : 'NOT MARKED',
+    })));
+    sheet['!cols'] = [{ wch: 24 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Attendance');
+    XLSX.writeFile(workbook, `attendance-${date}.xlsx`);
+  }
 
   async function updateAttendance(employeeId: string, status: AttendanceStatus) {
     setSavingAttendance({ employeeId, status });
@@ -116,20 +163,47 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
           <CalendarIcon />
           <Text fontSize="sm" fontWeight="600">Daily attendance</Text>
         </HStack>
-        {isOrganizationUser ? (
-          <Text fontSize="sm" fontWeight="600" color="slate.700">{formatAttendanceDate(date)}</Text>
-        ) : (
-          <Input
-            aria-label="Attendance date"
-            type="date"
-            value={date}
-            max={currentLocalDate()}
-            h="40px"
-            maxW="190px"
-            fontSize="sm"
-            onChange={(event) => setDate(event.target.value)}
-          />
-        )}
+        <HStack flexWrap="wrap" spacing={2}>
+          {canUploadAttendance ? (
+            <>
+              <ActionButton tone="neutral" size="sm" leftIcon={<AttachmentIcon />} onClick={() => setIsUploadOpen(true)}>
+                Upload attendance
+              </ActionButton>
+              <ActionButton
+                tone="neutral"
+                size="sm"
+                leftIcon={<DownloadIcon />}
+                isDisabled={isLoading || Boolean(loadError) || entries.length === 0}
+                onClick={() => void exportPdf()}
+              >
+                Export PDF
+              </ActionButton>
+              <ActionButton
+                tone="neutral"
+                size="sm"
+                leftIcon={<DownloadIcon />}
+                isDisabled={isLoading || Boolean(loadError) || entries.length === 0}
+                onClick={() => void exportExcel()}
+              >
+                Export Excel
+              </ActionButton>
+            </>
+          ) : null}
+          {isOrganizationUser ? (
+            <Text fontSize="sm" fontWeight="600" color="slate.700">{formatAttendanceDate(date)}</Text>
+          ) : (
+            <Input
+              aria-label="Attendance date"
+              type="date"
+              value={date}
+              max={currentLocalDate()}
+              h="40px"
+              maxW="190px"
+              fontSize="sm"
+              onChange={(event) => setDate(event.target.value)}
+            />
+          )}
+        </HStack>
       </HStack>
 
       {loadError ? (
@@ -220,6 +294,31 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
           Attendance is saved as each employee is marked.
         </Text>
       )}
+      {canUploadAttendance && organizationId && locationId ? (
+        <AttendanceUploadDialog
+          isOpen={isUploadOpen}
+          date={date}
+          organizationId={organizationId}
+          locationId={locationId}
+          onClose={() => setIsUploadOpen(false)}
+          onSaved={(result) => {
+            setDate(result.date);
+            setRefreshToken((current) => current + 1);
+            const updated = result.updated || 0;
+            const details = [
+              updated ? `${updated} saved record${updated === 1 ? '' : 's'} updated` : '',
+              result.skippedDuplicates ? `${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped` : '',
+              result.skippedInvalid ? `${result.skippedInvalid} invalid` : '',
+            ].filter(Boolean);
+            toast({
+              title: `${result.saved} attendance record${result.saved === 1 ? '' : 's'} saved`,
+              description: details.length ? `${details.join(', ')}.` : undefined,
+              status: 'success',
+              position: 'top',
+            });
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

@@ -5,6 +5,14 @@ const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
+const {
+  extractRowsFromFile,
+  extractSheetSource,
+  fileKind,
+  matchExtractedEmployee,
+  parseSheetMatrixMonth,
+  periodFromParts,
+} = require('./attendanceSheetParser');
 
 const ATTENDANCE_STATUSES = ['present', 'absent'];
 const HISTORY_PAGE_SIZE = 10;
@@ -218,4 +226,333 @@ async function markAttendance(user, input = {}) {
   };
 }
 
-module.exports = { listAttendance, listAttendanceHistory, markAttendance };
+function requireAdmin(user) {
+  if (user.role !== 'admin') {
+    throw httpError(403, 'You do not have permission to access this resource.');
+  }
+}
+
+async function getLocationEmployees(locationId, organizationId) {
+  if (!locationId) throw httpError(400, 'A valid location id is required.');
+  const locationEmployeeIds = await getLocationEmployeeIds(locationId, organizationId);
+  if (!locationEmployeeIds) throw httpError(400, 'A valid location id is required.');
+  return Employee.find({
+    organizationId,
+    _id: { $in: locationEmployeeIds },
+  }).sort({ name: 1, _id: 1 }).lean();
+}
+
+function publicEmployee(employee) {
+  return {
+    employeeId: String(employee._id),
+    employeeName: employee.name,
+    parentName: employee.parentName || '',
+  };
+}
+
+async function parseAttendanceSheet(user, input = {}) {
+  requireAdmin(user);
+  const date = input.date;
+  if (!isValidDate(date)) throw httpError(400, 'Enter a valid attendance date.');
+  if (!input.file?.buffer) throw httpError(400, 'Upload an attendance sheet.');
+  if (!fileKind(input.file)) throw httpError(400, 'Upload a PDF, Excel, CSV, or image attendance sheet.');
+  const organizationId = await getOrganizationId(user, input.organizationId);
+
+  const employees = await getLocationEmployees(input.locationId, organizationId);
+  const { rows: extractedRows, period } = await extractRowsFromFile(input.file, date);
+  const records = await Attendance.find({
+    organizationId,
+    date,
+    employeeId: { $in: employees.map((employee) => employee._id) },
+  }).lean();
+  const recordsByEmployee = new Map(records.map((record) => [String(record.employeeId), record]));
+  const selectedPeriod = periodFromParts(Number(date.slice(5, 7)), Number(date.slice(0, 4)));
+  const periodMismatch = period
+    && (period.month !== selectedPeriod.month || period.year !== selectedPeriod.year);
+
+  return {
+    date,
+    dayColumn: Number(date.slice(8, 10)),
+    selectedPeriod,
+    sheetPeriod: period,
+    warning: periodMismatch
+      ? `This sheet is for ${period.label}, but the selected date is in ${selectedPeriod.label}. Change the date or upload the correct month.`
+      : '',
+    employees: employees.map(publicEmployee),
+    rows: extractedRows.map((row) => {
+      const matched = matchExtractedEmployee(
+        { name: row.extractedName, parentName: row.extractedParentName },
+        employees,
+      );
+      const employee = matched.employee;
+      const existing = employee ? recordsByEmployee.get(String(employee._id)) : null;
+      return {
+        extractedName: row.extractedName,
+        extractedParentName: row.extractedParentName || '',
+        employeeId: employee ? String(employee._id) : null,
+        employeeName: employee?.name || '',
+        parentName: employee?.parentName || '',
+        status: row.status,
+        match: matched.match,
+        alreadyMarked: Boolean(existing),
+        existingStatus: existing ? (existing.status === 'present' ? 'present' : 'absent') : null,
+      };
+    }),
+  };
+}
+
+function parseMonthInput(month) {
+  const match = typeof month === 'string' ? month.match(/^(\d{4})-(\d{2})$/) : null;
+  if (!match) return null;
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  const period = periodFromParts(monthNumber, year);
+  if (!period) return null;
+  return { month, year, monthNumber, period, daysInMonth: new Date(Date.UTC(year, monthNumber, 0)).getUTCDate() };
+}
+
+async function parseAttendanceMonth(user, input = {}) {
+  requireAdmin(user);
+  const selected = parseMonthInput(input.month);
+  if (!selected) throw httpError(400, 'Select a valid attendance month.');
+  if (!input.file?.buffer) throw httpError(400, 'Upload an attendance sheet.');
+  if (!fileKind(input.file)) throw httpError(400, 'Upload a PDF, Excel, CSV, or image attendance sheet.');
+
+  const today = currentDateInTimeZone(input.timeZone || 'UTC');
+  const currentMonth = today.slice(0, 7);
+  if (selected.month > currentMonth) throw httpError(400, 'Attendance cannot be imported for a future month.');
+  const lastImportableDay = selected.month === currentMonth ? Number(today.slice(8, 10)) : selected.daysInMonth;
+
+  const organizationId = await getOrganizationId(user, input.organizationId);
+  const employees = await getLocationEmployees(input.locationId, organizationId);
+  const source = await extractSheetSource(input.file);
+  const parsed = parseSheetMatrixMonth(source.matrix, selected.month, selected.daysInMonth);
+  if (parsed.dayColumns.length === 0) {
+    throw httpError(400, 'No day columns (1-31) were found in this sheet. Use single day upload for this file.');
+  }
+
+  const futureDays = new Set();
+  for (const row of parsed.rows) {
+    for (const day of Object.keys(row.days).map(Number)) {
+      if (day > lastImportableDay) futureDays.add(day);
+    }
+  }
+
+  const fromDate = `${selected.month}-01`;
+  const toDate = `${selected.month}-${String(selected.daysInMonth).padStart(2, '0')}`;
+  const records = await Attendance.find({
+    organizationId,
+    date: { $gte: fromDate, $lte: toDate },
+    employeeId: { $in: employees.map((employee) => employee._id) },
+  }).lean();
+  const existingByKey = new Map(records.map((record) => [
+    `${String(record.employeeId)}|${Number(record.date.slice(8, 10))}`,
+    record.status === 'present' ? 'present' : 'absent',
+  ]));
+
+  const periodMismatch = source.period
+    && (source.period.month !== selected.monthNumber || source.period.year !== selected.year);
+
+  return {
+    month: selected.month,
+    periodLabel: selected.period.label,
+    daysInMonth: selected.daysInMonth,
+    lastImportableDay,
+    sheetDays: parsed.dayColumns,
+    skippedFutureDays: [...futureDays].sort((a, b) => a - b),
+    sheetPeriod: source.period,
+    warning: periodMismatch
+      ? `This sheet is for ${source.period.label}, but the selected month is ${selected.period.label}. Change the month or upload the correct sheet.`
+      : '',
+    employees: employees.map(publicEmployee),
+    rows: parsed.rows.map((row) => {
+      const matched = matchExtractedEmployee(
+        { name: row.extractedName, parentName: row.extractedParentName },
+        employees,
+      );
+      const employee = matched.employee;
+      const marks = Array.from({ length: lastImportableDay }, (_, index) => row.days[index + 1] || null);
+      const existing = Array.from({ length: lastImportableDay }, (_, index) => (
+        employee ? existingByKey.get(`${String(employee._id)}|${index + 1}`) || null : null
+      ));
+      return {
+        extractedName: row.extractedName,
+        extractedParentName: row.extractedParentName || '',
+        employeeId: employee ? String(employee._id) : null,
+        employeeName: employee?.name || '',
+        parentName: employee?.parentName || '',
+        match: matched.match,
+        marks,
+        existing,
+      };
+    }),
+  };
+}
+
+const MAX_BULK_ENTRIES = 5000;
+
+async function bulkMarkAttendance(user, input = {}) {
+  requireAdmin(user);
+  const entries = Array.isArray(input.entries) ? input.entries.slice(0, MAX_BULK_ENTRIES) : [];
+  const defaultDate = input.date;
+  if (defaultDate !== undefined && defaultDate !== '' && !isValidDate(defaultDate)) {
+    throw httpError(400, 'Enter a valid attendance date.');
+  }
+  if (!defaultDate && !entries.some((entry) => isValidDate(entry?.date))) {
+    throw httpError(400, 'Enter a valid attendance date.');
+  }
+  if (!input.locationId) throw httpError(400, 'A valid location id is required.');
+  const organizationId = await getOrganizationId(user, input.organizationId);
+  const employees = await getLocationEmployees(input.locationId, organizationId);
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const seen = new Set();
+  const candidateIds = new Set();
+  const candidateDates = new Set();
+  const accepted = [];
+  let skippedInvalid = 0;
+
+  for (const entry of entries) {
+    const employeeId = String(entry?.employeeId || '');
+    const status = entry?.status;
+    const date = entry?.date || defaultDate;
+    const key = `${employeeId}|${date}`;
+    if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || seen.has(key)) {
+      skippedInvalid += 1;
+      continue;
+    }
+    seen.add(key);
+    candidateIds.add(employeeId);
+    candidateDates.add(date);
+    accepted.push({ employeeId, status, date, replace: entry?.replace === true });
+  }
+
+  const existing = accepted.length === 0 ? [] : await Attendance.find({
+    organizationId,
+    date: { $in: [...candidateDates] },
+    employeeId: { $in: [...candidateIds] },
+  }).select('employeeId date').lean();
+  const existingKeys = new Set(existing.map((record) => `${String(record.employeeId)}|${record.date}`));
+  const toInsert = [];
+  const toUpdate = [];
+  let skippedDuplicates = 0;
+
+  for (const entry of accepted) {
+    if (existingKeys.has(`${entry.employeeId}|${entry.date}`)) {
+      if (entry.replace) toUpdate.push(entry);
+      else skippedDuplicates += 1;
+      continue;
+    }
+    toInsert.push({
+      organizationId,
+      employeeId: entry.employeeId,
+      date: entry.date,
+      status: entry.status,
+      markedBy: user.id,
+    });
+  }
+
+  let saved = 0;
+  if (toInsert.length > 0) {
+    try {
+      const inserted = await Attendance.insertMany(toInsert, { ordered: false });
+      saved = inserted.length;
+    } catch (error) {
+      if (error.code !== 11000 && !error.writeErrors) throw error;
+      saved = error.result?.nInserted || error.insertedDocs?.length || 0;
+      skippedDuplicates += toInsert.length - saved;
+    }
+  }
+
+  let updated = 0;
+  if (toUpdate.length > 0) {
+    const result = await Attendance.bulkWrite(toUpdate.map((entry) => ({
+      updateOne: {
+        filter: { organizationId, employeeId: entry.employeeId, date: entry.date },
+        update: { $set: { status: entry.status, markedBy: user.id } },
+      },
+    })), { ordered: false });
+    updated = result.matchedCount ?? result.nMatched ?? toUpdate.length;
+  }
+
+  return { saved, updated, skippedDuplicates, skippedInvalid };
+}
+
+const REGISTER_CONTRACTOR = {
+  name: 'M/s. Shreeji Caretaker Company',
+  address: 'Kankroli, Rajsamand',
+  signatory: 'SHREE JI CARETAKER CO.',
+};
+
+async function getAttendanceRegister(user, input = {}) {
+  requireAdmin(user);
+  const monthMatch = typeof input.month === 'string' ? input.month.match(/^(\d{4})-(\d{2})$/) : null;
+  const year = monthMatch ? Number(monthMatch[1]) : 0;
+  const monthNumber = monthMatch ? Number(monthMatch[2]) : 0;
+  const period = periodFromParts(monthNumber, year);
+  if (!period) throw httpError(400, 'Select a valid register month.');
+  if (!input.locationId) throw httpError(400, 'A valid location id is required.');
+  const organizationId = await getOrganizationId(user, input.organizationId);
+
+  const employees = await getLocationEmployees(input.locationId, organizationId);
+  const [location, organization] = await Promise.all([
+    Location.findOne({ _id: input.locationId, organizationId }).lean(),
+    User.findOne({ _id: organizationId, role: 'organization' }).lean(),
+  ]);
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const fromDate = `${input.month}-01`;
+  const toDate = `${input.month}-${String(daysInMonth).padStart(2, '0')}`;
+  const records = await Attendance.find({
+    organizationId,
+    employeeId: { $in: employees.map((employee) => employee._id) },
+    date: { $gte: fromDate, $lte: toDate },
+  }).lean();
+
+  const marksByEmployee = new Map();
+  for (const record of records) {
+    const key = String(record.employeeId);
+    if (!marksByEmployee.has(key)) marksByEmployee.set(key, new Map());
+    marksByEmployee.get(key).set(Number(record.date.slice(8, 10)), record.status === 'present' ? 'P' : 'A');
+  }
+
+  const rows = employees
+    .filter((employee) => employee.status === 'active' || marksByEmployee.has(String(employee._id)))
+    .map((employee, index) => {
+      const marks = marksByEmployee.get(String(employee._id)) || new Map();
+      const days = Array.from({ length: daysInMonth }, (_, day) => marks.get(day + 1) || '');
+      return {
+        serial: index + 1,
+        employeeId: String(employee._id),
+        name: employee.name,
+        parentName: employee.parentName || '',
+        skillCategory: employee.skillCategory || '',
+        days,
+        totalPresent: days.filter((mark) => mark === 'P').length,
+      };
+    });
+
+  return {
+    month: input.month,
+    periodLabel: period.label,
+    daysInMonth,
+    contractor: REGISTER_CONTRACTOR,
+    organizationName: organization?.organizationName || organization?.name || '',
+    location: {
+      workName: location?.workName || '',
+      name: location?.name || '',
+      address: location?.address || '',
+      opNumber: location?.opNumber || '',
+    },
+    rows,
+    totalMandays: rows.reduce((sum, row) => sum + row.totalPresent, 0),
+  };
+}
+
+module.exports = {
+  bulkMarkAttendance,
+  getAttendanceRegister,
+  listAttendance,
+  listAttendanceHistory,
+  markAttendance,
+  parseAttendanceMonth,
+  parseAttendanceSheet,
+};

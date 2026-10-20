@@ -15,7 +15,16 @@ const {
   unassignEmployees,
   updateEmployee,
 } = require('../src/services/employeeService');
-const { listAttendance, listAttendanceHistory, markAttendance } = require('../src/services/attendanceService');
+const {
+  bulkMarkAttendance,
+  getAttendanceRegister,
+  listAttendance,
+  listAttendanceHistory,
+  markAttendance,
+  parseAttendanceMonth,
+  parseAttendanceSheet,
+} = require('../src/services/attendanceService');
+const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
 const { calculatePayroll } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
@@ -521,6 +530,9 @@ test('attendance routes require authentication', async (t) => {
 
   const response = await fetch(`http://127.0.0.1:${server.address().port}/api/attendance`);
   assert.equal(response.status, 401);
+
+  const parseResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/attendance/parse`, { method: 'POST' });
+  assert.equal(parseResponse.status, 401);
 });
 
 test('attendance marks reject invalid status before database access', async () => {
@@ -1240,5 +1252,476 @@ test('employees at another location can be moved to a matching new location', as
     Location.findById = originalLocationFindById;
     Employee.find = originalEmployeeFind;
     Employee.updateMany = originalEmployeeUpdateMany;
+  }
+});
+
+function excelAttendanceFile(rows) {
+  const XLSX = require('xlsx');
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), 'Attendance');
+  return {
+    originalname: 'attendance.xlsx',
+    mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }),
+  };
+}
+
+test('organization users cannot parse or bulk upload attendance', async () => {
+  const organization = { id: '507f1f77bcf86cd799439011', role: 'organization' };
+  await assert.rejects(
+    parseAttendanceSheet(organization, { date: '2026-10-20' }),
+    (error) => error.statusCode === 403,
+  );
+  await assert.rejects(
+    bulkMarkAttendance(organization, { date: '2026-10-20', entries: [] }),
+    (error) => error.statusCode === 403,
+  );
+});
+
+test('attendance sheet matching uses father name when employee names are the same', () => {
+  const employees = [
+    { _id: '507f1f77bcf86cd799439021', name: 'Ram Bahadur Chettri', parentName: 'Nar Bahadur' },
+    { _id: '507f1f77bcf86cd799439022', name: 'Ram Bahadur Chettri', parentName: 'Tek Bahadur' },
+  ];
+  const matched = matchExtractedEmployee(
+    { name: 'RAM BAHADUR CHETTRI', parentName: 'NAR BAHADUR' },
+    employees,
+  );
+  assert.equal(matched.match, 'exact');
+  assert.equal(String(matched.employee._id), '507f1f77bcf86cd799439021');
+
+  const ambiguous = matchExtractedEmployee(
+    { name: 'RAM BAHADUR CHETTRI', parentName: '' },
+    employees,
+  );
+  assert.equal(ambiguous.match, 'ambiguous');
+  assert.equal(ambiguous.employee, null);
+});
+
+test('attendance sheet parser reads the selected day column', () => {
+  const rows = parseSheetMatrix([
+    ['S.no', 'Name of Employees', 'category', 1, 20, 21],
+    [1, 'Prakash Chettri', 'Skilled', '', 'P', ''],
+    [2, 'Unknown Worker', 'Un-skilled', '', 'A', ''],
+    [3, 'Total', '', '', '', ''],
+  ], '2026-10-20');
+  assert.deepEqual(rows, [
+    { extractedName: 'PRAKASH CHETTRI', extractedParentName: '', status: 'present' },
+    { extractedName: 'UNKNOWN WORKER', extractedParentName: '', status: 'absent' },
+  ]);
+});
+
+test('attendance sheet period is detected from the register heading', () => {
+  assert.equal(detectSheetPeriod('Register of Attendance\nPeriod: October 2026').label, 'October 2026');
+  assert.equal(detectSheetPeriod('Month: 09/2026').label, 'September 2026');
+  assert.equal(detectSheetPeriod('For the month of Sept, 2026').label, 'September 2026');
+  assert.equal(detectSheetPeriod('Name of Employees'), null);
+});
+
+test('admins parse attendance sheets against location employees', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const employees = [
+    { _id: '507f1f77bcf86cd799439021', name: 'Prakash Chettri', parentName: '' },
+    { _id: '507f1f77bcf86cd799439022', name: 'Ram Bahadur Chettri', parentName: 'Nar Bahadur' },
+  ];
+
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ _id: locationId, organizationId, designation: 'cook' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => employees.map(({ _id }) => _id) };
+    return { sort: () => ({ lean: async () => employees }) };
+  };
+  Attendance.find = () => ({ lean: async () => [{ employeeId: '507f1f77bcf86cd799439021', status: 'present' }] });
+
+  try {
+    const result = await parseAttendanceSheet(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        date: '2026-10-20',
+        file: excelAttendanceFile([
+          ['Period: September 2026'],
+          ['S.no', 'Name of Employees', 'category', 20],
+          [1, 'Prakash Chettri', 'Skilled', 'P'],
+          [2, 'Ram Bahadur Chettri S/O: Nar Bahadur', 'Un-skilled', 'A'],
+          [3, 'Missing Person', 'Un-skilled', 'P'],
+        ]),
+      },
+    );
+    assert.equal(result.rows[0].match, 'exact');
+    assert.equal(result.rows[0].alreadyMarked, true);
+    assert.equal(result.rows[1].employeeId, '507f1f77bcf86cd799439022');
+    assert.equal(result.rows[1].status, 'absent');
+    assert.equal(result.rows[2].match, 'unmatched');
+    assert.equal(result.dayColumn, 20);
+    assert.equal(result.selectedPeriod.label, 'October 2026');
+    assert.equal(result.sheetPeriod.label, 'September 2026');
+    assert.match(result.warning, /September 2026.*October 2026/);
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+  }
+});
+
+test('attendance sheet upload rejects missing date and location', async () => {
+  const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
+  const file = excelAttendanceFile([['Name', 'Status'], ['Prakash Chettri', 'P']]);
+  await assert.rejects(
+    parseAttendanceSheet(admin, {
+      organizationId: '507f1f77bcf86cd799439011',
+      locationId: '507f1f77bcf86cd799439012',
+      file,
+    }),
+    (error) => error.statusCode === 400 && error.message === 'Enter a valid attendance date.',
+  );
+  await assert.rejects(
+    bulkMarkAttendance(admin, {
+      organizationId: '507f1f77bcf86cd799439011',
+      date: '2026-10-20',
+      entries: [{ employeeId: '507f1f77bcf86cd799439021', status: 'present' }],
+    }),
+    (error) => error.statusCode === 400 && error.message === 'A valid location id is required.',
+  );
+});
+
+test('attendance sheet upload rejects unsupported files', async () => {
+  await assert.rejects(
+    parseAttendanceSheet(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId: '507f1f77bcf86cd799439011',
+        locationId: '507f1f77bcf86cd799439012',
+        date: '2026-10-20',
+        file: { originalname: 'notes.txt', mimetype: 'text/plain', buffer: Buffer.from('no') },
+      },
+    ),
+    (error) => error.statusCode === 400 && error.message === 'Upload a PDF, Excel, CSV, or image attendance sheet.',
+  );
+});
+
+test('bulk attendance upload skips existing employee and date records', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const originalInsertMany = Attendance.insertMany;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const presentId = '507f1f77bcf86cd799439021';
+  const absentId = '507f1f77bcf86cd799439022';
+  let inserted;
+
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ _id: locationId, organizationId, designation: 'cook' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => [presentId, absentId] };
+    return {
+      sort: () => ({
+        lean: async () => [
+          { _id: presentId, name: 'Prakash Chettri', parentName: '' },
+          { _id: absentId, name: 'Ram Bahadur Chettri', parentName: 'Nar Bahadur' },
+        ],
+      }),
+    };
+  };
+  Attendance.find = () => ({
+    select() { return this; },
+    lean: async () => [{ employeeId: presentId, date: '2026-10-20' }],
+  });
+  Attendance.insertMany = async (docs) => {
+    inserted = docs;
+    return docs;
+  };
+
+  try {
+    const result = await bulkMarkAttendance(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        date: '2026-10-20',
+        entries: [
+          { employeeId: presentId, status: 'present' },
+          { employeeId: absentId, status: 'absent' },
+          { employeeId: '507f1f77bcf86cd799439099', status: 'present' },
+        ],
+      },
+    );
+    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 1 });
+    assert.equal(inserted.length, 1);
+    assert.equal(String(inserted[0].employeeId), absentId);
+    assert.equal(inserted[0].status, 'absent');
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+    Attendance.insertMany = originalInsertMany;
+  }
+});
+
+test('monthly sheet parser reads every day column', () => {
+  const { rows, dayColumns } = parseSheetMatrixMonth([
+    ['Period: October 2026'],
+    ['S.no', 'Name of Employees', "Father's name", 'category', 1, 2, 3, 'Total Present'],
+    [1, 'Ram Bahadur Chettri', 'Dutt Ram', 'Skilled', 'P', 'A', '', 1],
+    [2, 'Total', '', '', '', '', '', ''],
+  ], '2026-10', 31);
+  assert.deepEqual(dayColumns, [1, 2, 3]);
+  assert.deepEqual(rows, [{
+    extractedName: 'RAM BAHADUR CHETTRI',
+    extractedParentName: 'DUTT RAM',
+    days: { 1: 'present', 2: 'absent' },
+  }]);
+});
+
+test('admins import a whole month and future days are skipped', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const employeeId = '507f1f77bcf86cd799439021';
+  const employees = [{ _id: employeeId, name: 'Prakash Chettri', parentName: '' }];
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const today = Number(now.toISOString().slice(8, 10));
+  const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+  const dayHeaders = Array.from({ length: daysInMonth }, (_, index) => index + 1);
+
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ _id: locationId, organizationId, designation: 'cook' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => [employeeId] };
+    return { sort: () => ({ lean: async () => employees }) };
+  };
+  Attendance.find = () => ({ lean: async () => [{ employeeId, date: `${month}-01`, status: 'absent' }] });
+
+  try {
+    const result = await parseAttendanceMonth(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        month,
+        timeZone: 'UTC',
+        file: excelAttendanceFile([
+          ['S.no', 'Name of Employees', ...dayHeaders],
+          [1, 'Prakash Chettri', ...dayHeaders.map(() => 'P')],
+        ]),
+      },
+    );
+    assert.equal(result.lastImportableDay, today);
+    assert.equal(result.rows[0].marks.length, today);
+    assert.ok(result.rows[0].marks.every((mark) => mark === 'present'));
+    assert.equal(result.rows[0].existing[0], 'absent');
+    assert.equal(result.skippedFutureDays.length, daysInMonth - today);
+
+    await assert.rejects(
+      parseAttendanceMonth(
+        { id: '507f1f77bcf86cd799439099', role: 'admin' },
+        {
+          organizationId,
+          locationId,
+          month,
+          timeZone: 'UTC',
+          file: excelAttendanceFile([['Name', 'Status'], ['Prakash Chettri', 'P']]),
+        },
+      ),
+      (error) => error.statusCode === 400 && /No day columns/.test(error.message),
+    );
+    await assert.rejects(
+      parseAttendanceMonth(
+        { id: '507f1f77bcf86cd799439099', role: 'admin' },
+        { organizationId, locationId, month: '2099-12', timeZone: 'UTC', file: excelAttendanceFile([['Name']]) },
+      ),
+      (error) => error.statusCode === 400 && /future month/.test(error.message),
+    );
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+  }
+});
+
+test('bulk attendance accepts a date on each entry', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const originalInsertMany = Attendance.insertMany;
+  const originalBulkWrite = Attendance.bulkWrite;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const employeeId = '507f1f77bcf86cd799439021';
+  let inserted = [];
+
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ _id: locationId, organizationId, designation: 'cook' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => [employeeId] };
+    return { sort: () => ({ lean: async () => [{ _id: employeeId, name: 'Prakash Chettri' }] }) };
+  };
+  Attendance.find = () => ({
+    select() { return this; },
+    lean: async () => [{ employeeId, date: '2026-10-02' }],
+  });
+  Attendance.insertMany = async (docs) => {
+    inserted = docs;
+    return docs;
+  };
+
+  try {
+    const result = await bulkMarkAttendance(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        entries: [
+          { employeeId, status: 'present', date: '2026-10-01' },
+          { employeeId, status: 'absent', date: '2026-10-02' },
+          { employeeId, status: 'present', date: '2026-10-01' },
+          { employeeId, status: 'present', date: 'bad' },
+        ],
+      },
+    );
+    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 2 });
+    assert.equal(inserted[0].date, '2026-10-01');
+
+    let writes = [];
+    Attendance.bulkWrite = async (operations) => {
+      writes = operations;
+      return { matchedCount: operations.length };
+    };
+    const replaced = await bulkMarkAttendance(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        entries: [{ employeeId, status: 'present', date: '2026-10-02', replace: true }],
+      },
+    );
+    assert.deepEqual(replaced, { saved: 0, updated: 1, skippedDuplicates: 0, skippedInvalid: 0 });
+    assert.equal(writes[0].updateOne.filter.date, '2026-10-02');
+    assert.equal(writes[0].updateOne.update.$set.status, 'present');
+    await assert.rejects(
+      bulkMarkAttendance({ id: '507f1f77bcf86cd799439099', role: 'admin' }, {
+        organizationId,
+        locationId,
+        entries: [{ employeeId, status: 'present' }],
+      }),
+      (error) => error.statusCode === 400 && error.message === 'Enter a valid attendance date.',
+    );
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+    Attendance.insertMany = originalInsertMany;
+    Attendance.bulkWrite = originalBulkWrite;
+  }
+});
+
+function queryResult(doc) {
+  return Object.assign(Promise.resolve(doc), { lean: async () => doc });
+}
+
+test('attendance register is admin only and requires a month and location', async () => {
+  await assert.rejects(
+    getAttendanceRegister({ id: '507f1f77bcf86cd799439011', role: 'organization' }, { month: '2026-10' }),
+    (error) => error.statusCode === 403,
+  );
+  const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
+  await assert.rejects(
+    getAttendanceRegister(admin, { month: '2026-13', locationId: '507f1f77bcf86cd799439012' }),
+    (error) => error.statusCode === 400,
+  );
+  await assert.rejects(
+    getAttendanceRegister(admin, { month: '2026-10' }),
+    (error) => error.statusCode === 400,
+  );
+});
+
+test('attendance register builds the monthly Form XVI grid', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const ramId = '507f1f77bcf86cd799439021';
+  const omId = '507f1f77bcf86cd799439022';
+  const disabledId = '507f1f77bcf86cd799439023';
+  const employees = [
+    { _id: omId, name: 'Om Kumari Rai', parentName: '', skillCategory: 'Un-skilled', status: 'active' },
+    { _id: ramId, name: 'Ram Bahadur Chettri', parentName: 'Dutt Ram', skillCategory: 'Skilled', status: 'active' },
+    { _id: disabledId, name: 'Zed Former', parentName: '', skillCategory: '', status: 'disabled' },
+  ];
+  let attendanceFilter;
+
+  User.findOne = () => queryResult({ id: organizationId, _id: organizationId, organizationName: 'Powergrid' });
+  Location.findOne = () => queryResult({
+    _id: locationId,
+    organizationId,
+    designation: 'event',
+    workName: 'AMC contract for horticulture work',
+    name: 'Rangpo S/S',
+    address: 'Rangpo',
+    opNumber: 'LOA-123',
+  });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => employees.map(({ _id }) => _id) };
+    return { sort: () => ({ lean: async () => employees }) };
+  };
+  Attendance.find = (filter) => {
+    attendanceFilter = filter;
+    return {
+      lean: async () => [
+        { employeeId: ramId, date: '2026-09-01', status: 'present' },
+        { employeeId: ramId, date: '2026-09-02', status: 'absent' },
+        { employeeId: ramId, date: '2026-09-30', status: 'present' },
+        { employeeId: omId, date: '2026-09-15', status: 'present' },
+      ],
+    };
+  };
+
+  try {
+    const register = await getAttendanceRegister(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      { organizationId, locationId, month: '2026-09' },
+    );
+    assert.deepEqual(attendanceFilter.date, { $gte: '2026-09-01', $lte: '2026-09-30' });
+    assert.equal(register.periodLabel, 'September 2026');
+    assert.equal(register.daysInMonth, 30);
+    assert.equal(register.organizationName, 'Powergrid');
+    assert.equal(register.location.opNumber, 'LOA-123');
+    assert.equal(register.rows.length, 2);
+
+    const ram = register.rows.find((row) => row.employeeId === ramId);
+    assert.equal(ram.parentName, 'Dutt Ram');
+    assert.equal(ram.days.length, 30);
+    assert.equal(ram.days[0], 'P');
+    assert.equal(ram.days[1], 'A');
+    assert.equal(ram.days[2], '');
+    assert.equal(ram.days[29], 'P');
+    assert.equal(ram.totalPresent, 2);
+    assert.equal(register.rows.find((row) => row.employeeId === omId).days[14], 'P');
+    assert.equal(register.totalMandays, 3);
+    assert.deepEqual(register.rows.map((row) => row.serial), [1, 2]);
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
   }
 });

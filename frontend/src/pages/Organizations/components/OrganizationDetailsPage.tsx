@@ -8,6 +8,13 @@ import {
   Heading,
   HStack,
   IconButton,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   SimpleGrid,
   Spinner,
   Stack,
@@ -20,6 +27,7 @@ import {
   Tooltip,
   Tr,
   Text,
+  useDisclosure,
 } from '@chakra-ui/react';
 import type { OrganizationLocation, User } from '../../../types';
 
@@ -47,6 +55,7 @@ function formatCreatedAt(value?: string) {
 function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, locations, onAddLocation, onViewLocation, onEditLocation, onDeleteLocation, isLoadingLocations, locationsError }: OrganizationDetailsPageProps) {
   const isActive = organization.status !== 'disabled';
   const organizationId = organization.id || organization._id;
+  const informationDialog = useDisclosure();
 
   return (
     <Stack spacing={6}>
@@ -86,28 +95,56 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
           Organization information
         </Heading>
         {isLoading ? (
-          <HStack justify="center" py={12}><Spinner color="brand.500" /></HStack>
+          <HStack justify="center" py={8}><Spinner color="brand.500" /></HStack>
         ) : (
-          <SimpleGrid columns={{ base: 1, md: 2 }} spacingX={10} spacingY={7} p={{ base: 4, md: 6 }}>
-            <Detail label="Organization name" value={organization.organizationName} />
-            <Detail label="Account holder" value={organization.name} />
-            <Detail label="Login email" value={organization.email} />
-            <Detail label="Phone number" value={organization.phone} />
-            <Detail label="Industry" value={organization.industry} />
-            <Detail label="Website" value={organization.website} />
-            <Detail label="Address" value={organization.address} multiline />
-            <Detail label="About the organization" value={organization.about} multiline />
-            <Box>
-              <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">Account status</Text>
-              <Badge px={3} py={1} borderRadius="full" color={isActive ? 'green.600' : 'slate.500'} bg={isActive ? 'green.50' : 'slate.100'} fontSize="xs" fontWeight="600">
-                {isActive ? 'ACTIVE' : 'INACTIVE'}
-              </Badge>
-            </Box>
-            <Detail label="Created" value={formatCreatedAt(organization.createdAt)} />
-            <Detail label="Organization ID" value={organizationId} />
-          </SimpleGrid>
+          <HStack justify="space-between" align="center" flexWrap="wrap" gap={5} p={{ base: 4, md: 6 }}>
+            <SimpleGrid flex="1" minW="240px" columns={{ base: 1, sm: 3 }} spacingX={8} spacingY={4}>
+              <Detail label="Organization name" value={organization.organizationName} />
+              <Detail label="Account holder" value={organization.name} />
+              <Box>
+                <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">Account status</Text>
+                <Badge px={3} py={1} borderRadius="full" color={isActive ? 'green.600' : 'slate.500'} bg={isActive ? 'green.50' : 'slate.100'} fontSize="xs" fontWeight="600">
+                  {isActive ? 'ACTIVE' : 'INACTIVE'}
+                </Badge>
+              </Box>
+            </SimpleGrid>
+            <Button flexShrink={0} variant="outline" leftIcon={<ViewIcon />} onClick={informationDialog.onOpen}>
+              View organization details
+            </Button>
+          </HStack>
         )}
       </Box>
+
+      <Modal isOpen={informationDialog.isOpen} onClose={informationDialog.onClose} size="3xl" scrollBehavior="inside">
+        <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
+        <ModalContent borderRadius="8px">
+          <ModalHeader color="slate.900">Organization information</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacingX={10} spacingY={6}>
+              <Detail label="Organization name" value={organization.organizationName} />
+              <Detail label="Account holder" value={organization.name} />
+              <Detail label="Login email" value={organization.email} />
+              <Detail label="Phone number" value={organization.phone} />
+              <Detail label="Industry" value={organization.industry} />
+              <Detail label="Website" value={organization.website} />
+              <Detail label="Address" value={organization.address} multiline />
+              <Detail label="About the organization" value={organization.about} multiline />
+              <Box>
+                <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">Account status</Text>
+                <Badge px={3} py={1} borderRadius="full" color={isActive ? 'green.600' : 'slate.500'} bg={isActive ? 'green.50' : 'slate.100'} fontSize="xs" fontWeight="600">
+                  {isActive ? 'ACTIVE' : 'INACTIVE'}
+                </Badge>
+              </Box>
+              <Detail label="Created" value={formatCreatedAt(organization.createdAt)} />
+              <Detail label="Organization ID" value={organizationId} />
+            </SimpleGrid>
+          </ModalBody>
+          <ModalFooter borderTop="1px solid" borderColor="slate.100" bg="slate.50">
+            <Button variant="outline" onClick={informationDialog.onClose}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       <Stack spacing={4}>
         <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
@@ -158,7 +195,7 @@ function Detail({ label, value, multiline = false }: { label: string; value?: st
   return (
     <Box minW={0}>
       <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">{label}</Text>
-      <Text fontSize="16px" lineHeight="1.5" fontWeight="600" color="slate.900" overflowWrap="anywhere" whiteSpace={multiline ? 'pre-wrap' : undefined}>
+      <Text maxW="100%" fontSize="16px" lineHeight="1.5" fontWeight="600" color="slate.900" overflowWrap="anywhere" wordBreak="break-all" whiteSpace={multiline ? 'pre-wrap' : undefined}>
         {value || 'Not available'}
       </Text>
     </Box>

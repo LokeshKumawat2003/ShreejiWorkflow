@@ -2,7 +2,8 @@ import { AddIcon } from '@chakra-ui/icons';
 import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
 import { ApiError } from '../../../services/api';
-import { downloadAppointmentLetters } from '../../../services/appointmentLetterService';
+import { createAppointmentLetterPdf, createCombinedAppointmentLettersPdf, downloadAppointmentLetters } from '../../../services/appointmentLetterService';
+import { emailAppointmentLetter, emailOrganizationAppointmentLetters } from '../../../services/employeeService';
 import type { OrganizationLocation } from '../../../types';
 import type { Employee } from '../../../types';
 import type { EmployeeInput } from '../../../services/employeeService';
@@ -21,6 +22,18 @@ type OrganizationEmployeesPageProps = {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
+}
+
+async function sendAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
+  return Promise.allSettled(employees.map(async (employee) => {
+    const pdf = await createAppointmentLetterPdf(employee, location);
+    await emailAppointmentLetter(employee.id, location.id, pdf);
+  }));
+}
+
+async function sendOrganizationAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
+  const pdf = await createCombinedAppointmentLettersPdf(employees, location);
+  if (pdf) await emailOrganizationAppointmentLetters(location.id, pdf);
 }
 
 function OrganizationEmployeesPage({ organizationId, organizationName, location }: OrganizationEmployeesPageProps) {
@@ -61,6 +74,25 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
         } catch (error) {
           toast({ title: getErrorMessage(error, 'Employee was added, but the appointment letter could not be generated.'), status: 'error', position: 'top' });
         }
+        const emailResults = await sendAppointmentLetters([createdEmployee], location);
+        let organizationEmailError: unknown;
+        try {
+          await sendOrganizationAppointmentLetters([createdEmployee], location);
+        } catch (error) {
+          organizationEmailError = error;
+        }
+        if (emailResults[0].status === 'fulfilled') {
+          toast({
+            title: organizationEmailError ? 'Appointment letter emailed to employee, but organization email failed' : 'Appointment letter emailed to employee and organization',
+            status: organizationEmailError ? 'error' : 'success',
+            position: 'top',
+          });
+        } else {
+          toast({ title: getErrorMessage(emailResults[0].reason, 'Employee was added, but the appointment letter could not be emailed.'), status: 'error', position: 'top' });
+        }
+        if (organizationEmailError) {
+          toast({ title: getErrorMessage(organizationEmailError, 'Organization copy could not be emailed.'), status: 'error', position: 'top' });
+        }
       }
       return true;
     } catch (error) {
@@ -84,13 +116,32 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
   async function handleAssign(employeeIds: string[]): Promise<boolean> {
     setIsAssigning(true);
     try {
-        const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
+      const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
-        try {
-          await downloadAppointmentLetters(assignedEmployees, location);
-        } catch (error) {
-          toast({ title: getErrorMessage(error, 'Employees were assigned, but appointment letters could not be generated.'), status: 'error', position: 'top' });
+      try {
+        await downloadAppointmentLetters(assignedEmployees, location);
+      } catch (error) {
+        toast({ title: getErrorMessage(error, 'Employees were assigned, but appointment letters could not be generated.'), status: 'error', position: 'top' });
+      }
+      const emailResults = await sendAppointmentLetters(assignedEmployees, location);
+      let organizationEmailError: unknown;
+      try {
+        await sendOrganizationAppointmentLetters(assignedEmployees, location);
+      } catch (error) {
+        organizationEmailError = error;
+      }
+      const failedEmails = emailResults.filter((result) => result.status === 'rejected');
+      if (failedEmails.length === 0 && !organizationEmailError) {
+        toast({ title: 'Appointment letters emailed to employees and organization', status: 'success', position: 'top' });
+      } else {
+        if (failedEmails.length > 0) {
+          const message = getErrorMessage(failedEmails[0].reason, 'Appointment letters could not be emailed.');
+          toast({ title: failedEmails.length === assignedEmployees.length ? message : `${failedEmails.length} appointment letter${failedEmails.length === 1 ? '' : 's'} could not be emailed: ${message}`, status: 'error', position: 'top' });
         }
+        if (organizationEmailError) {
+          toast({ title: getErrorMessage(organizationEmailError, 'Combined appointment letters could not be emailed to the organization.'), status: 'error', position: 'top' });
+        }
+      }
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to assign employees.'), status: 'error', position: 'top' });

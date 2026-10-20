@@ -135,6 +135,206 @@ test('employee routes require authentication', async (t) => {
     method: 'DELETE',
   });
   assert.equal(deleteResponse.status, 401);
+
+  const letterResponse = await fetch(`http://127.0.0.1:${server.address().port}/api/employees/507f1f77bcf86cd799439011/appointment-letter`, {
+    method: 'POST',
+  });
+  assert.equal(letterResponse.status, 401);
+});
+
+test('appointment letter email rejects malformed employee ids before database access', async () => {
+  const { sendAppointmentLetterEmail } = require('../src/services/appointmentLetterEmailService');
+  await assert.rejects(
+    sendAppointmentLetterEmail(
+      { id: '507f1f77bcf86cd799439011', role: 'admin' },
+      { employeeId: 'not-an-id', locationId: '507f1f77bcf86cd799439012', file: { buffer: Buffer.from('pdf') } },
+    ),
+    (error) => error.statusCode === 400 && error.message === 'Invalid employee id.',
+  );
+});
+
+test('appointment letter email sends the PDF to the assigned employee', async () => {
+  const nodemailer = require('nodemailer');
+  const { sendAppointmentLetterEmail } = require('../src/services/appointmentLetterEmailService');
+  const originalLocationFindOne = Location.findOne;
+  const originalEmployeeFindOne = Employee.findOne;
+  const originalCreateTransport = nodemailer.createTransport;
+  const originalSmtpEnvironment = Object.fromEntries(
+    ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM']
+      .map((key) => [key, process.env[key]]),
+  );
+  const locationId = '507f1f77bcf86cd799439012';
+  const organizationId = '507f1f77bcf86cd799439013';
+  const employeeId = '507f1f77bcf86cd799439014';
+  const pdf = Buffer.from('%PDF-1.4 test');
+  let sentMessage;
+
+  process.env.SMTP_HOST = 'smtp.example.com';
+  process.env.SMTP_PORT = '587';
+  process.env.SMTP_SECURE = 'false';
+  process.env.SMTP_USER = 'mailer';
+  process.env.SMTP_PASS = 'secret';
+  process.env.MAIL_FROM = 'Shreeji <mail@example.com>';
+  Location.findOne = (filter) => {
+    assert.deepEqual(filter, { _id: locationId, organizationId });
+    return { select: async () => ({ _id: locationId, organizationId, name: 'Main Site' }) };
+  };
+  Employee.findOne = (filter) => {
+    assert.deepEqual(filter, { _id: employeeId, organizationId, locationId });
+    return { select: async () => ({ name: 'Employee Name', email: 'employee@example.com' }) };
+  };
+  nodemailer.createTransport = (options) => {
+    assert.equal(options.host, 'smtp.example.com');
+    return {
+      sendMail: async (message) => {
+        sentMessage = message;
+      },
+    };
+  };
+
+  try {
+    const result = await sendAppointmentLetterEmail(
+      { id: organizationId, role: 'organization' },
+      { employeeId, locationId, file: { buffer: pdf } },
+    );
+
+    assert.deepEqual(result, { sent: true });
+    assert.equal(sentMessage.to, 'employee@example.com');
+    assert.equal(sentMessage.attachments[0].content, pdf);
+    assert.equal(sentMessage.attachments[0].contentType, 'application/pdf');
+  } finally {
+    Location.findOne = originalLocationFindOne;
+    Employee.findOne = originalEmployeeFindOne;
+    nodemailer.createTransport = originalCreateTransport;
+    for (const [key, value] of Object.entries(originalSmtpEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('combined appointment letters are emailed to the owning organization', async () => {
+  const nodemailer = require('nodemailer');
+  const { sendOrganizationAppointmentLettersEmail } = require('../src/services/appointmentLetterEmailService');
+  const originalLocationFindOne = Location.findOne;
+  const originalUserFindOne = User.findOne;
+  const originalCreateTransport = nodemailer.createTransport;
+  const originalSmtpEnvironment = Object.fromEntries(
+    ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM']
+      .map((key) => [key, process.env[key]]),
+  );
+  const locationId = '507f1f77bcf86cd799439022';
+  const organizationId = '507f1f77bcf86cd799439023';
+  const pdf = Buffer.from('%PDF-1.4 combined test');
+  let sentMessage;
+
+  process.env.SMTP_HOST = 'smtp.example.com';
+  process.env.SMTP_PORT = '587';
+  process.env.SMTP_SECURE = 'false';
+  process.env.SMTP_USER = 'mailer';
+  process.env.SMTP_PASS = 'secret';
+  process.env.MAIL_FROM = 'Shreeji <mail@example.com>';
+  Location.findOne = (filter) => {
+    assert.deepEqual(filter, { _id: locationId });
+    return { select: async () => ({ _id: locationId, organizationId, name: 'Main Site' }) };
+  };
+  User.findOne = (filter) => {
+    assert.deepEqual(filter, { _id: organizationId, role: 'organization' });
+    return { select: async () => ({ email: 'organization@example.com', organizationName: 'Example Organization' }) };
+  };
+  nodemailer.createTransport = () => ({
+    sendMail: async (message) => {
+      sentMessage = message;
+    },
+  });
+
+  try {
+    const result = await sendOrganizationAppointmentLettersEmail(
+      { id: '507f1f77bcf86cd799439024', role: 'admin' },
+      { locationId, file: { buffer: pdf } },
+    );
+
+    assert.deepEqual(result, { sent: true });
+    assert.equal(sentMessage.to, 'organization@example.com');
+    assert.match(sentMessage.subject, /Main Site/);
+    assert.equal(sentMessage.attachments.length, 1);
+    assert.equal(sentMessage.attachments[0].content, pdf);
+    assert.equal(sentMessage.attachments[0].contentType, 'application/pdf');
+  } finally {
+    Location.findOne = originalLocationFindOne;
+    User.findOne = originalUserFindOne;
+    nodemailer.createTransport = originalCreateTransport;
+    for (const [key, value] of Object.entries(originalSmtpEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('SMTP delivery failures return a safe gateway error and log protocol diagnostics', async () => {
+  const nodemailer = require('nodemailer');
+  const { sendOrganizationAppointmentLettersEmail } = require('../src/services/appointmentLetterEmailService');
+  const originalLocationFindOne = Location.findOne;
+  const originalUserFindOne = User.findOne;
+  const originalCreateTransport = nodemailer.createTransport;
+  const originalConsoleError = console.error;
+  const originalSmtpEnvironment = Object.fromEntries(
+    ['SMTP_HOST', 'SMTP_PORT', 'SMTP_SECURE', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM']
+      .map((key) => [key, process.env[key]]),
+  );
+  const locationId = '507f1f77bcf86cd799439032';
+  const organizationId = '507f1f77bcf86cd799439033';
+  let loggedDiagnostics;
+
+  process.env.SMTP_HOST = 'smtp.example.com';
+  process.env.SMTP_PORT = '587';
+  process.env.SMTP_SECURE = 'false';
+  process.env.SMTP_USER = 'mailer';
+  process.env.SMTP_PASS = 'secret';
+  process.env.MAIL_FROM = 'Shreeji <mail@example.com>';
+  Location.findOne = () => ({
+    select: async () => ({ _id: locationId, organizationId, name: 'Main Site' }),
+  });
+  User.findOne = () => ({
+    select: async () => ({ email: 'organization@example.com', organizationName: 'Example Organization' }),
+  });
+  nodemailer.createTransport = () => ({
+    sendMail: async () => {
+      const error = new Error('Sensitive SMTP response text');
+      error.code = 'EAUTH';
+      error.command = 'AUTH PLAIN';
+      error.responseCode = 535;
+      throw error;
+    },
+  });
+  console.error = (message, details) => {
+    loggedDiagnostics = { message, details };
+  };
+
+  try {
+    await assert.rejects(
+      sendOrganizationAppointmentLettersEmail(
+        { id: '507f1f77bcf86cd799439034', role: 'admin' },
+        { locationId, file: { buffer: Buffer.from('%PDF-1.4 test') } },
+      ),
+      (error) => error.statusCode === 502 && error.message.includes('SMTP authentication'),
+    );
+    assert.deepEqual(loggedDiagnostics.details, {
+      code: 'EAUTH',
+      command: 'AUTH PLAIN',
+      responseCode: 535,
+    });
+    assert.doesNotMatch(JSON.stringify(loggedDiagnostics), /Sensitive SMTP response text|secret/);
+  } finally {
+    Location.findOne = originalLocationFindOne;
+    User.findOne = originalUserFindOne;
+    nodemailer.createTransport = originalCreateTransport;
+    console.error = originalConsoleError;
+    for (const [key, value] of Object.entries(originalSmtpEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test('employee creation validates required fields before database access', async () => {

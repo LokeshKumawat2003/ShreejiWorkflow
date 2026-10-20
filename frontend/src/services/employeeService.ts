@@ -87,6 +87,20 @@ export async function deleteEmployee(id: string) {
   return data.employee;
 }
 
+export async function emailAppointmentLetter(employeeId: string, locationId: string, pdf: Blob) {
+  const formData = new FormData();
+  formData.append('locationId', locationId);
+  formData.append('letter', pdf, `appointment-letter-${employeeId}.pdf`);
+  await api.post(`/employees/${employeeId}/appointment-letter`, formData);
+}
+
+export async function emailOrganizationAppointmentLetters(locationId: string, pdf: Blob) {
+  const formData = new FormData();
+  formData.append('locationId', locationId);
+  formData.append('letter', pdf, `appointment-letters-${locationId}.pdf`);
+  await api.post('/employees/appointment-letters/organization', formData);
+}
+
 export async function assignEmployeesToOrganization(employeeIds: string[], organizationId: string, locationId?: string) {
   const { data } = await api.post<{ employees: Employee[] }>('/employees/assign', {
     employeeIds,

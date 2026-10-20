@@ -135,14 +135,32 @@ function addAppointmentLetter(
   document.line(margin, signatureY + 18, margin + 42, signatureY + 18);
 }
 
-export async function downloadAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
-  if (employees.length === 0) return;
+export async function createAppointmentLettersPdf(employees: Employee[], location: OrganizationLocation) {
+  if (employees.length === 0) return null;
   const { jsPDF } = await import('jspdf');
   const document = new jsPDF({ format: 'a4', unit: 'mm' });
   employees.forEach((employee, index) => addAppointmentLetter(document, employee, location, index));
+  return document;
+}
+
+export async function downloadAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
+  const document = await createAppointmentLettersPdf(employees, location);
+  if (!document) return;
   const filePart = (location.opNumber || location.name || 'location')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
   document.save(`appointment-letters-${filePart || 'location'}.pdf`);
+}
+
+export async function createAppointmentLetterPdf(employee: Employee, location: OrganizationLocation) {
+  const { jsPDF } = await import('jspdf');
+  const document = new jsPDF({ format: 'a4', unit: 'mm' });
+  addAppointmentLetter(document, employee, location, 0);
+  return document.output('blob');
+}
+
+export async function createCombinedAppointmentLettersPdf(employees: Employee[], location: OrganizationLocation) {
+  const document = await createAppointmentLettersPdf(employees, location);
+  return document?.output('blob') ?? null;
 }

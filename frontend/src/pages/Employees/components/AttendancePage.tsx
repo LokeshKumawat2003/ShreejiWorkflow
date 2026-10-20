@@ -25,6 +25,7 @@ import type { UserRole } from '../../../types';
 type AttendancePageProps = {
   role: UserRole;
   organizationId?: string;
+  locationId?: string;
 };
 
 function currentLocalDate() {
@@ -45,7 +46,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-function AttendancePage({ role, organizationId }: AttendancePageProps) {
+function AttendancePage({ role, organizationId, locationId }: AttendancePageProps) {
   const toast = useToast();
   const [date, setDate] = useState(currentLocalDate);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
@@ -66,7 +67,7 @@ function AttendancePage({ role, organizationId }: AttendancePageProps) {
     const controller = new AbortController();
     setIsLoading(true);
     setLoadError('');
-    void listAttendance(date, organizationId, controller.signal)
+    void listAttendance(date, organizationId, controller.signal, locationId)
       .then((result) => {
         if (isActive) setEntries(result.attendance);
       })
@@ -82,7 +83,7 @@ function AttendancePage({ role, organizationId }: AttendancePageProps) {
       isActive = false;
       controller.abort();
     };
-  }, [date, organizationId]);
+  }, [date, locationId, organizationId]);
 
   async function updateAttendance(employeeId: string, status: AttendanceStatus) {
     setSavingAttendance({ employeeId, status });
@@ -92,6 +93,7 @@ function AttendancePage({ role, organizationId }: AttendancePageProps) {
         date,
         status,
         organizationId,
+        locationId,
         ...(isOrganizationUser ? { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}),
       });
       setEntries((current) => current.map((entry) => (

@@ -45,6 +45,7 @@ import ActionButton from '../../../components/common/ActionButton';
 
 type OrganizationAttendanceHistoryProps = {
   organizationId?: string;
+  locationId?: string;
   canEdit?: boolean;
 };
 
@@ -66,7 +67,7 @@ function formatDateTime(value?: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function OrganizationAttendanceHistory({ organizationId, canEdit = false }: OrganizationAttendanceHistoryProps) {
+function OrganizationAttendanceHistory({ organizationId, locationId, canEdit = false }: OrganizationAttendanceHistoryProps) {
   const [records, setRecords] = useState<AttendanceHistoryEntry[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | AttendanceStatus>('all');
@@ -90,6 +91,7 @@ function OrganizationAttendanceHistory({ organizationId, canEdit = false }: Orga
     setLoadError('');
     void listAttendanceHistory({
       ...(organizationId ? { organizationId } : {}),
+      ...(locationId ? { locationId } : {}),
       page,
       limit: PAGE_SIZE,
       search,
@@ -115,7 +117,7 @@ function OrganizationAttendanceHistory({ organizationId, canEdit = false }: Orga
       isActive = false;
       controller.abort();
     };
-  }, [fromDate, organizationId, page, search, status, toDate]);
+  }, [fromDate, locationId, organizationId, page, search, status, toDate]);
 
   function changeSearch(value: string) {
     setSearch(value);
@@ -150,6 +152,7 @@ function OrganizationAttendanceHistory({ organizationId, canEdit = false }: Orga
         date: editingRecord.date,
         status: editingStatus,
         ...(organizationId ? { organizationId } : {}),
+        ...(locationId ? { locationId } : {}),
       });
       setRecords((current) => current.map((record) => (
         record.id === editingRecord.id

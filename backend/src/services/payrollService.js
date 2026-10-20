@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
+const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 
@@ -21,6 +22,18 @@ async function resolveOrganizationId(user, requestedId) {
 
 async function calculatePayroll(user, options = {}) {
   const organizationId = await resolveOrganizationId(user, options.organizationId);
+  let locationEmployeeIds;
+  if (options.locationId) {
+    if (!organizationId) throw httpError(400, 'A valid organization id is required for location payroll.');
+    if (!mongoose.isValidObjectId(options.locationId)) throw httpError(400, 'Invalid location id.');
+    const location = await Location.findOne({ _id: options.locationId, organizationId });
+    if (!location) throw httpError(404, 'Location not found for this organization.');
+    locationEmployeeIds = await Employee.find({
+      organizationId,
+      locationId: options.locationId,
+      designation: new RegExp(`^${location.designation}$`, 'i'),
+    }).distinct('_id');
+  }
   const { fromDate, toDate } = options;
   if (!isValidDate(fromDate) || !isValidDate(toDate)) {
     throw httpError(400, 'Enter a valid payroll date range.');
@@ -29,9 +42,12 @@ async function calculatePayroll(user, options = {}) {
 
   const attendanceFilter = { date: { $gte: fromDate, $lte: toDate } };
   if (organizationId) attendanceFilter.organizationId = organizationId;
+  if (locationEmployeeIds) attendanceFilter.employeeId = { $in: locationEmployeeIds };
   const attendance = await Attendance.find(attendanceFilter).lean();
   const attendanceEmployeeIds = [...new Set(attendance.map(({ employeeId }) => String(employeeId)))];
-  const employeeConditions = organizationId ? [{ organizationId }] : [{ organizationId: { $ne: null } }];
+  const employeeConditions = locationEmployeeIds
+    ? [{ _id: { $in: locationEmployeeIds }, organizationId }]
+    : organizationId ? [{ organizationId }] : [{ organizationId: { $ne: null } }];
   if (attendanceEmployeeIds.length > 0) employeeConditions.push({ _id: { $in: attendanceEmployeeIds } });
   const employees = await Employee.find({ $or: employeeConditions }).lean();
   const organizationDetailsById = new Map();

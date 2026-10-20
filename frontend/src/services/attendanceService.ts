@@ -53,6 +53,7 @@ type AttendanceHistoryResponse = {
 
 export type AttendanceHistoryParams = {
   organizationId?: string;
+  locationId?: string;
   page: number;
   limit: number;
   search: string;
@@ -99,16 +100,16 @@ export async function listAttendanceHistory(params: AttendanceHistoryParams, sig
   return data;
 }
 
-export async function listAttendance(date: string, organizationId?: string, signal?: AbortSignal) {
+export async function listAttendance(date: string, organizationId?: string, signal?: AbortSignal, locationId?: string) {
   const { data } = await api.get<AttendanceListResponse>('/attendance', {
-    params: { date, ...(organizationId ? { organizationId } : {}) },
+    params: { date, ...(organizationId ? { organizationId } : {}), ...(locationId ? { locationId } : {}) },
     signal,
   });
   return data;
 }
 
 export async function getPayroll(
-  params: { fromDate: string; toDate: string; organizationId?: string },
+  params: { fromDate: string; toDate: string; organizationId?: string; locationId?: string },
   signal?: AbortSignal,
 ) {
   const { data } = await api.get<PayrollResponse>('/attendance/payroll', { params, signal });
@@ -120,6 +121,7 @@ export async function markAttendance(input: {
   date: string;
   status: AttendanceStatus;
   organizationId?: string;
+  locationId?: string;
   timeZone?: string;
 }) {
   const { data } = await api.put<{

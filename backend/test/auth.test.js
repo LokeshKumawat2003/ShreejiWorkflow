@@ -5,17 +5,20 @@ const { createApp } = require('../src/app');
 const { requireRole } = require('../src/middleware/auth');
 const Attendance = require('../src/models/Attendance');
 const Employee = require('../src/models/Employee');
+const Location = require('../src/models/Location');
 const User = require('../src/models/User');
 const {
   assignEmployees,
   createEmployee,
   deleteEmployee,
+  listEmployees,
   unassignEmployees,
   updateEmployee,
 } = require('../src/services/employeeService');
 const { listAttendance, listAttendanceHistory, markAttendance } = require('../src/services/attendanceService');
 const { calculatePayroll } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
+const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 
 test('health endpoint works without MongoDB', async (t) => {
   process.env.NODE_ENV = 'test';
@@ -262,7 +265,7 @@ test('removing an employee from an organization keeps the employee and attendanc
 
     assert.deepEqual(employeeUpdate, {
       filter: { _id: { $in: [employeeId] }, organizationId },
-      update: { $set: { organizationId: null } },
+      update: { $set: { organizationId: null, locationId: null } },
     });
     assert.equal(result[0].id, employeeId);
     assert.equal(result[0].organizationId, '');
@@ -302,7 +305,7 @@ test('organization users can only release employees from their own organization'
     );
     assert.deepEqual(employeeUpdate, {
       filter: { _id: { $in: [employeeId] }, organizationId },
-      update: { $set: { organizationId: null } },
+      update: { $set: { organizationId: null, locationId: null } },
     });
   } finally {
     Employee.find = originalFind;
@@ -755,4 +758,287 @@ test('requireRole rejects an organization from admin-only routes', () => {
 
   assert.equal(forwardedError.statusCode, 403);
   assert.equal(continued, false);
+});
+
+test('location routes require authentication', async (t) => {
+  process.env.NODE_ENV = 'test';
+  const server = createApp().listen(0);
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const url = `http://127.0.0.1:${server.address().port}/api/organizations/507f1f77bcf86cd799439011/locations`;
+  const listResponse = await fetch(url);
+  const createResponse = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Main office' }),
+  });
+  const updateResponse = await fetch(`${url}/507f1f77bcf86cd799439012`, { method: 'PATCH' });
+  const deleteResponse = await fetch(`${url}/507f1f77bcf86cd799439012`, { method: 'DELETE' });
+  assert.equal(listResponse.status, 401);
+  assert.equal(createResponse.status, 401);
+  assert.equal(updateResponse.status, 401);
+  assert.equal(deleteResponse.status, 401);
+});
+
+test('location input requires a work name, location, designation, and valid status', () => {
+  assert.throws(
+    () => validateLocationInput({ workName: 'Kitchen', name: '  ', designation: 'cook' }),
+    (error) => error.statusCode === 400 && error.message === 'Location is required.',
+  );
+  assert.throws(
+    () => validateLocationInput({ workName: 'Kitchen', name: 'Main office', designation: 'cook', status: 'pending' }),
+    (error) => error.statusCode === 400 && error.message === 'Status must be active or disabled.',
+  );
+  assert.throws(
+    () => validateLocationInput({ workName: 'Kitchen', name: 'Main office', designation: 'electrician' }),
+    (error) => error.statusCode === 400 && error.message === 'Select a valid designation.',
+  );
+});
+
+test('organization users cannot list locations for another organization', async () => {
+  await assert.rejects(
+    listLocations(
+      { id: '507f1f77bcf86cd799439011', role: 'organization' },
+      '507f1f77bcf86cd799439012',
+    ),
+    (error) => error.statusCode === 403,
+  );
+});
+
+test('employee lists reject malformed location filters', async () => {
+  await assert.rejects(
+    listEmployees(
+      { id: '507f1f77bcf86cd799439011', role: 'organization' },
+      { locationId: 'invalid-id' },
+    ),
+    (error) => error.statusCode === 400 && error.message === 'Invalid location id.',
+  );
+});
+
+test('attendance and payroll reject malformed location filters', async () => {
+  const organization = { id: '507f1f77bcf86cd799439011', role: 'organization' };
+  await assert.rejects(
+    listAttendance(organization, { locationId: 'invalid-id' }),
+    (error) => error.statusCode === 400 && error.message === 'Invalid location id.',
+  );
+  await assert.rejects(
+    calculatePayroll(organization, {
+      locationId: 'invalid-id',
+      fromDate: '2026-10-01',
+      toDate: '2026-10-20',
+    }),
+    (error) => error.statusCode === 400 && error.message === 'Invalid location id.',
+  );
+});
+
+test('admins create a location only for an existing organization', async () => {
+  const originalFindOne = User.findOne;
+  const originalCreate = Location.create;
+  const organizationId = '507f1f77bcf86cd799439011';
+  let createdInput;
+  User.findOne = async (filter) => {
+    assert.deepEqual(filter, { _id: organizationId, role: 'organization' });
+    return { id: organizationId };
+  };
+  Location.create = async (input) => {
+    createdInput = input;
+    return {
+      ...input,
+      _id: '507f1f77bcf86cd799439012',
+      toObject() { return this; },
+    };
+  };
+
+  try {
+    const location = await createLocation(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      organizationId,
+      {
+        workName: '  Kitchen work ',
+        opNumber: ' OP-42 ',
+        name: '  Main office ',
+        address: '  1 Main Street  ',
+        designation: 'cook',
+      },
+    );
+    assert.deepEqual(createdInput, {
+      workName: 'Kitchen work',
+      opNumber: 'OP-42',
+      name: 'Main office',
+      address: '1 Main Street',
+      designation: 'cook',
+      status: 'active',
+      organizationId,
+    });
+    assert.equal(location.id, '507f1f77bcf86cd799439012');
+    assert.equal(location.organizationId, organizationId);
+  } finally {
+    User.findOne = originalFindOne;
+    Location.create = originalCreate;
+  }
+});
+
+test('admins can update location details within the owning organization', async () => {
+  const originalFindOne = User.findOne;
+  const originalLocationFindOne = Location.findOne;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const location = {
+    _id: locationId,
+    organizationId,
+    workName: 'Old work',
+    opNumber: '',
+    name: 'Old site',
+    address: '',
+    designation: 'cook',
+    status: 'active',
+    async save() {},
+    toObject() { return this; },
+  };
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async (filter) => {
+    assert.deepEqual(filter, { _id: locationId, organizationId });
+    return location;
+  };
+
+  try {
+    const updated = await updateLocation(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      organizationId,
+      locationId,
+      { workName: 'New work', opNumber: 'OP-9', name: 'New site', address: '1 Main Street', designation: 'plumber' },
+    );
+    assert.equal(updated.workName, 'New work');
+    assert.equal(updated.opNumber, 'OP-9');
+    assert.equal(updated.name, 'New site');
+    assert.equal(updated.designation, 'plumber');
+  } finally {
+    User.findOne = originalFindOne;
+    Location.findOne = originalLocationFindOne;
+  }
+});
+
+test('deleting a location clears employee placement but keeps employee records', async () => {
+  const originalFindOne = User.findOne;
+  const originalLocationFindOne = Location.findOne;
+  const originalEmployeeUpdateMany = Employee.updateMany;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  let employeeUpdate;
+  let locationDeleted = false;
+  const location = {
+    _id: locationId,
+    organizationId,
+    workName: 'Kitchen work',
+    opNumber: '',
+    name: 'Main site',
+    address: '',
+    designation: 'cook',
+    status: 'active',
+    async deleteOne() { locationDeleted = true; },
+    toObject() { return this; },
+  };
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => location;
+  Employee.updateMany = async (filter, update) => {
+    employeeUpdate = { filter, update };
+  };
+
+  try {
+    await deleteLocation({ id: '507f1f77bcf86cd799439099', role: 'admin' }, organizationId, locationId);
+    assert.deepEqual(employeeUpdate, {
+      filter: { organizationId, locationId },
+      update: { $set: { locationId: null } },
+    });
+    assert.equal(locationDeleted, true);
+  } finally {
+    User.findOne = originalFindOne;
+    Location.findOne = originalLocationFindOne;
+    Employee.updateMany = originalEmployeeUpdateMany;
+  }
+});
+
+test('employee creation rejects a designation that does not match its location', async () => {
+  const originalLocationFindOne = Location.findOne;
+  const originalLocationFindById = Location.findById;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  Location.findOne = async () => ({ id: locationId });
+  Location.findById = () => ({ select: async () => ({ designation: 'cook' }) });
+
+  try {
+    await assert.rejects(
+      createEmployee(
+        { id: organizationId, role: 'organization' },
+        {
+          name: 'Employee',
+          email: 'employee@example.com',
+          designation: 'Plumber',
+          locationId,
+        },
+      ),
+      (error) => error.statusCode === 400 && error.message === 'Employee designation must match this location (cook).',
+    );
+  } finally {
+    Location.findOne = originalLocationFindOne;
+    Location.findById = originalLocationFindById;
+  }
+});
+
+test('employees at another location can be moved to a matching new location', async () => {
+  const originalUserFindOne = User.findOne;
+  const originalLocationFindOne = Location.findOne;
+  const originalLocationFindById = Location.findById;
+  const originalEmployeeFind = Employee.find;
+  const originalEmployeeUpdateMany = Employee.updateMany;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const newLocationId = '507f1f77bcf86cd799439012';
+  const oldLocationId = '507f1f77bcf86cd799439013';
+  const employeeId = '507f1f77bcf86cd799439014';
+  const employee = {
+    _id: employeeId,
+    organizationId,
+    locationId: oldLocationId,
+    designation: 'Cook',
+    name: 'Employee',
+    email: 'employee@example.com',
+    status: 'active',
+  };
+  let assignmentFilter;
+  let assignmentUpdate;
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ id: newLocationId });
+  Location.findById = () => ({ select: async () => ({ designation: 'cook' }) });
+  Employee.find = (filter) => {
+    if (filter.status === 'active') {
+      assignmentFilter = filter;
+      return Promise.resolve([employee]);
+    }
+    return { populate: async () => [{ ...employee, locationId: newLocationId }] };
+  };
+  Employee.updateMany = async (filter, update) => {
+    assignmentUpdate = { filter, update };
+  };
+
+  try {
+    const assigned = await assignEmployees(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      { organizationId, locationId: newLocationId, employeeIds: [employeeId] },
+    );
+    assert.equal(assignmentFilter.locationId.$ne, newLocationId);
+    assert.equal(assignmentFilter.designation.test(employee.designation), true);
+    assert.deepEqual(assignmentFilter.$or[2], { organizationId });
+    assert.deepEqual(assignmentUpdate, {
+      filter: assignmentFilter,
+      update: { $set: { organizationId, locationId: newLocationId } },
+    });
+    assert.equal(assigned[0].locationId, newLocationId);
+  } finally {
+    User.findOne = originalUserFindOne;
+    Location.findOne = originalLocationFindOne;
+    Location.findById = originalLocationFindById;
+    Employee.find = originalEmployeeFind;
+    Employee.updateMany = originalEmployeeUpdateMany;
+  }
 });

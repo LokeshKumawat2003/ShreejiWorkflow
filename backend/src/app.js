@@ -6,6 +6,7 @@ const attendanceRoutes = require('./routes/attendanceRoutes');
 const authRoutes = require('./routes/authRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
+const locationRoutes = require('./routes/locationRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 
 function createApp() {
@@ -37,6 +38,7 @@ function createApp() {
   app.use('/api/attendance', attendanceRoutes);
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/employees', employeeRoutes);
+  app.use('/api/organizations', locationRoutes);
   app.use('/api/organizations', organizationRoutes);
 
   app.use((req, res, next) => {

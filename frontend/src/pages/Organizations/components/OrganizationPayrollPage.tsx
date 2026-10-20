@@ -24,6 +24,7 @@ import ActionButton from '../../../components/common/ActionButton';
 
 type OrganizationPayrollPageProps = {
   organizationId?: string;
+  locationId?: string;
 };
 
 function localDateString(date: Date) {
@@ -45,7 +46,7 @@ function getExportFilename(fromDate: string, toDate: string) {
   return `payroll-${fromDate}-to-${toDate}`;
 }
 
-function OrganizationPayrollPage({ organizationId }: OrganizationPayrollPageProps) {
+function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPayrollPageProps) {
   const today = new Date();
   const [fromDate, setFromDate] = useState(localDateString(new Date(today.getFullYear(), today.getMonth(), 1)));
   const [toDate, setToDate] = useState(localDateString(today));
@@ -143,7 +144,7 @@ function OrganizationPayrollPage({ organizationId }: OrganizationPayrollPageProp
     const controller = new AbortController();
     setIsLoading(true);
     setLoadError('');
-    void getPayroll({ fromDate, toDate, organizationId }, controller.signal)
+    void getPayroll({ fromDate, toDate, organizationId, locationId }, controller.signal)
       .then(setPayroll)
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -155,7 +156,7 @@ function OrganizationPayrollPage({ organizationId }: OrganizationPayrollPageProp
       });
 
     return () => controller.abort();
-  }, [fromDate, toDate, organizationId, invalidRange]);
+  }, [fromDate, toDate, organizationId, locationId, invalidRange]);
 
   return (
     <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">

@@ -19,7 +19,7 @@ function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-export function useEmployees(organizationId?: string, activeOnly = false) {
+export function useEmployees(organizationId?: string, activeOnly = false, locationId?: string) {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | EmployeeStatus>('all');
@@ -44,6 +44,7 @@ export function useEmployees(organizationId?: string, activeOnly = false) {
       page,
       limit: PAGE_SIZE,
       ...(organizationId ? { organizationId } : {}),
+      ...(locationId ? { locationId } : {}),
       ...(activeOnly ? { activeOnly: true } : {}),
     }, controller.signal)
       .then((result) => {
@@ -67,7 +68,7 @@ export function useEmployees(organizationId?: string, activeOnly = false) {
       isActive = false;
       controller.abort();
     };
-  }, [activeOnly, organizationId, page, refreshVersion, search, sort, status]);
+  }, [activeOnly, locationId, organizationId, page, refreshVersion, search, sort, status]);
 
   function changeSearch(value: string) {
     setSearch(value);
@@ -92,6 +93,7 @@ export function useEmployees(organizationId?: string, activeOnly = false) {
     const employee = await createEmployee({
       ...input,
       ...(organizationId ? { organizationId } : {}),
+      ...(locationId ? { locationId } : {}),
     });
     setPage(1);
     setRefreshVersion((current) => current + 1);
@@ -108,14 +110,14 @@ export function useEmployees(organizationId?: string, activeOnly = false) {
     return employee;
   }
 
-  async function assignMany(ids: string[], targetOrganizationId: string) {
-    const assignedEmployees = await assignEmployeesToOrganization(ids, targetOrganizationId);
+  async function assignMany(ids: string[], targetOrganizationId: string, targetLocationId?: string) {
+    const assignedEmployees = await assignEmployeesToOrganization(ids, targetOrganizationId, targetLocationId);
     setRefreshVersion((current) => current + 1);
     return assignedEmployees;
   }
 
-  async function unassignMany(ids: string[], targetOrganizationId?: string) {
-    const unassignedEmployees = await removeEmployeesFromOrganization(ids, targetOrganizationId);
+  async function unassignMany(ids: string[], targetOrganizationId?: string, targetLocationId?: string) {
+    const unassignedEmployees = await removeEmployeesFromOrganization(ids, targetOrganizationId, targetLocationId);
     setRefreshVersion((current) => current + 1);
     return unassignedEmployees;
   }

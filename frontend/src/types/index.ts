@@ -18,14 +18,45 @@ export type User = {
   avatarUrl?: string;
 };
 
+export type OrganizationLocation = {
+  id: string;
+  workName: string;
+  opNumber: string;
+  name: string;
+  address: string;
+  designation: 'cook' | 'event' | 'plumber';
+  status: 'active' | 'disabled';
+  createdAt: string;
+};
+
 export type EmployeeStatus = 'active' | 'disabled';
 
 export type Employee = {
   id: string;
   organizationId: string;
+  locationId?: string;
   organizationName: string;
   name: string;
   email: string;
+  dateOfBirth: string;
+  parentName: string;
+  aadhaarNumber: string;
+  aadhaarConsent: boolean;
+  establishmentLin: string;
+  uan: string;
+  esicNumber: string;
+  designation: string;
+  employmentType: '' | 'regular' | 'fixed-term' | 'contractual';
+  skillCategory: string;
+  dateOfJoining: string;
+  basicPay: number;
+  dearnessAllowance: number;
+  otherAllowances: string;
+  epfoApplicable: boolean;
+  esicApplicable: boolean;
+  duties: string;
+  maternityBenefits: string;
+  otherInformation: string;
   department: string;
   jobTitle: string;
   phone: string;

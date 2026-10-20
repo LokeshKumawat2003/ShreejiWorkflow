@@ -32,6 +32,9 @@ type AssignEmployeeDialogProps = {
   isOpen: boolean;
   isSaving: boolean;
   organizationName: string;
+  organizationId?: string;
+  locationId?: string;
+  locationDesignation?: string;
   onClose: () => void;
   onAssign: (employeeIds: string[]) => Promise<boolean>;
 };
@@ -44,6 +47,9 @@ function AssignEmployeeDialog({
   isOpen,
   isSaving,
   organizationName,
+  organizationId,
+  locationId,
+  locationDesignation,
   onClose,
   onAssign,
 }: AssignEmployeeDialogProps) {
@@ -69,8 +75,10 @@ function AssignEmployeeDialog({
       sort: 'name-asc',
       page,
       limit: 10,
-      unassigned: true,
+      ...(organizationId ? { organizationId } : {}),
+      ...(locationId ? { availableForLocationId: locationId } : { unassigned: true }),
       activeOnly: true,
+      ...(locationDesignation ? { designation: locationDesignation.toLowerCase() } : {}),
     };
     void listEmployees(params, controller.signal)
       .then((result) => {
@@ -91,7 +99,7 @@ function AssignEmployeeDialog({
       isActive = false;
       controller.abort();
     };
-  }, [isOpen, page, search]);
+  }, [isOpen, locationDesignation, locationId, organizationId, page, search]);
 
   async function handleAssign() {
     if (selectedEmployees.length === 0) return;
@@ -134,7 +142,7 @@ function AssignEmployeeDialog({
         <ModalCloseButton top={5} right={5} borderRadius="md" isDisabled={isSaving} />
         <ModalBody pt={0} pb={6}>
           <Text mb={5} fontSize="sm" color="slate.500">
-            Select one or more unassigned employees to add to {organizationName}.
+            Select available {locationDesignation ? `${locationDesignation} ` : ''}employees to add to {organizationName}.
           </Text>
           <Stack spacing={4}>
             <Input
@@ -149,7 +157,7 @@ function AssignEmployeeDialog({
               <HStack justify="center" py={5}><Spinner color="brand.500" /></HStack>
             ) : total === 0 ? (
               <Text py={3} color="slate.500" fontSize="sm">
-                {search ? 'No unassigned employees match this search.' : 'There are no unassigned employees to add.'}
+                {search ? 'No available employees match this search.' : 'There are no available employees to add.'}
               </Text>
             ) : (
               <>
@@ -201,7 +209,7 @@ function AssignEmployeeDialog({
                                 <Box minW={0}>
                                   <Text fontSize="sm" fontWeight="600" color="slate.900" noOfLines={1}>{employee.name}</Text>
                                   <Text fontSize="xs" color="slate.500" noOfLines={1}>
-                                    {employee.email}{employee.department ? ` · ${employee.department}` : ''}
+                                    {employee.email}{employee.designation ? ` · ${employee.designation}` : ''}
                                   </Text>
                                 </Box>
                               </HStack>
@@ -227,7 +235,7 @@ function AssignEmployeeDialog({
         <ModalFooter gap={3} px={6} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
           <Button variant="outline" onClick={onClose} isDisabled={isSaving}>Cancel</Button>
           <Button colorScheme="brand" isLoading={isSaving} isDisabled={selectedEmployees.length === 0 || Boolean(loadError)} onClick={() => void handleAssign()}>
-            Add {selectedEmployees.length || ''} to organization
+            Add {selectedEmployees.length || ''} to {locationDesignation ? 'location' : 'organization'}
           </Button>
         </ModalFooter>
       </ModalContent>

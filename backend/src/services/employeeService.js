@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
+const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail } = require('../utils/user');
@@ -15,17 +16,38 @@ const BANK_FIELDS = [
 	'bankRoutingCode',
 ];
 
-function publicEmployee(employee) {
+function publicEmployee(employee, role = 'organization') {
 	const value = employee.toObject ? employee.toObject() : employee;
 	const organization = value.organizationId?.organizationName ? value.organizationId : null;
 	const organizationId = organization?._id || value.organizationId;
+	const locationId = value.locationId?._id || value.locationId;
 
 	return {
 		id: String(value._id || value.id),
 		organizationId: organizationId ? String(organizationId) : '',
+		locationId: locationId ? String(locationId) : '',
 		organizationName: organization?.organizationName || value.organizationName || '',
 		name: value.name,
 		email: value.email,
+		dateOfBirth: value.dateOfBirth || '',
+		parentName: value.parentName || '',
+		aadhaarNumber: role === 'admin' ? value.aadhaarNumber || '' : '',
+		aadhaarConsent: Boolean(value.aadhaarConsent),
+		establishmentLin: value.establishmentLin || '',
+		uan: value.uan || '',
+		esicNumber: value.esicNumber || '',
+		designation: value.designation || '',
+		employmentType: value.employmentType || '',
+		skillCategory: value.skillCategory || '',
+		dateOfJoining: value.dateOfJoining || '',
+		basicPay: value.basicPay ?? 0,
+		dearnessAllowance: value.dearnessAllowance ?? 0,
+		otherAllowances: value.otherAllowances || '',
+		epfoApplicable: Boolean(value.epfoApplicable),
+		esicApplicable: Boolean(value.esicApplicable),
+		duties: value.duties || '',
+		maternityBenefits: value.maternityBenefits || '',
+		otherInformation: value.otherInformation || '',
 		department: value.department || '',
 		jobTitle: value.jobTitle || '',
 		phone: value.phone || '',
@@ -56,6 +78,23 @@ async function resolveOrganizationId(user, input) {
 	return organization.id;
 }
 
+async function resolveLocationId(locationId, organizationId) {
+	if (locationId === undefined || locationId === null || locationId === '') return null;
+	if (!mongoose.isValidObjectId(locationId)) throw httpError(400, 'Invalid location id.');
+	const location = await Location.findOne({ _id: locationId, organizationId });
+	if (!location) throw httpError(404, 'Location not found for this organization.');
+	return location.id;
+}
+
+async function validateEmployeeLocationDesignation(locationId, designation) {
+	if (!locationId) return;
+	const location = await Location.findById(locationId).select('designation');
+	if (!location) throw httpError(404, 'Location not found.');
+	if (String(designation || '').trim().toLowerCase() !== location.designation) {
+		throw httpError(400, `Employee designation must match this location (${location.designation}).`);
+	}
+}
+
 function validateEmployeeInput(input, { partial = false } = {}) {
 	const fields = {};
 	const name = typeof input.name === 'string' ? input.name.trim() : '';
@@ -64,6 +103,19 @@ function validateEmployeeInput(input, { partial = false } = {}) {
 	if (!partial || input.email !== undefined) fields.email = email;
 
 	const textFields = [
+		['dateOfBirth', 10],
+		['parentName', 120],
+		['aadhaarNumber', 12],
+		['establishmentLin', 30],
+		['uan', 30],
+		['esicNumber', 30],
+		['designation', 100],
+		['skillCategory', 100],
+		['dateOfJoining', 10],
+		['otherAllowances', 1000],
+		['duties', 2000],
+		['maternityBenefits', 2000],
+		['otherInformation', 2000],
 		['department', 100],
 		['jobTitle', 100],
 		['phone', 30],
@@ -83,6 +135,34 @@ function validateEmployeeInput(input, { partial = false } = {}) {
 			}
 			fields[field] = field === 'bankRoutingCode' ? value.toUpperCase() : value;
 		}
+	}
+	for (const field of ['basicPay', 'dearnessAllowance']) {
+		if (!partial || input[field] !== undefined) {
+			const amount = input[field] === undefined ? 0 : Number(input[field]);
+			if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000_000_000 || Math.abs(Math.round(amount * 100) / 100 - amount) > 1e-8) {
+				throw httpError(400, `${field} must be a valid non-negative amount with at most two decimal places.`);
+			}
+			fields[field] = amount;
+		}
+	}
+	for (const field of ['aadhaarConsent', 'epfoApplicable', 'esicApplicable']) {
+		if (!partial || input[field] !== undefined) {
+			const value = input[field] === undefined && !partial ? false : input[field];
+			if (typeof value !== 'boolean') throw httpError(400, `${field} must be true or false.`);
+			fields[field] = value;
+		}
+	}
+	if (!partial || input.employmentType !== undefined) {
+		const employmentType = typeof input.employmentType === 'string' ? input.employmentType : '';
+		if (!['', 'regular', 'fixed-term', 'contractual'].includes(employmentType)) {
+			throw httpError(400, 'Select a valid employment type.');
+		}
+		fields.employmentType = employmentType;
+	}
+	if (fields.aadhaarNumber) {
+		fields.aadhaarNumber = fields.aadhaarNumber.replace(/\s/g, '');
+		if (!/^\d{12}$/.test(fields.aadhaarNumber)) throw httpError(400, 'Aadhaar number must contain 12 digits.');
+		if (!(fields.aadhaarConsent ?? input.aadhaarConsent)) throw httpError(400, 'Aadhaar consent is required before storing the number.');
 	}
 	if (!partial || input.dailySalary !== undefined) {
 		const dailySalary = input.dailySalary === undefined ? 0 : Number(input.dailySalary);
@@ -148,15 +228,37 @@ async function listEmployees(user, options = {}) {
 	const requestedLimit = Number(options.limit);
 	const limit = Math.min(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : PAGE_SIZE, PAGE_SIZE);
 	const filter = organizationScope(user);
+	let hasLocationDesignation = false;
+	const isLocationAssignmentList = Boolean(options.availableForLocationId);
 
-	if (user.role === 'admin' && options.organizationId) {
+	if (isLocationAssignmentList) {
+		if (user.role !== 'admin') throw httpError(403, 'Only administrators can assign employees to locations.');
+		const organizationId = typeof options.organizationId === 'string' ? options.organizationId : '';
+		if (!mongoose.isValidObjectId(organizationId)) throw httpError(400, 'Invalid organization id.');
+		const locationId = await resolveLocationId(options.availableForLocationId, organizationId);
+		const location = await Location.findById(locationId).select('designation');
+		filter.organizationId = { $in: [organizationId, null] };
+		filter.locationId = { $ne: locationId };
+		filter.designation = new RegExp(`^${location.designation}$`, 'i');
+	}
+
+	if (!isLocationAssignmentList && user.role === 'admin' && options.organizationId) {
 		if (!mongoose.isValidObjectId(options.organizationId)) throw httpError(400, 'Invalid organization id.');
 		filter.organizationId = options.organizationId;
 	}
-	if (user.role === 'admin' && (options.unassigned === 'true' || options.unassigned === true)) {
+	if (options.locationId !== undefined) {
+		filter.locationId = await resolveLocationId(options.locationId, filter.organizationId || user.id);
+		const location = await Location.findById(filter.locationId).select('designation');
+		filter.designation = new RegExp(`^${location.designation}$`, 'i');
+		hasLocationDesignation = true;
+	}
+	if (!hasLocationDesignation && options.designation && ['cook', 'event', 'plumber'].includes(String(options.designation).toLowerCase())) {
+		filter.designation = new RegExp(`^${String(options.designation).toLowerCase()}$`, 'i');
+	}
+	if (!isLocationAssignmentList && user.role === 'admin' && (options.unassigned === 'true' || options.unassigned === true)) {
 		filter.organizationId = null;
 	}
-	if (user.role === 'admin' && !options.unassigned && (options.assignedOnly === 'true' || options.assignedOnly === true)) {
+	if (!isLocationAssignmentList && user.role === 'admin' && !options.unassigned && (options.assignedOnly === 'true' || options.assignedOnly === true)) {
 		filter.organizationId = { $ne: null };
 	}
 	const activeOnly = user.role === 'organization'
@@ -169,7 +271,7 @@ async function listEmployees(user, options = {}) {
 
 	if (search) {
 		const pattern = new RegExp(escapeRegex(search), 'i');
-		filter.$or = [
+		const searchFilters = [
 			{ name: pattern },
 			{ email: pattern },
 			{ department: pattern },
@@ -177,8 +279,10 @@ async function listEmployees(user, options = {}) {
 		];
 		if (user.role === 'admin') {
 			const matchingOrganizations = await User.find({ role: 'organization', organizationName: pattern }).distinct('_id');
-			filter.$or.push({ organizationId: { $in: matchingOrganizations } });
+			searchFilters.push({ organizationId: { $in: matchingOrganizations } });
 		}
+		if (isLocationAssignmentList) filter.$and = [{ $or: searchFilters }];
+		else filter.$or = searchFilters;
 	}
 
 	const total = await Employee.countDocuments(filter);
@@ -197,7 +301,7 @@ async function listEmployees(user, options = {}) {
 		.limit(limit);
 
 	return {
-		employees: employees.map(publicEmployee),
+		employees: employees.map((employee) => publicEmployee(employee, user.role)),
 		pagination: { page, limit, total, totalPages },
 	};
 }
@@ -205,9 +309,11 @@ async function listEmployees(user, options = {}) {
 async function createEmployee(user, input = {}) {
 	const fields = validateEmployeeInput(input);
 	const organizationId = await resolveOrganizationId(user, input);
-	const employee = await Employee.create({ ...fields, organizationId });
+	const locationId = await resolveLocationId(input.locationId, organizationId);
+	await validateEmployeeLocationDesignation(locationId, fields.designation);
+	const employee = await Employee.create({ ...fields, organizationId, locationId });
 	await employee.populate('organizationId', 'organizationName');
-	return publicEmployee(employee);
+	return publicEmployee(employee, user.role);
 }
 
 async function getEmployee(user, id) {
@@ -216,7 +322,7 @@ async function getEmployee(user, id) {
 	if (user.role === 'organization') filter.status = 'active';
 	const employee = await Employee.findOne(filter).populate('organizationId', 'organizationName');
 	if (!employee) throw httpError(404, 'Employee not found.');
-	return publicEmployee(employee);
+	return publicEmployee(employee, user.role);
 }
 
 async function updateEmployee(user, id, input = {}) {
@@ -228,6 +334,22 @@ async function updateEmployee(user, id, input = {}) {
 		const organization = await User.findOne({ _id: input.organizationId, role: 'organization' });
 		if (!organization) throw httpError(404, 'Organization not found.');
 		fields.organizationId = organization.id;
+		const currentEmployee = await Employee.findById(id).select('organizationId');
+		if (currentEmployee && String(currentEmployee.organizationId) !== String(organization.id)) {
+			fields.locationId = null;
+		}
+	}
+	if (input.locationId !== undefined) {
+		const employee = await Employee.findById(id);
+		if (!employee) throw httpError(404, 'Employee not found.');
+		const organizationId = fields.organizationId || employee.organizationId;
+		fields.locationId = await resolveLocationId(input.locationId, organizationId);
+	}
+	if (fields.designation !== undefined) {
+		const employee = await Employee.findById(id).select('locationId');
+		if (!employee) throw httpError(404, 'Employee not found.');
+		const targetLocationId = fields.locationId !== undefined ? fields.locationId : employee.locationId;
+		await validateEmployeeLocationDesignation(targetLocationId, fields.designation);
 	}
 	const employee = await Employee.findOneAndUpdate(
 		{ _id: id },
@@ -235,7 +357,7 @@ async function updateEmployee(user, id, input = {}) {
 		{ new: true, runValidators: true },
 	).populate('organizationId', 'organizationName');
 	if (!employee) throw httpError(404, 'Employee not found.');
-	return publicEmployee(employee);
+	return publicEmployee(employee, user.role);
 }
 
 async function assignEmployees(user, input = {}) {
@@ -249,26 +371,41 @@ async function assignEmployees(user, input = {}) {
 
 	const organization = await User.findOne({ _id: organizationId, role: 'organization' });
 	if (!organization) throw httpError(404, 'Organization not found.');
+	const locationId = await resolveLocationId(input.locationId, organizationId);
+	let designationFilter;
+	if (locationId) {
+		const location = await Location.findById(locationId).select('designation');
+		designationFilter = new RegExp(`^${location.designation}$`, 'i');
+	}
 	const employeeFilter = {
 		_id: { $in: employeeIds },
 		status: 'active',
-		$or: [{ organizationId: null }, { organizationId: { $exists: false } }],
+		...(locationId
+			? {
+				locationId: { $ne: locationId },
+				$or: [{ organizationId: null }, { organizationId: { $exists: false } }, { organizationId }],
+			}
+			: { $or: [{ organizationId: null }, { organizationId: { $exists: false } }] }),
+		...(designationFilter ? { designation: designationFilter } : {}),
 	};
 	const employees = await Employee.find(employeeFilter);
 	if (employees.length !== employeeIds.length) {
 		throw httpError(409, 'One or more selected employees are no longer unassigned.');
 	}
 
-	const emailSet = new Set(employees.map(({ email }) => email));
-	if (emailSet.size !== employees.length) throw httpError(409, 'Selected employees contain duplicate email addresses.');
-	const existingEmployees = await Employee.countDocuments({ organizationId, email: { $in: [...emailSet] } });
+	const unassignedEmployees = employees.filter((employee) => !employee.organizationId);
+	const emailSet = new Set(unassignedEmployees.map(({ email }) => email));
+	if (emailSet.size !== unassignedEmployees.length) throw httpError(409, 'Selected employees contain duplicate email addresses.');
+	const existingEmployees = emailSet.size > 0
+		? await Employee.countDocuments({ organizationId, email: { $in: [...emailSet] } })
+		: 0;
 	if (existingEmployees > 0) {
 		throw httpError(409, 'An employee with one of these email addresses already belongs to this organization.');
 	}
 
-	await Employee.updateMany(employeeFilter, { $set: { organizationId } });
+	await Employee.updateMany(employeeFilter, { $set: { organizationId, locationId } });
 	const assigned = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName');
-	return assigned.map(publicEmployee);
+	return assigned.map((employee) => publicEmployee(employee, user.role));
 }
 
 async function unassignEmployees(user, input = {}) {
@@ -285,10 +422,18 @@ async function unassignEmployees(user, input = {}) {
 		throw httpError(400, 'Select between 1 and 100 valid employees.');
 	}
 	const employeeFilter = { _id: { $in: employeeIds }, organizationId };
+	if (input.locationId !== undefined) {
+		const locationId = await resolveLocationId(input.locationId, organizationId);
+		employeeFilter.locationId = locationId;
+	}
 	const employees = await Employee.find(employeeFilter);
 	if (employees.length !== employeeIds.length) throw httpError(404, 'One or more employees do not belong to this organization.');
-	await Employee.updateMany(employeeFilter, { $set: { organizationId: null } });
-	return employees.map((employee) => publicEmployee({ ...employee.toObject(), organizationId: null }));
+	if (input.locationId !== undefined) {
+		await Employee.updateMany(employeeFilter, { $set: { locationId: null } });
+		return employees.map((employee) => publicEmployee({ ...employee.toObject(), locationId: null }, user.role));
+	}
+	await Employee.updateMany(employeeFilter, { $set: { organizationId: null, locationId: null } });
+	return employees.map((employee) => publicEmployee({ ...employee.toObject(), organizationId: null, locationId: null }, user.role));
 }
 
 async function deleteEmployee(user, id) {
@@ -298,7 +443,7 @@ async function deleteEmployee(user, id) {
 	const employee = await Employee.findOneAndDelete(filter);
 	if (!employee) throw httpError(404, 'Employee not found.');
 	await Attendance.deleteMany({ employeeId: employee._id });
-	return publicEmployee(employee);
+	return publicEmployee(employee, user.role);
 }
 
 module.exports = {

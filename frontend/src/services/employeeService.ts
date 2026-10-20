@@ -4,12 +4,27 @@ import type { Employee, EmployeeStatus } from '../types';
 export type EmployeeInput = {
   name: string;
   email: string;
-  department: string;
-  jobTitle: string;
+  dateOfBirth: string;
+  parentName: string;
+  aadhaarNumber: string;
+  aadhaarConsent: boolean;
+  establishmentLin: string;
+  uan: string;
+  esicNumber: string;
+  designation: string;
+  employmentType: '' | 'regular' | 'fixed-term' | 'contractual';
+  skillCategory: string;
+  dateOfJoining: string;
+  basicPay: number;
+  dearnessAllowance: number;
+  otherAllowances: string;
+  epfoApplicable: boolean;
+  esicApplicable: boolean;
+  duties: string;
+  maternityBenefits: string;
+  otherInformation: string;
   phone: string;
-  address: string;
-  dailySalary: number;
-  currency: string;
+  address?: string;
   bankName: string;
   bankBranch: string;
   bankAccountHolder: string;
@@ -17,6 +32,7 @@ export type EmployeeInput = {
   bankRoutingCode: string;
   status: EmployeeStatus;
   organizationId?: string;
+  locationId?: string;
 };
 
 export type EmployeeListParams = {
@@ -26,9 +42,12 @@ export type EmployeeListParams = {
   page: number;
   limit: number;
   organizationId?: string;
+  locationId?: string;
   unassigned?: boolean;
   assignedOnly?: boolean;
   activeOnly?: boolean;
+  designation?: string;
+  availableForLocationId?: string;
 };
 
 type EmployeeListResponse = {
@@ -68,18 +87,20 @@ export async function deleteEmployee(id: string) {
   return data.employee;
 }
 
-export async function assignEmployeesToOrganization(employeeIds: string[], organizationId: string) {
+export async function assignEmployeesToOrganization(employeeIds: string[], organizationId: string, locationId?: string) {
   const { data } = await api.post<{ employees: Employee[] }>('/employees/assign', {
     employeeIds,
     organizationId,
+    ...(locationId ? { locationId } : {}),
   });
   return data.employees;
 }
 
-export async function removeEmployeesFromOrganization(employeeIds: string[], organizationId?: string) {
+export async function removeEmployeesFromOrganization(employeeIds: string[], organizationId?: string, locationId?: string) {
   const { data } = await api.post<{ employees: Employee[] }>('/employees/unassign', {
     employeeIds,
     ...(organizationId ? { organizationId } : {}),
+    ...(locationId ? { locationId } : {}),
   });
   return data.employees;
 }

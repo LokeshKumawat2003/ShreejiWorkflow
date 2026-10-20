@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
+const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
@@ -46,14 +47,33 @@ async function getOrganizationId(user, requestedId) {
   return organization.id;
 }
 
+async function getLocationEmployeeIds(locationId, organizationId) {
+  if (!locationId) return null;
+  if (!mongoose.isValidObjectId(locationId)) throw httpError(400, 'Invalid location id.');
+  const location = await Location.findOne({ _id: locationId, organizationId });
+  if (!location) throw httpError(404, 'Location not found for this organization.');
+  return Employee.find({
+    organizationId,
+    locationId,
+    designation: new RegExp(`^${location.designation}$`, 'i'),
+  }).distinct('_id');
+}
+
 async function listAttendance(user, options = {}) {
   const organizationId = await getOrganizationId(user, options.organizationId);
   const date = options.date || new Date().toISOString().slice(0, 10);
   if (!isValidDate(date)) throw httpError(400, 'Enter a valid attendance date.');
+  const locationEmployeeIds = await getLocationEmployeeIds(options.locationId, organizationId);
+  const employeeFilter = { organizationId };
+  const attendanceFilter = { organizationId, date };
+  if (locationEmployeeIds) {
+    employeeFilter._id = { $in: locationEmployeeIds };
+    attendanceFilter.employeeId = { $in: locationEmployeeIds };
+  }
 
   const [employees, records] = await Promise.all([
-    Employee.find({ organizationId }).sort({ name: 1, _id: 1 }).lean(),
-    Attendance.find({ organizationId, date }).lean(),
+    Employee.find(employeeFilter).sort({ name: 1, _id: 1 }).lean(),
+    Attendance.find(attendanceFilter).lean(),
   ]);
   const recordsByEmployee = new Map(records.map((record) => [String(record.employeeId), record]));
   const visibleEmployees = employees.filter((employee) => (
@@ -80,6 +100,7 @@ async function listAttendance(user, options = {}) {
 
 async function listAttendanceHistory(user, options = {}) {
   const organizationId = await getOrganizationId(user, options.organizationId);
+  const locationEmployeeIds = await getLocationEmployeeIds(options.locationId, organizationId);
   const requestedPage = Number(options.page);
   const pageNumber = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const requestedLimit = Number(options.limit);
@@ -88,6 +109,7 @@ async function listAttendanceHistory(user, options = {}) {
     HISTORY_PAGE_SIZE,
   );
   const filter = { organizationId };
+  if (locationEmployeeIds) filter.employeeId = { $in: locationEmployeeIds };
   const status = ATTENDANCE_STATUSES.includes(options.status) ? options.status : 'all';
   if (status === 'absent') filter.status = { $in: ['absent', 'late', 'leave'] };
   else if (status !== 'all') filter.status = status;
@@ -110,6 +132,7 @@ async function listAttendanceHistory(user, options = {}) {
   if (search) {
     const pattern = new RegExp(escapeRegex(search), 'i');
     const employeeIds = await Employee.find({
+      organizationId,
       $or: [
         { name: pattern },
         { email: pattern },
@@ -117,7 +140,10 @@ async function listAttendanceHistory(user, options = {}) {
         { jobTitle: pattern },
       ],
     }).distinct('_id');
-    filter.employeeId = { $in: employeeIds };
+    const matchingEmployeeIds = locationEmployeeIds
+      ? employeeIds.filter((id) => locationEmployeeIds.some((locationId) => String(locationId) === String(id)))
+      : employeeIds;
+    filter.employeeId = { $in: matchingEmployeeIds };
   }
 
   const total = await Attendance.countDocuments(filter);
@@ -153,6 +179,7 @@ async function listAttendanceHistory(user, options = {}) {
 
 async function markAttendance(user, input = {}) {
   const organizationId = await getOrganizationId(user, input.organizationId);
+  if (input.locationId) await getLocationEmployeeIds(input.locationId, organizationId);
   const { employeeId, date, status } = input;
   if (!mongoose.isValidObjectId(employeeId)) throw httpError(400, 'Invalid employee id.');
   if (!isValidDate(date)) throw httpError(400, 'Enter a valid attendance date.');
@@ -162,6 +189,7 @@ async function markAttendance(user, input = {}) {
   if (!ATTENDANCE_STATUSES.includes(status)) throw httpError(400, 'Select a valid attendance status.');
 
   const employeeFilter = { _id: employeeId, organizationId };
+  if (input.locationId) employeeFilter.locationId = input.locationId;
   if (user.role === 'organization') employeeFilter.status = 'active';
   const employee = await Employee.findOne(employeeFilter);
   if (!employee) throw httpError(404, 'Employee not found for this organization.');

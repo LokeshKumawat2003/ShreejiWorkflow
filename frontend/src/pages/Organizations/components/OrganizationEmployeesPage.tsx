@@ -2,6 +2,8 @@ import { AddIcon } from '@chakra-ui/icons';
 import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
 import { ApiError } from '../../../services/api';
+import { downloadAppointmentLetters } from '../../../services/appointmentLetterService';
+import type { OrganizationLocation } from '../../../types';
 import type { Employee } from '../../../types';
 import type { EmployeeInput } from '../../../services/employeeService';
 import AssignEmployeeDialog from '../../Employees/components/AssignEmployeeDialog';
@@ -14,15 +16,16 @@ import OrganizationEmployeeTable from './OrganizationEmployeeTable';
 type OrganizationEmployeesPageProps = {
   organizationId: string;
   organizationName: string;
+  location: OrganizationLocation;
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-function OrganizationEmployeesPage({ organizationId, organizationName }: OrganizationEmployeesPageProps) {
+function OrganizationEmployeesPage({ organizationId, organizationName, location }: OrganizationEmployeesPageProps) {
   const toast = useToast();
-  const employees = useEmployees(organizationId, true);
+  const employees = useEmployees(organizationId, true, location.id);
   const formDialog = useDisclosure();
   const assignmentDialog = useDisclosure();
   const removeDialog = useDisclosure();
@@ -51,8 +54,13 @@ function OrganizationEmployeesPage({ organizationId, organizationName }: Organiz
         setViewingEmployee((current) => current?.id === updatedEmployee.id ? updatedEmployee : current);
         toast({ title: 'Employee updated', status: 'success', position: 'top' });
       } else {
-        await employees.create(input);
-        toast({ title: 'Employee added to organization', status: 'success', position: 'top' });
+        const createdEmployee = await employees.create(input);
+        toast({ title: 'Employee added to location', status: 'success', position: 'top' });
+        try {
+          await downloadAppointmentLetters([createdEmployee], location);
+        } catch (error) {
+          toast({ title: getErrorMessage(error, 'Employee was added, but the appointment letter could not be generated.'), status: 'error', position: 'top' });
+        }
       }
       return true;
     } catch (error) {
@@ -76,8 +84,13 @@ function OrganizationEmployeesPage({ organizationId, organizationName }: Organiz
   async function handleAssign(employeeIds: string[]): Promise<boolean> {
     setIsAssigning(true);
     try {
-      await employees.assignMany(employeeIds, organizationId);
+        const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
+        try {
+          await downloadAppointmentLetters(assignedEmployees, location);
+        } catch (error) {
+          toast({ title: getErrorMessage(error, 'Employees were assigned, but appointment letters could not be generated.'), status: 'error', position: 'top' });
+        }
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to assign employees.'), status: 'error', position: 'top' });
@@ -91,8 +104,8 @@ function OrganizationEmployeesPage({ organizationId, organizationName }: Organiz
     if (!removingEmployee) return;
     setIsRemoving(true);
     try {
-      await employees.unassignMany([removingEmployee.id], organizationId);
-      toast({ title: 'Employee removed from organization; record kept', status: 'success', position: 'top' });
+      await employees.unassignMany([removingEmployee.id], organizationId, location.id);
+      toast({ title: 'Employee removed from location; record kept', status: 'success', position: 'top' });
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to remove employee from organization.'), status: 'error', position: 'top' });
     } finally {
@@ -158,6 +171,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName }: Organiz
         isOpen={formDialog.isOpen}
         isSaving={isSaving}
         employee={formEmployee}
+        requiredDesignation={!formEmployee ? location.designation : undefined}
         onClose={() => {
           formDialog.onClose();
           setFormEmployee(null);
@@ -168,6 +182,9 @@ function OrganizationEmployeesPage({ organizationId, organizationName }: Organiz
         isOpen={assignmentDialog.isOpen}
         isSaving={isAssigning}
         organizationName={organizationName}
+        organizationId={organizationId}
+        locationId={location.id}
+        locationDesignation={location.designation}
         onClose={assignmentDialog.onClose}
         onAssign={handleAssign}
       />

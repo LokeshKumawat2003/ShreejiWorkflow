@@ -26,6 +26,7 @@ function publicEmployee(employee, role = 'organization') {
 		id: String(value._id || value.id),
 		organizationId: organizationId ? String(organizationId) : '',
 		locationId: locationId ? String(locationId) : '',
+		locationAssignedAt: value.locationAssignedAt || null,
 		organizationName: organization?.organizationName || value.organizationName || '',
 		name: value.name,
 		email: value.email,
@@ -311,7 +312,12 @@ async function createEmployee(user, input = {}) {
 	const organizationId = await resolveOrganizationId(user, input);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
 	await validateEmployeeLocationDesignation(locationId, fields.designation);
-	const employee = await Employee.create({ ...fields, organizationId, locationId });
+	const employee = await Employee.create({
+		...fields,
+		organizationId,
+		locationId,
+		locationAssignedAt: locationId ? new Date() : null,
+	});
 	await employee.populate('organizationId', 'organizationName');
 	return publicEmployee(employee, user.role);
 }
@@ -403,7 +409,12 @@ async function assignEmployees(user, input = {}) {
 		throw httpError(409, 'An employee with one of these email addresses already belongs to this organization.');
 	}
 
-	await Employee.updateMany(employeeFilter, { $set: { organizationId, locationId } });
+	await Employee.updateMany(employeeFilter, {
+		$set: {
+			organizationId,
+			...(locationId ? { locationId, locationAssignedAt: new Date() } : {}),
+		},
+	});
 	const assigned = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName');
 	return assigned.map((employee) => publicEmployee(employee, user.role));
 }
@@ -429,11 +440,11 @@ async function unassignEmployees(user, input = {}) {
 	const employees = await Employee.find(employeeFilter);
 	if (employees.length !== employeeIds.length) throw httpError(404, 'One or more employees do not belong to this organization.');
 	if (input.locationId !== undefined) {
-		await Employee.updateMany(employeeFilter, { $set: { locationId: null } });
-		return employees.map((employee) => publicEmployee({ ...employee.toObject(), locationId: null }, user.role));
+		await Employee.updateMany(employeeFilter, { $set: { locationId: null, locationAssignedAt: null } });
+		return employees.map((employee) => publicEmployee({ ...employee.toObject(), locationId: null, locationAssignedAt: null }, user.role));
 	}
-	await Employee.updateMany(employeeFilter, { $set: { organizationId: null, locationId: null } });
-	return employees.map((employee) => publicEmployee({ ...employee.toObject(), organizationId: null, locationId: null }, user.role));
+	await Employee.updateMany(employeeFilter, { $set: { organizationId: null, locationId: null, locationAssignedAt: null } });
+	return employees.map((employee) => publicEmployee({ ...employee.toObject(), organizationId: null, locationId: null, locationAssignedAt: null }, user.role));
 }
 
 async function deleteEmployee(user, id) {

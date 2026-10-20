@@ -265,7 +265,7 @@ test('removing an employee from an organization keeps the employee and attendanc
 
     assert.deepEqual(employeeUpdate, {
       filter: { _id: { $in: [employeeId] }, organizationId },
-      update: { $set: { organizationId: null, locationId: null } },
+      update: { $set: { organizationId: null, locationId: null, locationAssignedAt: null } },
     });
     assert.equal(result[0].id, employeeId);
     assert.equal(result[0].organizationId, '');
@@ -305,7 +305,7 @@ test('organization users can only release employees from their own organization'
     );
     assert.deepEqual(employeeUpdate, {
       filter: { _id: { $in: [employeeId] }, organizationId },
-      update: { $set: { organizationId: null, locationId: null } },
+      update: { $set: { organizationId: null, locationId: null, locationAssignedAt: null } },
     });
   } finally {
     Employee.find = originalFind;
@@ -949,7 +949,7 @@ test('deleting a location clears employee placement but keeps employee records',
     await deleteLocation({ id: '507f1f77bcf86cd799439099', role: 'admin' }, organizationId, locationId);
     assert.deepEqual(employeeUpdate, {
       filter: { organizationId, locationId },
-      update: { $set: { locationId: null } },
+      update: { $set: { locationId: null, locationAssignedAt: null } },
     });
     assert.equal(locationDeleted, true);
   } finally {
@@ -1029,10 +1029,10 @@ test('employees at another location can be moved to a matching new location', as
     assert.equal(assignmentFilter.locationId.$ne, newLocationId);
     assert.equal(assignmentFilter.designation.test(employee.designation), true);
     assert.deepEqual(assignmentFilter.$or[2], { organizationId });
-    assert.deepEqual(assignmentUpdate, {
-      filter: assignmentFilter,
-      update: { $set: { organizationId, locationId: newLocationId } },
-    });
+    assert.deepEqual(assignmentUpdate.filter, assignmentFilter);
+    assert.equal(assignmentUpdate.update.$set.organizationId, organizationId);
+    assert.equal(assignmentUpdate.update.$set.locationId, newLocationId);
+    assert.ok(assignmentUpdate.update.$set.locationAssignedAt instanceof Date);
     assert.equal(assigned[0].locationId, newLocationId);
   } finally {
     User.findOne = originalUserFindOne;

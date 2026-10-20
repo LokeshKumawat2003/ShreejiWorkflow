@@ -99,7 +99,10 @@ async function updateLocation(user, organizationId, locationId, input) {
 
 async function deleteLocation(user, organizationId, locationId) {
 	const { location } = await resolveLocation(user, organizationId, locationId);
-	await Employee.updateMany({ organizationId: location.organizationId, locationId: location._id }, { $set: { locationId: null } });
+	await Employee.updateMany(
+		{ organizationId: location.organizationId, locationId: location._id },
+		{ $set: { locationId: null, locationAssignedAt: null } },
+	);
 	await location.deleteOne();
 	return publicLocation(location);
 }

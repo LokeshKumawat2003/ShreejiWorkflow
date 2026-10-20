@@ -105,7 +105,7 @@ function addAppointmentLetter(
   y += 7;
 
   const valueX = 35;
-  y = drawDetail(document, 'Date of Joining', formatDate(employee.dateOfJoining), margin, valueX, y, pageWidth);
+  y = drawDetail(document, 'Date of Joining', formatDate(employee.locationAssignedAt || employee.dateOfJoining), margin, valueX, y, pageWidth);
   y = drawDetail(document, 'Job Title', `${position}${skillCategory}`, margin, valueX, y, pageWidth);
   y = drawDetail(document, 'Salary', salary, margin, valueX, y, pageWidth);
   y = drawDetail(document, 'Job Location', location.address || location.name, margin, valueX, y, pageWidth);

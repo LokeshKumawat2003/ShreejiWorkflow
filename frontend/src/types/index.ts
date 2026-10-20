@@ -35,6 +35,7 @@ export type Employee = {
   id: string;
   organizationId: string;
   locationId?: string;
+  locationAssignedAt?: string | null;
   organizationName: string;
   name: string;
   email: string;

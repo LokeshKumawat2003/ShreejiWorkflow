@@ -4,6 +4,7 @@ const employeeSchema = new mongoose.Schema(
   {
     organizationId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     locationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Location', default: null },
+    locationAssignedAt: { type: Date, default: null },
     name: { type: String, required: true, trim: true, maxlength: 100 },
     email: { type: String, required: true, trim: true, lowercase: true, maxlength: 254 },
     dateOfBirth: { type: String, trim: true, maxlength: 10, default: '' },

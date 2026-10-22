@@ -28,6 +28,8 @@ const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetM
 const { calculatePayroll } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
+const MasterData = require('../src/models/MasterData');
+const { createMasterData, deleteMasterData, updateMasterData } = require('../src/services/masterDataService');
 
 test('health endpoint works without MongoDB', async (t) => {
   process.env.NODE_ENV = 'test';
@@ -1003,9 +1005,97 @@ test('location input requires a work name, location, designation, and valid stat
     (error) => error.statusCode === 400 && error.message === 'Status must be active or disabled.',
   );
   assert.throws(
-    () => validateLocationInput({ workName: 'Kitchen', name: 'Main office', designation: 'electrician' }),
+    () => validateLocationInput({ workName: 'Kitchen', name: 'Main office', designation: '  ' }),
     (error) => error.statusCode === 400 && error.message === 'Select a valid designation.',
   );
+});
+
+test('location creation rejects a designation missing from master data', async () => {
+  const originalUserFindOne = User.findOne;
+  const originalMasterFindOne = MasterData.findOne;
+  User.findOne = async () => ({ id: '507f1f77bcf86cd799439011' });
+  MasterData.findOne = (filter) => {
+    assert.deepEqual(filter, { type: 'designation', code: 'electrician' });
+    return { lean: async () => null };
+  };
+
+  try {
+    await assert.rejects(
+      createLocation(
+        { id: '507f1f77bcf86cd799439099', role: 'admin' },
+        '507f1f77bcf86cd799439011',
+        { workName: 'Kitchen', name: 'Main office', designation: 'Electrician' },
+      ),
+      (error) => error.statusCode === 400 && error.message === 'Select a valid designation.',
+    );
+  } finally {
+    User.findOne = originalUserFindOne;
+    MasterData.findOne = originalMasterFindOne;
+  }
+});
+
+test('master data can only be changed by administrators', async () => {
+  const organization = { id: '507f1f77bcf86cd799439011', role: 'organization' };
+  await assert.rejects(
+    createMasterData(organization, { type: 'designation', name: 'Driver' }),
+    (error) => error.statusCode === 403,
+  );
+  await assert.rejects(
+    updateMasterData(organization, '507f1f77bcf86cd799439012', { name: 'Driver' }),
+    (error) => error.statusCode === 403,
+  );
+  await assert.rejects(
+    deleteMasterData(organization, '507f1f77bcf86cd799439012'),
+    (error) => error.statusCode === 403,
+  );
+});
+
+test('master data creation validates type and name and derives the stored code', async () => {
+  const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
+  const originalExists = MasterData.exists;
+  const originalCreate = MasterData.create;
+  let created;
+  MasterData.exists = async () => null;
+  MasterData.create = async (input) => {
+    created = input;
+    return { ...input, _id: '507f1f77bcf86cd799439013' };
+  };
+
+  try {
+    await assert.rejects(
+      createMasterData(admin, { type: 'department', name: 'Driver' }),
+      (error) => error.statusCode === 400 && error.message === 'Select a valid master data type.',
+    );
+    await assert.rejects(
+      createMasterData(admin, { type: 'designation', name: '   ' }),
+      (error) => error.statusCode === 400 && error.message === 'Name is required.',
+    );
+    await createMasterData(admin, { type: 'employmentType', name: '  Daily   Wage ' });
+    assert.deepEqual(created, { type: 'employmentType', name: 'Daily Wage', code: 'daily-wage', status: 'active' });
+    const item = await createMasterData(admin, { type: 'designation', name: 'Head Cook' });
+    assert.deepEqual(created, { type: 'designation', name: 'Head Cook', code: 'head cook', status: 'active' });
+    assert.equal(item.usageCount, 0);
+  } finally {
+    MasterData.exists = originalExists;
+    MasterData.create = originalCreate;
+  }
+});
+
+test('master data in use cannot be deleted', async () => {
+  const originalFindById = MasterData.findById;
+  const originalCount = Employee.countDocuments;
+  MasterData.findById = async () => ({ _id: '507f1f77bcf86cd799439013', type: 'skillCategory', name: 'Skilled', code: 'skilled' });
+  Employee.countDocuments = async () => 3;
+
+  try {
+    await assert.rejects(
+      deleteMasterData({ id: '507f1f77bcf86cd799439099', role: 'admin' }, '507f1f77bcf86cd799439013'),
+      (error) => error.statusCode === 409 && error.message.includes('used by 3 records'),
+    );
+  } finally {
+    MasterData.findById = originalFindById;
+    Employee.countDocuments = originalCount;
+  }
 });
 
 test('organization users cannot list locations for another organization', async () => {
@@ -1061,6 +1151,8 @@ test('admins create a location only for an existing organization', async () => {
       toObject() { return this; },
     };
   };
+  const originalMasterFindOne = MasterData.findOne;
+  MasterData.findOne = () => ({ lean: async () => ({ type: 'designation', name: 'Cook', code: 'cook' }) });
 
   try {
     const location = await createLocation(
@@ -1088,6 +1180,7 @@ test('admins create a location only for an existing organization', async () => {
   } finally {
     User.findOne = originalFindOne;
     Location.create = originalCreate;
+    MasterData.findOne = originalMasterFindOne;
   }
 });
 
@@ -1113,6 +1206,8 @@ test('admins can update location details within the owning organization', async 
     assert.deepEqual(filter, { _id: locationId, organizationId });
     return location;
   };
+  const originalMasterFindOne = MasterData.findOne;
+  MasterData.findOne = () => ({ lean: async () => ({ type: 'designation', name: 'Plumber', code: 'plumber' }) });
 
   try {
     const updated = await updateLocation(
@@ -1128,6 +1223,7 @@ test('admins can update location details within the owning organization', async 
   } finally {
     User.findOne = originalFindOne;
     Location.findOne = originalLocationFindOne;
+    MasterData.findOne = originalMasterFindOne;
   }
 });
 

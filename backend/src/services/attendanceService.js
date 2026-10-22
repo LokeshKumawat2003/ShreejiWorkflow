@@ -16,6 +16,9 @@ const {
 
 const ATTENDANCE_STATUSES = ['present', 'absent'];
 const HISTORY_PAGE_SIZE = 10;
+const REGISTER_PAGE_SIZE = 20;
+const REGISTER_MAX_PAGE_SIZE = 100;
+const REGISTER_FILTERS = ['all', 'absent', 'full', 'unmarked'];
 
 function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -63,7 +66,7 @@ async function getLocationEmployeeIds(locationId, organizationId) {
   return Employee.find({
     organizationId,
     locationId,
-    designation: new RegExp(`^${location.designation}$`, 'i'),
+    designation: new RegExp(`^${escapeRegex(location.designation)}$`, 'i'),
   }).distinct('_id');
 }
 
@@ -514,7 +517,7 @@ async function getAttendanceRegister(user, input = {}) {
     marksByEmployee.get(key).set(Number(record.date.slice(8, 10)), record.status === 'present' ? 'P' : 'A');
   }
 
-  const rows = employees
+  const allRows = employees
     .filter((employee) => employee.status === 'active' || marksByEmployee.has(String(employee._id)))
     .map((employee, index) => {
       const marks = marksByEmployee.get(String(employee._id)) || new Map();
@@ -530,6 +533,57 @@ async function getAttendanceRegister(user, input = {}) {
       };
     });
 
+  const today = currentDateInTimeZone(input.timeZone || 'UTC');
+  const elapsedDays = today.slice(0, 7) > input.month
+    ? daysInMonth
+    : today.slice(0, 7) < input.month ? 0 : Number(today.slice(8, 10));
+
+  let present = 0;
+  let absent = 0;
+  let marked = 0;
+  for (const row of allRows) {
+    for (const [index, mark] of row.days.entries()) {
+      if (mark === 'P') present += 1;
+      else if (mark === 'A') absent += 1;
+      if (mark && index < elapsedDays) marked += 1;
+    }
+  }
+  const summary = {
+    employees: allRows.length,
+    present,
+    absent,
+    unmarked: Math.max(allRows.length * elapsedDays - marked, 0),
+  };
+  const categories = [...new Set(allRows.map((row) => row.skillCategory).filter(Boolean))].sort();
+
+  const search = typeof input.search === 'string' ? input.search.trim().slice(0, 100).toLowerCase() : '';
+  const category = typeof input.category === 'string' && input.category !== 'all' ? input.category : '';
+  const attendanceFilter = REGISTER_FILTERS.includes(input.filter) ? input.filter : 'all';
+  const filteredRows = allRows.filter((row) => {
+    if (category && row.skillCategory !== category) return false;
+    const elapsed = row.days.slice(0, elapsedDays);
+    if (attendanceFilter === 'absent' && !row.days.includes('A')) return false;
+    if (attendanceFilter === 'full' && (elapsed.length === 0 || elapsed.some((mark) => mark !== 'P'))) return false;
+    if (attendanceFilter === 'unmarked' && !elapsed.includes('')) return false;
+    if (!search) return true;
+    return row.name.toLowerCase().includes(search) || row.parentName.toLowerCase().includes(search);
+  });
+
+  let rows = filteredRows;
+  let pagination = null;
+  if (input.page !== undefined) {
+    const requestedPage = Number(input.page);
+    const requestedLimit = Number(input.limit);
+    const limit = Math.min(
+      Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : REGISTER_PAGE_SIZE,
+      REGISTER_MAX_PAGE_SIZE,
+    );
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / limit));
+    const page = Math.min(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1, totalPages);
+    rows = filteredRows.slice((page - 1) * limit, page * limit);
+    pagination = { page, limit, total: filteredRows.length, totalPages };
+  }
+
   return {
     month: input.month,
     periodLabel: period.label,
@@ -544,6 +598,10 @@ async function getAttendanceRegister(user, input = {}) {
     },
     rows,
     totalMandays: rows.reduce((sum, row) => sum + row.totalPresent, 0),
+    elapsedDays,
+    summary,
+    categories,
+    pagination,
   };
 }
 

@@ -3,6 +3,7 @@ const Location = require('../models/Location');
 const Employee = require('../models/Employee');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
+const { resolveMasterValue } = require('./masterDataService');
 
 function publicLocation(location) {
 	const value = location.toObject ? location.toObject() : location;
@@ -54,10 +55,11 @@ function validateLocationInput(input = {}, { partial = false } = {}) {
 		fields[key] = value;
 	}
 	if (!partial || input.designation !== undefined) {
-		if (!['cook', 'event', 'plumber'].includes(designation)) {
+		const normalizedDesignation = designation.trim().toLowerCase();
+		if (!normalizedDesignation || normalizedDesignation.length > 100) {
 			throw httpError(400, 'Select a valid designation.');
 		}
-		fields.designation = designation;
+		fields.designation = normalizedDesignation;
 	}
 	if (!partial || input.status !== undefined) {
 		if (!['active', 'disabled'].includes(status)) throw httpError(400, 'Status must be active or disabled.');
@@ -85,6 +87,7 @@ async function listLocations(user, organizationId) {
 async function createLocation(user, organizationId, input) {
 	const resolvedOrganizationId = await resolveOrganizationId(user, organizationId);
 	const fields = validateLocationInput(input);
+	fields.designation = await resolveMasterValue('designation', fields.designation, { store: 'code' });
 	const location = await Location.create({ ...fields, organizationId: resolvedOrganizationId });
 	return publicLocation(location);
 }
@@ -92,6 +95,9 @@ async function createLocation(user, organizationId, input) {
 async function updateLocation(user, organizationId, locationId, input) {
 	const { location } = await resolveLocation(user, organizationId, locationId);
 	const fields = validateLocationInput(input, { partial: true });
+	if (fields.designation !== undefined && fields.designation !== location.designation) {
+		fields.designation = await resolveMasterValue('designation', fields.designation, { store: 'code' });
+	}
 	Object.assign(location, fields);
 	await location.save();
 	return publicLocation(location);

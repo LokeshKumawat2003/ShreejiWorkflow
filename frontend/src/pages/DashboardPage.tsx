@@ -22,6 +22,7 @@ import AdminPayrollPage from './Organizations/AdminPayrollPage';
 import api, { clearAccessToken } from '../services/api';
 import type { User, UserRole } from '../types';
 import EmployeesPage from './Employees/EmployeesPage';
+import SettingsPage from './Settings/SettingsPage';
 
 type DashboardPageProps = {
   role: UserRole;
@@ -123,6 +124,8 @@ function DashboardPage({ role }: DashboardPageProps) {
               <OrganizationsPage />
             ) : role === 'admin' && activeTab === 'Payroll' ? (
               <AdminPayrollPage />
+            ) : role === 'admin' && activeTab === 'Settings' ? (
+              <SettingsPage />
             ) : activeTab !== 'Dashboard' ? (
               <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="md" p={{ base: 5, md: 7 }}>
                 <Heading size="sm" color="slate.900">{activeTab}</Heading>

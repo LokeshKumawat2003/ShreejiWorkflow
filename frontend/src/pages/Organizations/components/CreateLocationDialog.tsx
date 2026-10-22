@@ -1,6 +1,8 @@
 import { FormControl, FormLabel, Input, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Select, Textarea } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
 import ActionButton from '../../../components/common/ActionButton';
+import MasterDataSelect from '../../../components/common/MasterDataSelect';
+import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { CreateLocationInput } from '../../../services/locationService';
 import type { OrganizationLocation } from '../../../types';
 
@@ -16,7 +18,8 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 	const [workName, setWorkName] = useState('');
 	const [opNumber, setOpNumber] = useState('');
 	const [address, setAddress] = useState('');
-	const [designation, setDesignation] = useState<OrganizationLocation['designation']>('cook');
+	const [designation, setDesignation] = useState('');
+	const { options: masterOptions, isLoading: isLoadingMasterData } = useMasterDataOptions(isOpen);
 	const [status, setStatus] = useState<OrganizationLocation['status']>('active');
 
 	useEffect(() => {
@@ -24,7 +27,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 		setWorkName(location?.workName || '');
 		setOpNumber(location?.opNumber || '');
 		setAddress(location?.address || location?.name || '');
-		setDesignation(location?.designation || 'cook');
+		setDesignation(location?.designation || '');
 		setStatus(location?.status || 'active');
 	}, [isOpen, location]);
 
@@ -62,11 +65,13 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 						</FormControl>
 						<FormControl isRequired mb={4}>
 							<FormLabel fontSize="sm" fontWeight="600">Designation</FormLabel>
-							<Select value={designation} onChange={(event) => setDesignation(event.target.value as OrganizationLocation['designation'])}>
-								<option value="cook">Cook</option>
-								<option value="event">Event</option>
-								<option value="plumber">Plumber</option>
-							</Select>
+							<MasterDataSelect
+								items={masterOptions.designation}
+								valueKey="code"
+								placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
+								value={designation}
+								onChange={setDesignation}
+							/>
 						</FormControl>
 						<FormControl>
 							<FormLabel fontSize="sm" fontWeight="600">Status</FormLabel>

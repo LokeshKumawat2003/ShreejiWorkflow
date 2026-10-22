@@ -11,6 +11,7 @@ import {
 	Stack,
 	Text,
 } from '@chakra-ui/react';
+import useMasterDataOptions, { masterLabel } from '../../../hooks/useMasterDataOptions';
 import type { Employee, UserRole } from '../../../types';
 
 type EmployeeDetailsPageProps = {
@@ -30,6 +31,7 @@ function formatCreatedAt(value?: string) {
 
 function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit }: EmployeeDetailsPageProps) {
 	const isActive = employee.status === 'active';
+	const { options: masterOptions } = useMasterDataOptions();
 	const maskedAccount = employee.bankAccountNumber
 		? `•••• ${employee.bankAccountNumber.slice(-4)}`
 		: 'Not provided';
@@ -73,7 +75,7 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit }: Empl
 						<Detail label="UAN" value={employee.uan} />
 						<Detail label="ESIC insurance number" value={employee.esicNumber} />
 						<Detail label="Designation" value={employee.designation} />
-						<Detail label="Type of employment" value={employee.employmentType} />
+						<Detail label="Type of employment" value={masterLabel(masterOptions.employmentType, employee.employmentType)} />
 						<Detail label="Category of skill" value={employee.skillCategory} />
 						<Detail label="Date of joining" value={employee.dateOfJoining} />
 						<Detail label="Basic pay" value={String(employee.basicPay)} />

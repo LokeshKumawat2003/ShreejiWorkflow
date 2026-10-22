@@ -36,6 +36,7 @@ const navigation: NavigationItem[] = [
   { label: 'Employees', icon: AtSignIcon },
   { label: 'Attendance', icon: CheckCircleIcon, roles: ['organization'] },
   { label: 'Payroll', icon: TimeIcon, roles: ['admin'] },
+  { label: 'Settings', icon: SettingsIcon, roles: ['admin'] },
 ];
 
 function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }: DashboardSidebarProps) {

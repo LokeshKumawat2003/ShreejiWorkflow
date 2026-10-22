@@ -15,7 +15,7 @@ const employeeSchema = new mongoose.Schema(
     uan: { type: String, trim: true, maxlength: 30, default: '' },
     esicNumber: { type: String, trim: true, maxlength: 30, default: '' },
     designation: { type: String, trim: true, maxlength: 100, default: '' },
-    employmentType: { type: String, enum: ['', 'regular', 'fixed-term', 'contractual'], default: '' },
+    employmentType: { type: String, trim: true, lowercase: true, maxlength: 100, default: '' },
     skillCategory: { type: String, trim: true, maxlength: 100, default: '' },
     dateOfJoining: { type: String, trim: true, maxlength: 10, default: '' },
     basicPay: { type: Number, min: 0, max: 1000000000000, default: 0 },

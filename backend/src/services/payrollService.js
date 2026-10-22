@@ -4,6 +4,7 @@ const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
+const { escapeRegex } = require('../utils/validation');
 
 function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -31,7 +32,7 @@ async function calculatePayroll(user, options = {}) {
     locationEmployeeIds = await Employee.find({
       organizationId,
       locationId: options.locationId,
-      designation: new RegExp(`^${location.designation}$`, 'i'),
+      designation: new RegExp(`^${escapeRegex(location.designation)}$`, 'i'),
     }).distinct('_id');
   }
   const { fromDate, toDate } = options;

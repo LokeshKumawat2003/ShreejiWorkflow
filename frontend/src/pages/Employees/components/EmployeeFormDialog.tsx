@@ -20,6 +20,8 @@ import {
 import { useEffect, useState, type FormEvent } from 'react';
 import ActionButton from '../../../components/common/ActionButton';
 import FormInput from '../../../components/common/FormInput';
+import MasterDataSelect from '../../../components/common/MasterDataSelect';
+import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { EmployeeInput } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';
 
@@ -52,7 +54,8 @@ function EmployeeFormDialog({
   const [uan, setUan] = useState('');
   const [esicNumber, setEsicNumber] = useState('');
   const [designation, setDesignation] = useState('');
-  const [employmentType, setEmploymentType] = useState<EmployeeInput['employmentType']>('');
+  const [employmentType, setEmploymentType] = useState('');
+  const { options: masterOptions, isLoading: isLoadingMasterData } = useMasterDataOptions(isOpen);
   const [skillCategory, setSkillCategory] = useState('');
   const [dateOfJoining, setDateOfJoining] = useState('');
   const [basicPay, setBasicPay] = useState('0');
@@ -204,23 +207,39 @@ function EmployeeFormDialog({
               <FormInput label="ESIC insurance number (if available)" maxLength={30} value={esicNumber} onChange={(event) => setEsicNumber(event.target.value)} />
               <FormControl>
                 <FormLabel mb={2} fontSize="sm" fontWeight="600" color="slate.700">Designation</FormLabel>
-                <Select h="44px" isRequired={Boolean(requiredDesignation)} isDisabled={Boolean(requiredDesignation)} value={designation} onChange={(event) => setDesignation(event.target.value)}>
-                  <option value="">Select designation</option>
-                  <option value="Cook">Cook</option>
-                  <option value="Plumber">Plumber</option>
-                  <option value="Event">Event</option>
-                </Select>
+                <MasterDataSelect
+                  h="44px"
+                  items={masterOptions.designation}
+                  valueKey="name"
+                  placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
+                  isRequired={Boolean(requiredDesignation)}
+                  isDisabled={Boolean(requiredDesignation)}
+                  value={designation}
+                  onChange={setDesignation}
+                />
               </FormControl>
               <FormControl>
                 <FormLabel mb={2} fontSize="sm" fontWeight="600" color="slate.700">Type of employment</FormLabel>
-                <Select h="44px" value={employmentType} onChange={(event) => setEmploymentType(event.target.value as EmployeeInput['employmentType'])}>
-                  <option value="">Select type</option>
-                  <option value="regular">Regular</option>
-                  <option value="fixed-term">Fixed-term employment</option>
-                  <option value="contractual">Contractual</option>
-                </Select>
+                <MasterDataSelect
+                  h="44px"
+                  items={masterOptions.employmentType}
+                  valueKey="code"
+                  placeholder={isLoadingMasterData ? 'Loading…' : 'Select type'}
+                  value={employmentType}
+                  onChange={setEmploymentType}
+                />
               </FormControl>
-              <FormInput label="Category of skill" maxLength={100} value={skillCategory} onChange={(event) => setSkillCategory(event.target.value)} />
+              <FormControl>
+                <FormLabel mb={2} fontSize="sm" fontWeight="600" color="slate.700">Category of skill</FormLabel>
+                <MasterDataSelect
+                  h="44px"
+                  items={masterOptions.skillCategory}
+                  valueKey="name"
+                  placeholder={isLoadingMasterData ? 'Loading…' : 'Select category'}
+                  value={skillCategory}
+                  onChange={setSkillCategory}
+                />
+              </FormControl>
               <FormInput label="Date of joining" type="date" value={dateOfJoining} onChange={(event) => setDateOfJoining(event.target.value)} />
               <FormInput label="Wages / Basic pay" type="number" min={0} max={1_000_000_000_000} step="0.01" value={basicPay} onChange={(event) => { setBasicPay(event.target.value); setWageError(''); }} />
               <FormInput label="Dearness allowance" type="number" min={0} max={1_000_000_000_000} step="0.01" value={dearnessAllowance} onChange={(event) => { setDearnessAllowance(event.target.value); setWageError(''); }} />

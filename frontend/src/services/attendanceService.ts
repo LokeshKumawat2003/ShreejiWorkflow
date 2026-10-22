@@ -137,10 +137,31 @@ export type AttendanceRegister = {
   location: { workName: string; name: string; address: string; opNumber: string };
   rows: AttendanceRegisterRow[];
   totalMandays: number;
+  elapsedDays: number;
+  summary: { employees: number; present: number; absent: number; unmarked: number };
+  categories: string[];
+  pagination: { page: number; limit: number; total: number; totalPages: number } | null;
 };
 
-export async function getAttendanceRegister(params: { organizationId: string; locationId: string; month: string }) {
-  const { data } = await api.get<AttendanceRegister>('/attendance/register', { params });
+export type AttendanceRegisterFilter = 'all' | 'absent' | 'full' | 'unmarked';
+
+export async function getAttendanceRegister(
+  params: {
+    organizationId: string;
+    locationId: string;
+    month: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    category?: string;
+    filter?: AttendanceRegisterFilter;
+  },
+  signal?: AbortSignal,
+) {
+  const { data } = await api.get<AttendanceRegister>('/attendance/register', {
+    params: { ...params, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    signal,
+  });
   return data;
 }
 

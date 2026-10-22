@@ -12,7 +12,7 @@ export type EmployeeInput = {
   uan: string;
   esicNumber: string;
   designation: string;
-  employmentType: '' | 'regular' | 'fixed-term' | 'contractual';
+  employmentType: string;
   skillCategory: string;
   dateOfJoining: string;
   basicPay: number;

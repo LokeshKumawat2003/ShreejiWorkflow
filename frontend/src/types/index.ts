@@ -24,9 +24,22 @@ export type OrganizationLocation = {
   opNumber: string;
   name: string;
   address: string;
-  designation: 'cook' | 'event' | 'plumber';
+  designation: string;
   status: 'active' | 'disabled';
   createdAt: string;
+};
+
+export type MasterDataType = 'designation' | 'employmentType' | 'skillCategory';
+
+export type MasterDataItem = {
+  id: string;
+  type: MasterDataType;
+  name: string;
+  code: string;
+  status: 'active' | 'disabled';
+  usageCount?: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type EmployeeStatus = 'active' | 'disabled';
@@ -47,7 +60,7 @@ export type Employee = {
   uan: string;
   esicNumber: string;
   designation: string;
-  employmentType: '' | 'regular' | 'fixed-term' | 'contractual';
+  employmentType: string;
   skillCategory: string;
   dateOfJoining: string;
   basicPay: number;

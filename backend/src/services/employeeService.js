@@ -6,6 +6,7 @@ const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail } = require('../utils/user');
 const { escapeRegex, validateEmail } = require('../utils/validation');
+const { resolveMasterValue } = require('./masterDataService');
 
 const PAGE_SIZE = 10;
 const BANK_FIELDS = [
@@ -96,6 +97,21 @@ async function validateEmployeeLocationDesignation(locationId, designation) {
 	}
 }
 
+const MASTER_FIELDS = [
+	['designation', 'name'],
+	['employmentType', 'code'],
+	['skillCategory', 'name'],
+];
+
+async function resolveEmployeeMasterFields(fields, current = null) {
+	for (const [field, store] of MASTER_FIELDS) {
+		const value = fields[field];
+		if (!value) continue;
+		if (current && String(current[field] || '').toLowerCase() === value.toLowerCase()) continue;
+		fields[field] = await resolveMasterValue(field, value, { store });
+	}
+}
+
 function validateEmployeeInput(input, { partial = false } = {}) {
 	const fields = {};
 	const name = typeof input.name === 'string' ? input.name.trim() : '';
@@ -154,10 +170,8 @@ function validateEmployeeInput(input, { partial = false } = {}) {
 		}
 	}
 	if (!partial || input.employmentType !== undefined) {
-		const employmentType = typeof input.employmentType === 'string' ? input.employmentType : '';
-		if (!['', 'regular', 'fixed-term', 'contractual'].includes(employmentType)) {
-			throw httpError(400, 'Select a valid employment type.');
-		}
+		const employmentType = typeof input.employmentType === 'string' ? input.employmentType.trim().toLowerCase() : '';
+		if (employmentType.length > 100) throw httpError(400, 'Select a valid employment type.');
 		fields.employmentType = employmentType;
 	}
 	if (fields.aadhaarNumber) {
@@ -240,7 +254,7 @@ async function listEmployees(user, options = {}) {
 		const location = await Location.findById(locationId).select('designation');
 		filter.organizationId = { $in: [organizationId, null] };
 		filter.locationId = { $ne: locationId };
-		filter.designation = new RegExp(`^${location.designation}$`, 'i');
+		filter.designation = new RegExp(`^${escapeRegex(location.designation)}$`, 'i');
 	}
 
 	if (!isLocationAssignmentList && user.role === 'admin' && options.organizationId) {
@@ -250,11 +264,12 @@ async function listEmployees(user, options = {}) {
 	if (options.locationId !== undefined) {
 		filter.locationId = await resolveLocationId(options.locationId, filter.organizationId || user.id);
 		const location = await Location.findById(filter.locationId).select('designation');
-		filter.designation = new RegExp(`^${location.designation}$`, 'i');
+		filter.designation = new RegExp(`^${escapeRegex(location.designation)}$`, 'i');
 		hasLocationDesignation = true;
 	}
-	if (!hasLocationDesignation && options.designation && ['cook', 'event', 'plumber'].includes(String(options.designation).toLowerCase())) {
-		filter.designation = new RegExp(`^${String(options.designation).toLowerCase()}$`, 'i');
+	const designationOption = typeof options.designation === 'string' ? options.designation.trim().slice(0, 100) : '';
+	if (!hasLocationDesignation && designationOption) {
+		filter.designation = new RegExp(`^${escapeRegex(designationOption)}$`, 'i');
 	}
 	if (!isLocationAssignmentList && user.role === 'admin' && (options.unassigned === 'true' || options.unassigned === true)) {
 		filter.organizationId = null;
@@ -312,6 +327,7 @@ async function createEmployee(user, input = {}) {
 	const organizationId = await resolveOrganizationId(user, input);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
 	await validateEmployeeLocationDesignation(locationId, fields.designation);
+	await resolveEmployeeMasterFields(fields);
 	const employee = await Employee.create({
 		...fields,
 		organizationId,
@@ -357,6 +373,11 @@ async function updateEmployee(user, id, input = {}) {
 		const targetLocationId = fields.locationId !== undefined ? fields.locationId : employee.locationId;
 		await validateEmployeeLocationDesignation(targetLocationId, fields.designation);
 	}
+	if (MASTER_FIELDS.some(([field]) => fields[field])) {
+		const current = await Employee.findById(id).select('designation employmentType skillCategory');
+		if (!current) throw httpError(404, 'Employee not found.');
+		await resolveEmployeeMasterFields(fields, current);
+	}
 	const employee = await Employee.findOneAndUpdate(
 		{ _id: id },
 		{ $set: fields },
@@ -381,7 +402,7 @@ async function assignEmployees(user, input = {}) {
 	let designationFilter;
 	if (locationId) {
 		const location = await Location.findById(locationId).select('designation');
-		designationFilter = new RegExp(`^${location.designation}$`, 'i');
+		designationFilter = new RegExp(`^${escapeRegex(location.designation)}$`, 'i');
 	}
 	const employeeFilter = {
 		_id: { $in: employeeIds },

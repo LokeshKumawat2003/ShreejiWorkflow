@@ -5,7 +5,6 @@ import {
   Box,
   Button,
   HStack,
-  Input,
   Spinner,
   Table,
   TableContainer,
@@ -18,7 +17,7 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import ActionButton from '../../../components/ui/ActionButton';
+import { ActionButton, FilterInput } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { listAttendance, markAttendance, type AttendanceEntry, type AttendanceStatus } from '../../../services/attendanceService';
 import type { UserRole } from '../../../types';
@@ -192,14 +191,12 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
           {isOrganizationUser ? (
             <Text fontSize="sm" fontWeight="600" color="slate.700">{formatAttendanceDate(date)}</Text>
           ) : (
-            <Input
+            <FilterInput
               aria-label="Attendance date"
               type="date"
               value={date}
               max={currentLocalDate()}
-              h="40px"
               maxW="190px"
-              fontSize="sm"
               onChange={(event) => setDate(event.target.value)}
             />
           )}

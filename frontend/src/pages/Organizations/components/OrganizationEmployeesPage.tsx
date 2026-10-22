@@ -1,6 +1,7 @@
 import { AddIcon } from '@chakra-ui/icons';
-import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
+import { useDisclosure, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
+import { ActionButton } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { createAppointmentLetterPdf, createCombinedAppointmentLettersPdf, downloadAppointmentLetters } from '../../../services/appointmentLetterService';
 import { emailAppointmentLetter, emailOrganizationAppointmentLetters } from '../../../services/employeeService';
@@ -151,6 +152,14 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
     }
   }
 
+  async function handleDownloadLetter(employee: Employee) {
+    try {
+      await downloadAppointmentLetters([employee], location);
+    } catch (error) {
+      toast({ title: getErrorMessage(error, 'Unable to generate the appointment letter.'), status: 'error', position: 'top' });
+    }
+  }
+
   async function handleRemove() {
     if (!removingEmployee) return;
     setIsRemoving(true);
@@ -177,23 +186,18 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
           onEdit={() => openEditDialog(viewingEmployee)}
         />
       ) : (
-        <Stack spacing={5}>
-          <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
-            <Box>
-              <Heading size="md" color="slate.900">Employee Roster</Heading>
-              <Text mt={1} fontSize="sm" color="slate.500">Manage employees assigned to {organizationName}</Text>
-            </Box>
-            <HStack flexWrap="wrap" gap={3}>
-              <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} variant="outline" onClick={assignmentDialog.onOpen}>
-                Assign existing
-              </Button>
-              <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
-                Add Employee
-              </Button>
-            </HStack>
-          </HStack>
-
           <OrganizationEmployeeTable
+            title={`Employee roster · ${organizationName}`}
+            actions={(
+              <>
+                <ActionButton tone="neutral" size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={assignmentDialog.onOpen}>
+                  Assign existing
+                </ActionButton>
+                <ActionButton size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={openCreateDialog}>
+                  Add employee
+                </ActionButton>
+              </>
+            )}
             employees={employees.employees}
             page={employees.page}
             pageSize={employees.pageSize}
@@ -212,12 +216,12 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
             onPageChange={employees.setPage}
             onView={(employee) => void handleView(employee)}
             onEdit={openEditDialog}
+            onDownloadLetter={(employee) => void handleDownloadLetter(employee)}
             onRemove={(employee) => {
               setRemovingEmployee(employee);
               removeDialog.onOpen();
             }}
           />
-        </Stack>
       )}
 
       <EmployeeFormDialog

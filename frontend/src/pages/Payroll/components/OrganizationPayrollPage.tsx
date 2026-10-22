@@ -3,11 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Flex,
-  FormControl,
-  FormLabel,
   HStack,
-  Input,
   Spinner,
   Table,
   TableContainer,
@@ -20,7 +16,8 @@ import {
 } from '@chakra-ui/react';
 import { ApiError } from '../../../services/api';
 import { getPayroll, type PayrollResponse } from '../../../services/attendanceService';
-import ActionButton from '../../../components/ui/ActionButton';
+import { ActionButton, FilterBar, FilterField, FilterInput } from '../../../components/ui';
+import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
 
 type OrganizationPayrollPageProps = {
   organizationId?: string;
@@ -173,6 +170,15 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
             size="sm"
             leftIcon={<DownloadIcon />}
             isDisabled={!payroll || payroll.lines.length === 0 || isLoading || Boolean(loadError)}
+            onClick={() => payroll && void downloadSalarySlipsPdf(payroll.lines, fromDate, toDate)}
+          >
+            Salary slips
+          </ActionButton>
+          <ActionButton
+            tone="neutral"
+            size="sm"
+            leftIcon={<DownloadIcon />}
+            isDisabled={!payroll || payroll.lines.length === 0 || isLoading || Boolean(loadError)}
             onClick={exportPdf}
           >
             Export PDF
@@ -189,26 +195,26 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
         </HStack>
       </HStack>
 
-      <Flex px={{ base: 3, md: 4 }} py={4} gap={4} align="flex-end" justify="space-between" flexWrap="wrap" borderBottom="1px solid" borderColor="slate.100">
-        <HStack align="flex-end" spacing={3} flexWrap="wrap">
-          <FormControl w={{ base: '100%', sm: '180px' }}>
-            <FormLabel mb={1} ml={1} fontSize="xs" color="slate.500">From</FormLabel>
-            <Input aria-label="Payroll start date" h="40px" fontSize="sm" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} />
-          </FormControl>
-          <FormControl w={{ base: '100%', sm: '180px' }}>
-            <FormLabel mb={1} ml={1} fontSize="xs" color="slate.500">Through</FormLabel>
-            <Input aria-label="Payroll end date" h="40px" fontSize="sm" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} />
-          </FormControl>
-        </HStack>
-        <HStack spacing={6} flexWrap="wrap">
-          {payroll?.totals.map(({ currency, total }) => (
-            <Box key={currency} pl={3} borderLeft="3px solid" borderColor="brand.500">
-              <Text fontSize="xs" fontWeight="700" color="slate.500">TOTAL PAYROLL · {currency}</Text>
-              <Text fontSize="lg" fontWeight="700" color="slate.900">{formatAmount(total, currency)}</Text>
-            </Box>
-          ))}
-        </HStack>
-      </Flex>
+      <FilterBar
+        variant="inset"
+        actions={(
+          <HStack spacing={6} flexWrap="wrap">
+            {payroll?.totals.map(({ currency, total }) => (
+              <Box key={currency} pl={3} borderLeft="3px solid" borderColor="brand.500">
+                <Text fontSize="11px" fontWeight="700" color="slate.500" letterSpacing="0.06em">TOTAL PAYROLL · {currency}</Text>
+                <Text fontSize="lg" lineHeight="1.2" fontWeight="700" color="slate.900">{formatAmount(total, currency)}</Text>
+              </Box>
+            ))}
+          </HStack>
+        )}
+      >
+        <FilterField label="From" flex={{ base: '1 1 45%', md: '0 0 175px' }}>
+          <FilterInput aria-label="Payroll start date" type="date" value={fromDate} max={toDate} onChange={(event) => setFromDate(event.target.value)} />
+        </FilterField>
+        <FilterField label="Through" flex={{ base: '1 1 45%', md: '0 0 175px' }}>
+          <FilterInput aria-label="Payroll end date" type="date" value={toDate} min={fromDate} onChange={(event) => setToDate(event.target.value)} />
+        </FilterField>
+      </FilterBar>
 
       {loadError && <Alert status="error" borderRadius={0}>{loadError}</Alert>}
       <TableContainer>

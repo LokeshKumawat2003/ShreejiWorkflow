@@ -1,0 +1,249 @@
+import type { PayrollLine } from '../../../services/attendanceService';
+import { getCompanyProfile } from '../../../services/settingsService';
+
+export type SalarySlipCompany = { name: string; address: string };
+
+export const SALARY_SLIP_COMPANY: SalarySlipCompany = {
+  name: 'M/S. SHREEJI CARETAKER COMPANY',
+  address: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)',
+};
+
+export const SALARY_SLIP_RATES = {
+  bonus: 0.0833,
+  washingAllowance: 0.01,
+  providentFund: 0.12,
+  esi: 0.0075,
+};
+
+export type SalarySlip = {
+  employeeName: string;
+  designation: string;
+  monthYear: string;
+  basic: number;
+  bonus: number;
+  washingAllowance: number;
+  conveyance: number;
+  totalAddition: number;
+  providentFund: number;
+  esi: number;
+  foodCharge: number;
+  houseRent: number;
+  totalDeduction: number;
+  netSalary: number;
+  bankName: string;
+  bankAccountNumber: string;
+  ifscCode: string;
+};
+
+const ONES = [
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function round2(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function belowHundred(value: number) {
+  if (value < 20) return ONES[value];
+  return [TENS[Math.floor(value / 10)], ONES[value % 10].toLowerCase()].filter(Boolean).join(' ');
+}
+
+function belowThousand(value: number) {
+  const hundreds = Math.floor(value / 100);
+  const rest = value % 100;
+  return [hundreds ? `${ONES[hundreds]} Hundred` : '', rest ? belowHundred(rest) : ''].filter(Boolean).join(' ');
+}
+
+export function rupeesInWords(amount: number) {
+  let value = Math.round(amount);
+  if (value === 0) return 'Zero';
+  const parts: string[] = [];
+  const crore = Math.floor(value / 10000000);
+  value %= 10000000;
+  const lakh = Math.floor(value / 100000);
+  value %= 100000;
+  const thousand = Math.floor(value / 1000);
+  value %= 1000;
+  if (crore) parts.push(`${belowThousand(crore)} Crore`);
+  if (lakh) parts.push(`${belowHundred(lakh)} Lakh`);
+  if (thousand) parts.push(`${belowHundred(thousand)} Thousand`);
+  if (value) parts.push(belowThousand(value));
+  return parts.join(' ');
+}
+
+export function salaryMonthYear(fromDate: string, toDate: string) {
+  const format = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    const name = new Date(Date.UTC(year, month - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
+    return `${name.toUpperCase()}-${year}`;
+  };
+  const from = format(fromDate);
+  const to = format(toDate);
+  return from === to ? to : `${from} TO ${to}`;
+}
+
+export function buildSalarySlip(line: PayrollLine, monthYear: string): SalarySlip {
+  const basic = round2(line.grossPay);
+  const bonus = round2(basic * SALARY_SLIP_RATES.bonus);
+  const washingAllowance = 0;
+  const conveyance = 0;
+  const totalAddition = round2(basic + bonus + washingAllowance + conveyance);
+  const providentFund = Math.round(basic * SALARY_SLIP_RATES.providentFund);
+  const esi = Math.ceil(round2(basic * SALARY_SLIP_RATES.esi * 100) - 1e-6) / 100;
+  const foodCharge = 0;
+  const houseRent = 0;
+  const totalDeduction = round2(providentFund + esi + foodCharge + houseRent);
+
+  return {
+    employeeName: line.employeeName,
+    designation: line.designation || line.jobTitle || '',
+    monthYear,
+    basic,
+    bonus,
+    washingAllowance,
+    conveyance,
+    totalAddition,
+    providentFund,
+    esi,
+    foodCharge,
+    houseRent,
+    totalDeduction,
+    netSalary: round2(totalAddition - totalDeduction),
+    bankName: line.bankName,
+    bankAccountNumber: line.bankAccountNumber,
+    ifscCode: line.bankRoutingCode,
+  };
+}
+
+const PAGE_WIDTH = 210;
+const SLIP_HEIGHT = 148.5;
+const FRAME_X = 10;
+const FRAME_WIDTH = PAGE_WIDTH - FRAME_X * 2;
+const LEFT = 20;
+const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
+
+async function loadCompany(): Promise<SalarySlipCompany> {
+  try {
+    const company = await getCompanyProfile();
+    return { name: company.name || SALARY_SLIP_COMPANY.name, address: company.address };
+  } catch {
+    return SALARY_SLIP_COMPANY;
+  }
+}
+
+export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: string, toDate: string) {
+  const [{ jsPDF }, { default: autoTable }, company] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+    loadCompany(),
+  ]);
+  const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
+  const monthYear = salaryMonthYear(fromDate, toDate);
+  const money = (value: number) => value.toFixed(2);
+
+  pdf.setFont('times', 'bold');
+  let nameFontSize = 17;
+  pdf.setFontSize(nameFontSize);
+  while (nameFontSize > 11 && pdf.getTextWidth(company.name) > FRAME_WIDTH - 10) {
+    nameFontSize -= 0.5;
+    pdf.setFontSize(nameFontSize);
+  }
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(8.5);
+  const addressText = company.address.replace(/\s*\n\s*/g, ' ').trim();
+  const addressLines: string[] = addressText ? pdf.splitTextToSize(addressText, FRAME_WIDTH - 10).slice(0, 2) : [];
+  const shift = Math.max(0, addressLines.length - 1) * 3.6 - (addressLines.length === 0 ? 5 : 0);
+
+  lines.forEach((line, index) => {
+    const slot = index % 2;
+    if (index > 0 && slot === 0) pdf.addPage();
+    const top = slot * SLIP_HEIGHT;
+    const slip = buildSalarySlip(line, monthYear);
+
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.4);
+    pdf.rect(FRAME_X, top + 8, FRAME_WIDTH, SLIP_HEIGHT - 16);
+
+    pdf.setTextColor(0);
+    pdf.setFont('times', 'bold');
+    pdf.setFontSize(nameFontSize);
+    pdf.text(company.name, PAGE_WIDTH / 2, top + 19, { align: 'center' });
+    if (addressLines.length > 0) {
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      pdf.text(addressLines, PAGE_WIDTH / 2, top + 25, { align: 'center', lineHeightFactor: 1.2 });
+    }
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10.5);
+    pdf.text('Salary Slip', PAGE_WIDTH / 2, top + 31 + shift, { align: 'center' });
+
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text(`Employee Name:- SH. ${slip.employeeName.toUpperCase()}`, LEFT + 2, top + 39 + shift);
+    pdf.text(`Designation:- ${slip.designation.toUpperCase()}`, LEFT + 2, top + 45 + shift);
+    pdf.text(`Month & Year:- ${slip.monthYear}`, LEFT + 2, top + 51 + shift);
+
+    autoTable(pdf, {
+      startY: top + 53 + shift,
+      margin: { left: LEFT, right: LEFT },
+      tableWidth: TABLE_WIDTH,
+      theme: 'grid',
+      head: [['Earnings', 'Amount', 'Deductions', 'Amount']],
+      body: [
+        ['Basic & DA', money(slip.basic), 'Provident Fund@12%', money(slip.providentFund)],
+        ['Bonus @8.33%', money(slip.bonus), 'E.S.I.@0.75%', money(slip.esi)],
+        ['Washing allowance@1%', money(slip.washingAllowance), 'Food Charge', String(slip.foodCharge)],
+        ['Conveyance', money(slip.conveyance), 'House Rent', String(slip.houseRent)],
+        ['Total Addition', money(slip.totalAddition), 'Total Deduction', money(slip.totalDeduction)],
+        ['', '', 'NET Salary', money(slip.netSalary)],
+      ],
+      styles: {
+        font: 'helvetica',
+        fontSize: 8.5,
+        cellPadding: { top: 1.6, bottom: 1.6, left: 2, right: 2 },
+        textColor: 0,
+        lineColor: 0,
+        lineWidth: 0.25,
+      },
+      headStyles: { fillColor: [255, 255, 255], textColor: 0, fontStyle: 'bold', fontSize: 9.5 },
+      columnStyles: {
+        0: { cellWidth: TABLE_WIDTH * 0.3 },
+        1: { cellWidth: TABLE_WIDTH * 0.2, halign: 'right' },
+        2: { cellWidth: TABLE_WIDTH * 0.3 },
+        3: { cellWidth: TABLE_WIDTH * 0.2, halign: 'right' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'head' && (data.column.index === 1 || data.column.index === 3)) data.cell.styles.halign = 'right';
+        if (data.section === 'body' && data.row.index >= 4) data.cell.styles.fontStyle = 'bold';
+      },
+    });
+
+    const tableEnd = (pdf as InstanceType<typeof jsPDF> & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? top + 100;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9.5);
+    pdf.text(`Rupees : ${rupeesInWords(slip.netSalary)} Rupees Only`, LEFT, tableEnd + 6);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.text(`Name of Bank:-${slip.bankName}`, LEFT + 2, tableEnd + 13);
+    pdf.text(`Bank A/C No.:-${slip.bankAccountNumber}`, PAGE_WIDTH / 2 + 10, tableEnd + 15);
+    pdf.text(`IFSC Code:-${slip.ifscCode}`, LEFT + 2, tableEnd + 19);
+
+    const signY = top + SLIP_HEIGHT - 14;
+    pdf.text('Propritior/Manager:', PAGE_WIDTH / 2 + 10, signY);
+    pdf.setLineWidth(0.2);
+    pdf.line(PAGE_WIDTH / 2 + 41, signY + 0.5, PAGE_WIDTH - LEFT, signY + 0.5);
+
+    if (slot === 0 && index < lines.length - 1) {
+      pdf.setLineDashPattern([1.5, 1.5], 0);
+      pdf.setDrawColor(150);
+      pdf.line(4, SLIP_HEIGHT, PAGE_WIDTH - 4, SLIP_HEIGHT);
+      pdf.setLineDashPattern([], 0);
+      pdf.setDrawColor(0);
+    }
+  });
+
+  pdf.save(`salary-slips-${fromDate}-to-${toDate}.pdf`);
+}

@@ -13,3 +13,13 @@ export const fieldStyles = {
 	_hover: { borderColor: 'slate.400' },
 	_focusVisible: { borderColor: 'brand.500', boxShadow: '0 0 0 1px var(--chakra-colors-brand-500)' },
 } as const;
+
+export const filterControlStyles = {
+	...fieldStyles,
+	h: '40px',
+	borderRadius: '10px',
+	color: 'slate.900',
+	_placeholder: { color: 'slate.400' },
+	_hover: { borderColor: 'slate.300' },
+	_focusVisible: { borderColor: 'brand.500', boxShadow: '0 0 0 3px rgba(79, 70, 229, 0.15)' },
+} as const;

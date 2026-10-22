@@ -1,6 +1,6 @@
 import { Select, type SelectProps } from '@chakra-ui/react';
 import type { SelectOption } from './FormSelect';
-import { fieldStyles } from './fieldStyles';
+import { filterControlStyles } from './fieldStyles';
 
 type FilterSelectProps<T extends string> = Omit<SelectProps, 'onChange' | 'value'> & {
 	label: string;
@@ -13,11 +13,11 @@ function FilterSelect<T extends string>({ label, value, options, onChange, ...se
 	return (
 		<Select
 			aria-label={label}
-			w={{ base: '100%', md: 'auto' }}
-			minW="160px"
+			w="100%"
 			value={value}
 			onChange={(event) => onChange(event.target.value as T)}
-			{...fieldStyles}
+			iconColor="slate.400"
+			{...filterControlStyles}
 			{...selectProps}
 		>
 			{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}

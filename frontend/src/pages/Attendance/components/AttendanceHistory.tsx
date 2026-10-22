@@ -1,4 +1,4 @@
-import { DownloadIcon, EditIcon, SearchIcon } from '@chakra-ui/icons';
+import { DownloadIcon, EditIcon } from '@chakra-ui/icons';
 import {
   Alert,
   Badge,
@@ -6,9 +6,6 @@ import {
   FormControl,
   FormLabel,
   HStack,
-  Input,
-  InputGroup,
-  InputLeftElement,
   IconButton,
   Menu,
   MenuButton,
@@ -33,7 +30,7 @@ import {
   Tr,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import Pagination from '../../../components/ui/Pagination';
+import { FilterBar, FilterField, FilterInput, FilterSelect, Pagination, SearchInput } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
   getAttendanceRegister,
@@ -200,37 +197,38 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
 
   return (
     <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-      <HStack align="center" justify="space-between" flexWrap="wrap" gap={4} px={{ base: 3, md: 4 }} py={4} borderBottom="1px solid" borderColor="slate.100">
-        <InputGroup flex="1" minW="220px" maxW="320px">
-          <InputLeftElement pointerEvents="none" color="slate.400"><SearchIcon /></InputLeftElement>
-          <Input
-            aria-label="Search attendance history"
-            placeholder="Search employees..."
-            h="40px"
-            fontSize="sm"
-            value={search}
-            onChange={(event) => changeSearch(event.target.value)}
+      <FilterBar
+        variant="inset"
+        bg="white"
+        canClear={Boolean(search) || status !== 'all' || Boolean(fromDate) || Boolean(toDate)}
+        onClear={() => {
+          changeSearch('');
+          changeStatus('all');
+          changeDateRange('', '');
+        }}
+      >
+        <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 240px' }} maxW={{ md: '360px' }}>
+          <SearchInput value={search} onChange={changeSearch} placeholder="Search employees..." label="Search attendance history" />
+        </FilterField>
+        <FilterField label="Status" flex={{ base: '1 1 100%', md: '0 0 160px' }}>
+          <FilterSelect<'all' | AttendanceStatus>
+            label="Filter attendance history by status"
+            value={status}
+            onChange={changeStatus}
+            options={[
+              { value: 'all', label: 'All statuses' },
+              { value: 'present', label: 'Present' },
+              { value: 'absent', label: 'Absent' },
+            ]}
           />
-        </InputGroup>
-        <HStack flexWrap="wrap" spacing={3}>
-          <Box minW="145px">
-            <Text mb={1} ml={2} fontSize="xs" color="slate.500">Status</Text>
-            <Select aria-label="Filter attendance history by status" h="40px" fontSize="sm" value={status} onChange={(event) => changeStatus(event.target.value as typeof status)}>
-              <option value="all">All statuses</option>
-              <option value="present">Present</option>
-              <option value="absent">Absent</option>
-            </Select>
-          </Box>
-          <Box>
-            <Text mb={1} ml={2} fontSize="xs" color="slate.500">From</Text>
-            <Input aria-label="Attendance history start date" type="date" h="40px" w="160px" fontSize="sm" value={fromDate} onChange={(event) => changeDateRange(event.target.value, toDate)} />
-          </Box>
-          <Box>
-            <Text mb={1} ml={2} fontSize="xs" color="slate.500">To</Text>
-            <Input aria-label="Attendance history end date" type="date" h="40px" w="160px" fontSize="sm" value={toDate} onChange={(event) => changeDateRange(fromDate, event.target.value)} />
-          </Box>
-        </HStack>
-      </HStack>
+        </FilterField>
+        <FilterField label="From" flex={{ base: '1 1 45%', md: '0 0 165px' }}>
+          <FilterInput aria-label="Attendance history start date" type="date" value={fromDate} max={toDate || undefined} onChange={(event) => changeDateRange(event.target.value, toDate)} />
+        </FilterField>
+        <FilterField label="To" flex={{ base: '1 1 45%', md: '0 0 165px' }}>
+          <FilterInput aria-label="Attendance history end date" type="date" value={toDate} min={fromDate || undefined} onChange={(event) => changeDateRange(fromDate, event.target.value)} />
+        </FilterField>
+      </FilterBar>
 
       {canExportRegister && (
         <HStack
@@ -249,20 +247,15 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
             <Text fontSize="xs" color="slate.500">Monthly register with day-wise P/A, total present, and total mandays.</Text>
           </Box>
           <HStack flexWrap="wrap" spacing={3} align="flex-end">
-            <Box>
-              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Month</Text>
-              <Input
+            <FilterField label="Month" flex="0 0 170px">
+              <FilterInput
                 aria-label="Attendance register month"
                 type="month"
-                h="40px"
-                w="170px"
-                fontSize="sm"
-                bg="white"
                 value={registerMonth}
                 max={currentMonth()}
                 onChange={(event) => setRegisterMonth(event.target.value)}
               />
-            </Box>
+            </FilterField>
             <ActionButton
               tone="neutral"
               leftIcon={<DownloadIcon />}

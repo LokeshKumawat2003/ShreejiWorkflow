@@ -1,10 +1,15 @@
-import { DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
-import { Box, Flex, HStack, Stack, Text } from '@chakra-ui/react';
+import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, ViewIcon } from '@chakra-ui/icons';
+import { HStack, Stack, Text } from '@chakra-ui/react';
+import type { ReactNode } from 'react';
 import {
+  ContentCard,
   DataTable,
   EntityCell,
+  FilterBar,
+  FilterField,
   FilterSelect,
   IconAction,
+  PeopleIcon,
   SearchInput,
   StatStrip,
   StatusBadge,
@@ -39,7 +44,10 @@ type EmployeeTableProps = {
   onView: (employee: Employee) => void;
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
+  onDownloadLetter?: (employee: Employee) => void;
   deleteLabel: string;
+  title?: string;
+  actions?: ReactNode;
 };
 
 const STATUS_OPTIONS = [
@@ -77,7 +85,10 @@ function EmployeeTable({
   onView,
   onEdit,
   onDelete,
+  onDownloadLetter,
   deleteLabel,
+  title = 'Employee directory',
+  actions,
 }: EmployeeTableProps) {
   const isFiltered = Boolean(search.trim()) || status !== 'all';
 
@@ -91,7 +102,14 @@ function EmployeeTable({
       key: 'phone',
       header: 'Phone',
       hideBelow: 'md',
-      render: (employee) => <Text color="slate.600" whiteSpace="nowrap">{employee.phone || '—'}</Text>,
+      render: (employee) => (employee.phone ? (
+        <HStack spacing={2} color="slate.700" whiteSpace="nowrap">
+          <PhoneIcon boxSize={3} color="slate.400" />
+          <Text fontWeight="500">{employee.phone}</Text>
+        </HStack>
+      ) : (
+        <Text fontSize="xs" color="slate.400" fontStyle="italic">Not added</Text>
+      )),
     },
     {
       key: 'status',
@@ -103,10 +121,13 @@ function EmployeeTable({
       header: 'Actions',
       align: 'right',
       render: (employee) => (
-        <HStack justify="flex-end" spacing={0.5}>
-          <IconAction label={`View ${employee.name}`} icon={<ViewIcon />} onClick={() => onView(employee)} />
+        <HStack justify="flex-end" spacing={1.5}>
+          <IconAction label={`View ${employee.name}`} icon={<ViewIcon />} tone="primary" onClick={() => onView(employee)} />
           {role === 'admin' && (
             <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} onClick={() => onEdit(employee)} />
+          )}
+          {onDownloadLetter && (
+            <IconAction label={`Appointment letter: ${employee.name}`} icon={<DownloadIcon />} tone="primary" onClick={() => onDownloadLetter(employee)} />
           )}
           <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
         </HStack>
@@ -118,49 +139,56 @@ function EmployeeTable({
     <Stack spacing={4}>
       <StatStrip
         items={[
-          { label: 'Total Employees', value: summary?.total, helper: scopeLabel, color: 'brand.500' },
-          { label: 'Active', value: summary?.active, helper: 'Currently assigned', color: 'green.500' },
-          { label: 'Inactive', value: summary?.inactive, helper: 'Not active' },
+          { label: 'Total Employees', value: summary?.total, helper: scopeLabel, color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
+          {
+            label: 'Active',
+            value: summary?.active,
+            helper: 'Currently assigned',
+            color: 'green.500',
+            icon: <CheckCircleIcon boxSize={5} />,
+            share: summary?.total ? summary.active / summary.total : null,
+          },
+          {
+            label: 'Inactive',
+            value: summary?.inactive,
+            helper: 'Not active',
+            color: 'red.400',
+            icon: <NotAllowedIcon boxSize={5} />,
+            share: summary?.total ? summary.inactive / summary.total : null,
+          },
         ]}
       />
 
-      <Flex gap={3} direction={{ base: 'column', md: 'row' }} align={{ base: 'stretch', md: 'center' }}>
-        <SearchInput
-          isPill
-          flex="1"
-          maxW="none"
-          size="lg"
-          value={search}
-          onChange={onSearchChange}
-          placeholder="Search name or email..."
-          label="Search employees"
-        />
-        {showStatusFilter && (
-          <FilterSelect<StatusFilter>
-            label="Filter employees by status"
-            size="lg"
-            borderRadius="full"
-            minW="170px"
-            value={status}
-            options={STATUS_OPTIONS}
-            onChange={onStatusChange}
-          />
+      <ContentCard
+        noPadding
+        icon={<PeopleIcon boxSize={5} />}
+        title={title}
+        actions={actions}
+        subtitle={isLoading && total === 0 ? 'Loading employees…' : `${total} ${total === 1 ? 'employee' : 'employees'}${isFiltered ? ' match your filters' : ''}`}
+        toolbar={(
+          <FilterBar
+            variant="inset"
+            canClear={isFiltered || sort !== 'name-asc'}
+            onClear={() => {
+              onSearchChange('');
+              if (showStatusFilter) onStatusChange('all');
+              onSortChange('name-asc');
+            }}
+          >
+            <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 280px' }} maxW={{ md: '440px' }}>
+              <SearchInput value={search} onChange={onSearchChange} placeholder="Search name or email..." label="Search employees" />
+            </FilterField>
+            {showStatusFilter && (
+              <FilterField label="Status">
+                <FilterSelect<StatusFilter> label="Filter employees by status" value={status} options={STATUS_OPTIONS} onChange={onStatusChange} />
+              </FilterField>
+            )}
+            <FilterField label="Sort by">
+              <FilterSelect<SortOrder> label="Sort employees" value={sort} options={SORT_OPTIONS} onChange={onSortChange} />
+            </FilterField>
+          </FilterBar>
         )}
-      </Flex>
-
-      <HStack spacing={4} align="center">
-        <Text fontSize="sm" fontWeight="600" color="slate.700" whiteSpace="nowrap">Employee directory</Text>
-        <FilterSelect<SortOrder>
-          label="Sort employees"
-          borderRadius="full"
-          flex="1"
-          value={sort}
-          options={SORT_OPTIONS}
-          onChange={onSortChange}
-        />
-      </HStack>
-
-      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
+      >
         <DataTable
           columns={columns}
           rows={employees}
@@ -181,7 +209,7 @@ function EmployeeTable({
             />
           )}
         />
-      </Box>
+      </ContentCard>
     </Stack>
   );
 }

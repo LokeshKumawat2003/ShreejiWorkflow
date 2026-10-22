@@ -6,10 +6,11 @@ import {
 	ConfirmDialog,
 	ContentCard,
 	DataTable,
+	FilterBar,
+	FilterField,
 	FilterSelect,
 	IconAction,
 	SearchInput,
-	Toolbar,
 	type DataTableColumn,
 } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
@@ -201,10 +202,21 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				</ActionButton>
 			)}
 			toolbar={(
-				<Toolbar>
-					<SearchInput value={search} onChange={setSearch} placeholder={`Search ${label.singular}`} size="sm" />
-					<FilterSelect<StatusFilter> label="Filter by status" size="sm" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-				</Toolbar>
+				<FilterBar
+					variant="inset"
+					canClear={isFiltered}
+					onClear={() => {
+						setSearch('');
+						setStatus('all');
+					}}
+				>
+					<FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 260px' }} maxW={{ md: '400px' }}>
+						<SearchInput value={search} onChange={setSearch} placeholder={`Search ${label.singular}...`} />
+					</FilterField>
+					<FilterField label="Status">
+						<FilterSelect<StatusFilter> label="Filter by status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+					</FilterField>
+				</FilterBar>
 			)}
 		>
 			<DataTable

@@ -1,11 +1,10 @@
-import { AttachmentIcon, CalendarIcon, CheckIcon, DownloadIcon, EditIcon } from '@chakra-ui/icons';
+import { AttachmentIcon, CalendarIcon, CheckCircleIcon, CheckIcon, DownloadIcon, EditIcon, NotAllowedIcon, TimeIcon } from '@chakra-ui/icons';
 import {
   Alert,
   Box,
   Button,
   Flex,
   HStack,
-  Input,
   Select,
   SimpleGrid,
   Skeleton,
@@ -16,7 +15,7 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
-import { ActionButton, FilterSelect, Pagination, SearchInput, StatCard } from '../../../components/ui';
+import { ActionButton, FilterBar, FilterField, FilterInput, FilterSelect, Pagination, PeopleIcon, SearchInput, StatCard } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
   getAttendanceRegister,
@@ -126,6 +125,8 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
   const attendanceRate = summary && summary.present + summary.absent
     ? `${Math.round((summary.present / (summary.present + summary.absent)) * 100)}%`
     : '—';
+  const totalMarks = summary ? summary.present + summary.absent + summary.unmarked : 0;
+  const markShare = (value?: number) => (totalMarks ? (value ?? 0) / totalMarks : null);
 
   const dayHeaders = useMemo(() => {
     if (!register) return [];
@@ -206,11 +207,11 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
   return (
     <Stack spacing={4}>
       <SimpleGrid columns={{ base: 2, md: 5 }} spacing={3}>
-        <StatCard label="Employees" value={summary?.employees ?? 0} color="brand.500" isLoading={!summary} />
-        <StatCard label="Present marks" value={summary?.present ?? 0} color="green.500" isLoading={!summary} />
-        <StatCard label="Absent marks" value={summary?.absent ?? 0} color="red.500" isLoading={!summary} />
-        <StatCard label="Not marked" value={summary?.unmarked ?? 0} color="orange.400" isLoading={!summary} />
-        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" isLoading={!summary} />
+        <StatCard label="Employees" value={summary?.employees ?? 0} color="brand.500" icon={<PeopleIcon boxSize={5} />} helper="On this register" isLoading={!summary} />
+        <StatCard label="Present marks" value={summary?.present ?? 0} color="green.500" icon={<CheckCircleIcon />} helper="Of all days" share={markShare(summary?.present)} isLoading={!summary} />
+        <StatCard label="Absent marks" value={summary?.absent ?? 0} color="red.500" icon={<NotAllowedIcon />} helper="Of all days" share={markShare(summary?.absent)} isLoading={!summary} />
+        <StatCard label="Not marked" value={summary?.unmarked ?? 0} color="orange.400" icon={<TimeIcon />} helper="Still pending" share={markShare(summary?.unmarked)} isLoading={!summary} />
+        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" icon={<CalendarIcon />} helper="Present ÷ marked days" isLoading={!summary} />
       </SimpleGrid>
 
       <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
@@ -273,41 +274,53 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
           </HStack>
         </Flex>
 
-        <SimpleGrid columns={{ base: 1, md: 4 }} spacing={3} px={{ base: 3, md: 4 }} py={3} bg="slate.50" borderBottom="1px solid" borderColor="slate.100">
-          <Input
-            aria-label="Register month"
-            type="month"
-            value={month}
-            max={today.slice(0, 7)}
-            onChange={(event) => {
-              if (!event.target.value) return;
-              setMonth(event.target.value);
-              setIsEditing(false);
-            }}
-            bg="white"
-            fontSize="sm"
-          />
-          <SearchInput maxW="100%" value={search} onChange={setSearch} placeholder="Search employee or parent name" label="Search employees" />
-          <FilterSelect
-            label="Filter by category"
-            w="100%"
-            value={category}
-            onChange={setCategory}
-            options={[{ value: 'all', label: 'All categories' }, ...(register?.categories || []).map((value) => ({ value, label: value }))]}
-          />
-          <FilterSelect<AttendanceRegisterFilter>
-            label="Filter by attendance"
-            w="100%"
-            value={rowFilter}
-            onChange={setRowFilter}
-            options={[
-              { value: 'all', label: 'All employees' },
-              { value: 'absent', label: 'Has absences' },
-              { value: 'full', label: 'Fully present' },
-              { value: 'unmarked', label: 'Has unmarked days' },
-            ]}
-          />
-        </SimpleGrid>
+        <FilterBar
+          variant="inset"
+          canClear={Boolean(search) || category !== 'all' || rowFilter !== 'all'}
+          onClear={() => {
+            setSearch('');
+            setCategory('all');
+            setRowFilter('all');
+          }}
+        >
+          <FilterField label="Month" flex={{ base: '1 1 100%', md: '0 0 170px' }}>
+            <FilterInput
+              aria-label="Register month"
+              type="month"
+              value={month}
+              max={today.slice(0, 7)}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                setMonth(event.target.value);
+                setIsEditing(false);
+              }}
+            />
+          </FilterField>
+          <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 240px' }} maxW={{ md: '380px' }}>
+            <SearchInput value={search} onChange={setSearch} placeholder="Employee or parent name..." label="Search employees" />
+          </FilterField>
+          <FilterField label="Category">
+            <FilterSelect
+              label="Filter by category"
+              value={category}
+              onChange={setCategory}
+              options={[{ value: 'all', label: 'All categories' }, ...(register?.categories || []).map((value) => ({ value, label: value }))]}
+            />
+          </FilterField>
+          <FilterField label="Attendance">
+            <FilterSelect<AttendanceRegisterFilter>
+              label="Filter by attendance"
+              value={rowFilter}
+              onChange={setRowFilter}
+              options={[
+                { value: 'all', label: 'All employees' },
+                { value: 'absent', label: 'Has absences' },
+                { value: 'full', label: 'Fully present' },
+                { value: 'unmarked', label: 'Has unmarked days' },
+              ]}
+            />
+          </FilterField>
+        </FilterBar>
 
         <HStack justify="space-between" flexWrap="wrap" px={{ base: 3, md: 4 }} py={2.5} fontSize="xs" color="slate.500">
           <Text>

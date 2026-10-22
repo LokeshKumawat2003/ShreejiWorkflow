@@ -1,13 +1,16 @@
-import { AddIcon, AtSignIcon, CalendarIcon, CheckCircleIcon, RepeatIcon, SettingsIcon, TimeIcon, WarningIcon } from '@chakra-ui/icons';
+import { AddIcon, AtSignIcon, CheckCircleIcon, RepeatIcon, SettingsIcon, TimeIcon, WarningIcon } from '@chakra-ui/icons';
 import { Alert, Avatar, Box, Grid, HStack, IconButton, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import AttendanceTrendChart from '../../../components/charts/AttendanceTrendChart';
 import DistributionChart from '../../../components/charts/DistributionChart';
 import {
 	ActionButton,
+	BuildingIcon,
 	ContentCard,
 	DataTable,
+	MapPinIcon,
 	PageHeader,
+	PeopleIcon,
 	StatCard,
 	StatusBadge,
 	type DataTableColumn,
@@ -77,18 +80,20 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 	const totals = summary?.totals;
 	const todayLabel = summary ? formatDay(summary.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
+	const ratio = (part?: number | null, whole?: number | null) => (whole ? (part ?? 0) / whole : null);
+	const todayTotal = summary ? summary.today.present + summary.today.absent + summary.today.notMarked : 0;
 	const statCards = isAdmin
 		? [
-			{ label: 'Organizations', value: totals?.organizations ?? 0, color: 'brand.500', icon: <AddIcon />, helper: 'Client organizations', tab: 'Organizations' },
-			{ label: 'Locations', value: totals?.locations ?? 0, color: 'blue.500', icon: <CalendarIcon />, helper: `${totals?.activeLocations ?? 0} active sites`, tab: 'Organizations' },
-			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'green.500', icon: <AtSignIcon />, helper: `${totals?.employees ?? 0} total records`, tab: 'Employees' },
-			{ label: 'Unassigned', value: totals?.unassignedEmployees ?? 0, color: 'orange.400', icon: <WarningIcon />, helper: 'Not placed at an organization', tab: 'Employees' },
+			{ label: 'Organizations', value: totals?.organizations ?? 0, color: 'brand.500', icon: <BuildingIcon boxSize={5} />, helper: 'Client organizations', tab: 'Organizations' },
+			{ label: 'Locations', value: totals?.locations ?? 0, color: 'blue.500', icon: <MapPinIcon boxSize={5} />, helper: `${totals?.activeLocations ?? 0} active sites`, share: ratio(totals?.activeLocations, totals?.locations), tab: 'Organizations' },
+			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'green.500', icon: <PeopleIcon boxSize={5} />, helper: `of ${totals?.employees ?? 0} records`, share: ratio(totals?.activeEmployees, totals?.employees), tab: 'Employees' },
+			{ label: 'Unassigned', value: totals?.unassignedEmployees ?? 0, color: 'orange.400', icon: <WarningIcon />, helper: 'Not placed yet', share: ratio(totals?.unassignedEmployees, totals?.employees), tab: 'Employees' },
 		]
 		: [
-			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'brand.500', icon: <AtSignIcon />, helper: `${totals?.employees ?? 0} total records`, tab: 'Employees' },
-			{ label: 'Locations', value: totals?.locations ?? 0, color: 'blue.500', icon: <CalendarIcon />, helper: `${totals?.activeLocations ?? 0} active sites`, tab: 'Attendance' },
-			{ label: 'Present today', value: summary?.today.present ?? 0, color: 'green.500', icon: <CheckCircleIcon />, helper: 'Marked present', tab: 'Attendance' },
-			{ label: 'Absent today', value: summary?.today.absent ?? 0, color: 'red.500', icon: <WarningIcon />, helper: `${summary?.today.notMarked ?? 0} not marked yet`, tab: 'Attendance' },
+			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'brand.500', icon: <PeopleIcon boxSize={5} />, helper: `of ${totals?.employees ?? 0} records`, share: ratio(totals?.activeEmployees, totals?.employees), tab: 'Employees' },
+			{ label: 'Locations', value: totals?.locations ?? 0, color: 'blue.500', icon: <MapPinIcon boxSize={5} />, helper: `${totals?.activeLocations ?? 0} active sites`, share: ratio(totals?.activeLocations, totals?.locations), tab: 'Attendance' },
+			{ label: 'Present today', value: summary?.today.present ?? 0, color: 'green.500', icon: <CheckCircleIcon />, helper: 'Marked present', share: ratio(summary?.today.present, todayTotal), tab: 'Attendance' },
+			{ label: 'Absent today', value: summary?.today.absent ?? 0, color: 'red.500', icon: <WarningIcon />, helper: `${summary?.today.notMarked ?? 0} not marked yet`, share: ratio(summary?.today.absent, todayTotal), tab: 'Attendance' },
 		];
 
 	const quickActions = isAdmin
@@ -161,6 +166,7 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 						color={card.color}
 						icon={card.icon}
 						helper={card.helper}
+						share={'share' in card ? card.share : undefined}
 						isLoading={isLoading && !summary}
 						onClick={() => onNavigate(card.tab)}
 					/>

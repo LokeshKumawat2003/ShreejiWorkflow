@@ -94,6 +94,7 @@ async function calculatePayroll(user, options = {}) {
       organizationPhone: organization.phone || '',
       organizationAddress: organization.address || '',
       organizationWebsite: organization.website || '',
+      designation: employee.designation || '',
       department: employee.department || '',
       jobTitle: employee.jobTitle || '',
       currency,

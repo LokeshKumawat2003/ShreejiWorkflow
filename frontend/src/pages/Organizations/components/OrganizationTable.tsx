@@ -1,8 +1,12 @@
 import { DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
-import { Box, Flex, HStack, Stack, Text } from '@chakra-ui/react';
+import { HStack, Text } from '@chakra-ui/react';
 import {
+  BuildingIcon,
+  ContentCard,
   DataTable,
   EntityCell,
+  FilterBar,
+  FilterField,
   FilterSelect,
   IconAction,
   SearchInput,
@@ -81,7 +85,9 @@ function OrganizationTable({
       key: 'holder',
       header: 'Account holder',
       hideBelow: 'md',
-      render: (organization) => <Text color="slate.600">{organization.name || '—'}</Text>,
+      render: (organization) => (organization.name
+        ? <Text color="slate.700" fontWeight="500">{organization.name}</Text>
+        : <Text fontSize="xs" color="slate.400" fontStyle="italic">Not added</Text>),
     },
     {
       key: 'status',
@@ -93,8 +99,8 @@ function OrganizationTable({
       header: 'Actions',
       align: 'right',
       render: (organization) => (
-        <HStack justify="flex-end" spacing={0.5}>
-          <IconAction label={`View ${organization.organizationName}`} icon={<ViewIcon />} onClick={() => onView(organization)} />
+        <HStack justify="flex-end" spacing={1.5}>
+          <IconAction label={`View ${organization.organizationName}`} icon={<ViewIcon />} tone="primary" onClick={() => onView(organization)} />
           <IconAction label={`Edit ${organization.organizationName}`} icon={<EditIcon />} onClick={() => onEdit(organization)} />
           <IconAction label={`Delete ${organization.organizationName}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(organization)} />
         </HStack>
@@ -103,64 +109,54 @@ function OrganizationTable({
   ];
 
   return (
-    <Stack spacing={4}>
-      <Flex gap={3} direction={{ base: 'column', md: 'row' }} align={{ base: 'stretch', md: 'center' }}>
-        <SearchInput
-          isPill
-          flex="1"
-          maxW="none"
-          size="lg"
-          value={search}
-          onChange={onSearchChange}
-          placeholder="Search organization, holder or email..."
-          label="Search organizations"
-        />
-        <FilterSelect<StatusFilter>
-          label="Filter organizations by status"
-          size="lg"
-          borderRadius="full"
-          minW="170px"
-          value={statusFilter}
-          options={STATUS_OPTIONS}
-          onChange={onStatusChange}
-        />
-      </Flex>
-
-      <HStack spacing={4} align="center">
-        <Text fontSize="sm" fontWeight="600" color="slate.700" whiteSpace="nowrap">Organization directory</Text>
-        <FilterSelect<SortOrder>
-          label="Sort organizations"
-          borderRadius="full"
-          flex="1"
-          value={sortOrder}
-          options={SORT_OPTIONS}
-          onChange={onSortChange}
-        />
-      </HStack>
-
-      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
-        <DataTable
-          columns={columns}
-          rows={organizations}
-          rowKey={(organization) => organization.id || organization._id || organization.email}
-          isLoading={isLoading}
-          error={loadError}
-          emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}
-          emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
-          footer={(
-            <TableFooter
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              totalPages={totalPages}
-              noun={total === 1 ? 'organization' : 'organizations'}
-              isDisabled={isLoading || Boolean(loadError)}
-              onPageChange={onPageChange}
-            />
-          )}
-        />
-      </Box>
-    </Stack>
+    <ContentCard
+      noPadding
+      icon={<BuildingIcon boxSize={5} />}
+      title="Organization directory"
+      subtitle={isLoading && total === 0 ? 'Loading organizations…' : `${total} ${total === 1 ? 'organization' : 'organizations'}${isFiltered ? ' match your filters' : ''}`}
+      toolbar={(
+        <FilterBar
+          variant="inset"
+          canClear={isFiltered || sortOrder !== 'name-asc'}
+          onClear={() => {
+            onSearchChange('');
+            onStatusChange('all');
+            onSortChange('name-asc');
+          }}
+        >
+          <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 280px' }} maxW={{ md: '440px' }}>
+            <SearchInput value={search} onChange={onSearchChange} placeholder="Search organization, holder or email..." label="Search organizations" />
+          </FilterField>
+          <FilterField label="Status">
+            <FilterSelect<StatusFilter> label="Filter organizations by status" value={statusFilter} options={STATUS_OPTIONS} onChange={onStatusChange} />
+          </FilterField>
+          <FilterField label="Sort by">
+            <FilterSelect<SortOrder> label="Sort organizations" value={sortOrder} options={SORT_OPTIONS} onChange={onSortChange} />
+          </FilterField>
+        </FilterBar>
+      )}
+    >
+      <DataTable
+        columns={columns}
+        rows={organizations}
+        rowKey={(organization) => organization.id || organization._id || organization.email}
+        isLoading={isLoading}
+        error={loadError}
+        emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}
+        emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
+        footer={(
+          <TableFooter
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            totalPages={totalPages}
+            noun={total === 1 ? 'organization' : 'organizations'}
+            isDisabled={isLoading || Boolean(loadError)}
+            onPageChange={onPageChange}
+          />
+        )}
+      />
+    </ContentCard>
   );
 }
 

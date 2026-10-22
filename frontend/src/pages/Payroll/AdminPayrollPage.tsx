@@ -1,4 +1,4 @@
-import { DownloadIcon, SearchIcon } from '@chakra-ui/icons';
+import { DownloadIcon } from '@chakra-ui/icons';
 import {
   Alert,
   Avatar,
@@ -13,8 +13,6 @@ import {
   Heading,
   HStack,
   Input,
-  InputGroup,
-  InputLeftElement,
   SimpleGrid,
   Spinner,
   Table,
@@ -28,12 +26,12 @@ import {
   VStack,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import Pagination from '../../components/ui/Pagination';
-import ActionButton from '../../components/ui/ActionButton';
+import { ActionButton, Pagination, SearchInput } from '../../components/ui';
 import { ApiError } from '../../services/api';
 import { getPayroll, type PayrollLine, type PayrollResponse } from '../../services/attendanceService';
 import { listEmployees } from '../../services/employeeService';
 import type { Employee } from '../../types';
+import { downloadSalarySlipsPdf } from './utils/salarySlipPdf';
 
 const EMPLOYEE_PAGE_SIZE = 10;
 
@@ -144,228 +142,6 @@ function AdminPayrollPage() {
     }
   }
 
-  async function exportInvoicesPdf() {
-    if (!payroll || payroll.lines.length === 0) return;
-
-    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
-      import('jspdf'),
-      import('jspdf-autotable'),
-    ]);
-    const document = new jsPDF();
-    const period = `${payroll.fromDate} to ${payroll.toDate}`;
-    const pageWidth = document.internal.pageSize.getWidth();
-    const margin = 14;
-    const contentWidth = pageWidth - margin * 2;
-    const navy: [number, number, number] = [23, 58, 105];
-    const blue: [number, number, number] = [48, 105, 184];
-    const paleBlue: [number, number, number] = [237, 244, 253];
-    const lineBlue: [number, number, number] = [208, 222, 241];
-    const generatedOn = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date());
-
-    payroll.lines.forEach((line, index) => {
-      if (index > 0) document.addPage();
-
-      document.setFillColor(...navy);
-      document.roundedRect(margin, 10, 17, 17, 3, 3, 'F');
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(15);
-      document.setTextColor(255, 255, 255);
-      document.text('S', margin + 5.4, 21.5);
-      document.setFontSize(17);
-      document.setTextColor(...navy);
-      document.text('Shreeji Workflow', 35, 17);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(8);
-      document.setTextColor(91, 111, 139);
-      document.text('Smart HR  |  Simple Process  |  Better Tomorrow', 35, 23);
-
-      const contactLines = [line.organizationAddress, line.organizationPhone, line.organizationWebsite]
-        .filter(Boolean)
-        .flatMap((value) => document.splitTextToSize(value, 64));
-      if (contactLines.length > 0) {
-        document.setFontSize(8);
-        document.setTextColor(55, 79, 111);
-        document.text(contactLines, pageWidth - margin, 14, { align: 'right', lineHeightFactor: 1.5 });
-      }
-      document.setDrawColor(...blue);
-      document.setLineWidth(0.6);
-      document.line(margin, 32, pageWidth - margin, 32);
-
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(21);
-      document.setTextColor(...navy);
-      document.text('PAYROLL INVOICE', margin, 47);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(10);
-      document.setTextColor(91, 111, 139);
-      document.text('Salary statement', margin, 54);
-      document.setFontSize(8);
-      document.setTextColor(55, 79, 111);
-      document.text(`Dear ${line.employeeName},`, margin, 65);
-
-      const invoiceX = pageWidth - margin - 68;
-      document.setFillColor(247, 250, 255);
-      document.setDrawColor(...lineBlue);
-      document.roundedRect(invoiceX, 37, 68, 32, 2, 2, 'FD');
-      document.setFontSize(7);
-      document.setTextColor(91, 111, 139);
-      document.text('INVOICE NUMBER', invoiceX + 5, 44);
-      document.text('PAY PERIOD', invoiceX + 5, 54);
-      document.text('GENERATED ON', invoiceX + 5, 64);
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(8);
-      document.setTextColor(...navy);
-      document.text(`PAY-${payroll.toDate.replaceAll('-', '')}-${String(index + 1).padStart(3, '0')}`, invoiceX + 31, 44, { maxWidth: 32 });
-      document.setFont('helvetica', 'normal');
-      document.text(period, invoiceX + 31, 54, { maxWidth: 32 });
-      document.text(generatedOn, invoiceX + 31, 64, { maxWidth: 32 });
-
-      const employeePanelY = 78;
-      document.setFillColor(255, 255, 255);
-      document.setDrawColor(...lineBlue);
-      document.roundedRect(margin, employeePanelY, contentWidth, 50, 2, 2, 'D');
-      document.setFillColor(...paleBlue);
-      document.roundedRect(margin, employeePanelY, contentWidth, 9, 2, 2, 'F');
-      document.rect(margin, employeePanelY + 6, contentWidth, 3, 'F');
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(9);
-      document.setTextColor(...navy);
-      document.text('EMPLOYEE DETAILS', margin + 5, employeePanelY + 6);
-      document.setDrawColor(...lineBlue);
-      document.line(pageWidth / 2, employeePanelY + 13, pageWidth / 2, employeePanelY + 45);
-
-      const leftDetails = [
-        ['Employee', line.employeeName],
-        ['Job title', line.jobTitle || '—'],
-        ['Email', line.employeeEmail],
-        ['Phone', line.employeePhone || '—'],
-      ];
-      const rightDetails = [
-        ['Organization', line.organizationName || 'All organizations'],
-        ['Department', line.department || '—'],
-        ['Present days', String(line.presentDays)],
-        ['Absent days', String(line.absentDays)],
-      ];
-      document.setFontSize(7.5);
-      leftDetails.forEach(([label, value], detailIndex) => {
-        const y = employeePanelY + 18 + detailIndex * 7;
-        document.setFont('helvetica', 'normal');
-        document.setTextColor(91, 111, 139);
-        document.text(label, margin + 5, y);
-        document.setFont('helvetica', 'bold');
-        document.setTextColor(35, 52, 77);
-        document.text(value, margin + 29, y, { maxWidth: 55 });
-      });
-      rightDetails.forEach(([label, value], detailIndex) => {
-        const y = employeePanelY + 18 + detailIndex * 7;
-        document.setFont('helvetica', 'normal');
-        document.setTextColor(91, 111, 139);
-        document.text(label, pageWidth / 2 + 5, y);
-        document.setFont('helvetica', 'bold');
-        document.setTextColor(35, 52, 77);
-        document.text(value, pageWidth / 2 + 30, y, { maxWidth: 55 });
-      });
-
-      const breakdownHeaderY = 137;
-      document.setFillColor(...paleBlue);
-      document.setDrawColor(...lineBlue);
-      document.roundedRect(margin, breakdownHeaderY, contentWidth, 10, 2, 2, 'FD');
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(9);
-      document.setTextColor(...navy);
-      document.text('SALARY BREAKDOWN', margin + 5, breakdownHeaderY + 6.5);
-      autoTable(document, {
-        startY: breakdownHeaderY + 10,
-        margin: { left: margin, right: margin },
-        head: [['#', 'Earnings', 'Details', 'Days', 'Rate', `Amount (${line.currency})`]],
-        body: [[
-          '1',
-          'Basic salary',
-          'Present attendance',
-          String(line.presentDays),
-          formatAmount(line.dailySalary, line.currency),
-          formatAmount(line.grossPay, line.currency),
-        ]],
-        foot: [['', 'Total earnings', '', '', '', formatAmount(line.grossPay, line.currency)]],
-        styles: { fontSize: 7.5, cellPadding: 3, textColor: [35, 52, 77], lineColor: lineBlue, lineWidth: 0.15 },
-        headStyles: { fillColor: paleBlue, textColor: navy, fontStyle: 'bold' },
-        footStyles: { fillColor: paleBlue, textColor: navy, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 9 },
-          1: { cellWidth: 36 },
-          2: { cellWidth: 44 },
-          3: { cellWidth: 15, halign: 'right' },
-          4: { cellWidth: 34, halign: 'right' },
-          5: { cellWidth: 44, halign: 'right' },
-        },
-        theme: 'grid',
-      });
-
-      const tableY = (document as InstanceType<typeof jsPDF> & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 170;
-      const netY = tableY + 8;
-      document.setFillColor(...navy);
-      document.roundedRect(margin, netY, contentWidth, 18, 2, 2, 'F');
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(10);
-      document.setTextColor(255, 255, 255);
-      document.text('NET SALARY (PAYABLE)', margin + 7, netY + 7);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(7.5);
-      document.text(`${line.paidDays} paid day${line.paidDays === 1 ? '' : 's'}`, margin + 7, netY + 13);
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(15);
-      document.text(formatAmount(line.grossPay, line.currency), pageWidth - margin - 7, netY + 11, { align: 'right' });
-
-      const summaryY = netY + 25;
-      document.setFillColor(255, 255, 255);
-      document.setDrawColor(...lineBlue);
-      document.roundedRect(margin, summaryY, contentWidth, 28, 2, 2, 'D');
-      document.setFontSize(8);
-      document.setTextColor(...navy);
-      document.text('PAYROLL SUMMARY', margin + 5, summaryY + 7);
-      document.setDrawColor(...lineBlue);
-      document.line(pageWidth / 2, summaryY + 4, pageWidth / 2, summaryY + 24);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(7.5);
-      document.setTextColor(91, 111, 139);
-      document.text(`Daily rate: ${formatAmount(line.dailySalary, line.currency)}`, margin + 5, summaryY + 16);
-      document.text(`Attendance: ${line.presentDays} present / ${line.absentDays} absent`, margin + 5, summaryY + 22);
-      document.text('System-generated salary statement', pageWidth / 2 + 5, summaryY + 16);
-      document.text('No signature is required', pageWidth / 2 + 5, summaryY + 22);
-
-      const bankY = summaryY + 34;
-      document.setDrawColor(...lineBlue);
-      document.roundedRect(margin, bankY, contentWidth, 28, 2, 2, 'D');
-      document.setFillColor(...paleBlue);
-      document.roundedRect(margin, bankY, contentWidth, 8, 2, 2, 'F');
-      document.rect(margin, bankY + 5, contentWidth, 3, 'F');
-      document.setFont('helvetica', 'bold');
-      document.setFontSize(8);
-      document.setTextColor(...navy);
-      document.text('BANK DETAILS', margin + 5, bankY + 5.5);
-      document.setFont('helvetica', 'normal');
-      document.setFontSize(7);
-      document.setTextColor(55, 79, 111);
-      document.text(`Bank: ${line.bankName || '—'}   Branch: ${line.bankBranch || '—'}`, margin + 5, bankY + 14);
-      document.text(`Account holder: ${line.bankAccountHolder || '—'}`, margin + 5, bankY + 22);
-      document.text(`Account number: ${line.bankAccountNumber || '—'}`, pageWidth / 2 + 5, bankY + 14);
-      document.text(`Routing / IFSC: ${line.bankRoutingCode || '—'}`, pageWidth / 2 + 5, bankY + 22);
-
-      document.setDrawColor(...lineBlue);
-      document.line(margin, 276, pageWidth - margin, 276);
-      document.setFont('helvetica', 'italic');
-      document.setFontSize(8);
-      document.setTextColor(91, 111, 139);
-      document.text('Thank you for your contribution!', margin, 283);
-      document.setFont('helvetica', 'bold');
-      document.setTextColor(...navy);
-      document.text('Shreeji Workflow', margin, 289);
-      document.setFont('helvetica', 'normal');
-      document.text('HR Department', pageWidth - margin, 289, { align: 'right' });
-    });
-    document.save(`payroll-invoices-${payroll.fromDate}-to-${payroll.toDate}.pdf`);
-  }
-
   async function exportExcel() {
     if (!payroll) return;
 
@@ -413,7 +189,7 @@ function AdminPayrollPage() {
     <VStack align="stretch" spacing={6}>
       <Box>
         <Heading size="lg" color="slate.900">Payroll</Heading>
-        <Text mt={1} fontSize="sm" color="slate.500">Generate attendance-based payroll and employee invoices.</Text>
+        <Text mt={1} fontSize="sm" color="slate.500">Generate attendance-based payroll and employee salary slips.</Text>
       </Box>
 
       <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
@@ -461,16 +237,13 @@ function AdminPayrollPage() {
         {scope === 'selected' && (
           <Box px={{ base: 4, md: 6 }} pb={5}>
             <HStack justify="space-between" flexWrap="wrap" gap={3} mb={3}>
-              <InputGroup maxW="360px">
-                <InputLeftElement pointerEvents="none" color="slate.400"><SearchIcon /></InputLeftElement>
-                <Input
-                  aria-label="Search employees for payroll"
-                  h="40px"
-                  placeholder="Search employees..."
-                  value={employeeSearch}
-                  onChange={(event) => { setEmployeeSearch(event.target.value); setEmployeePage(1); }}
-                />
-              </InputGroup>
+              <SearchInput
+                maxW="360px"
+                value={employeeSearch}
+                onChange={(value) => { setEmployeeSearch(value); setEmployeePage(1); }}
+                placeholder="Search employees..."
+                label="Search employees for payroll"
+              />
               <HStack>
                 <Badge colorScheme="brand" px={3} py={1} borderRadius="full">{selectedEmployeeIds.length} selected</Badge>
                 <Button size="sm" variant="ghost" color="slate.600" isDisabled={selectedEmployeeIds.length === 0} onClick={() => { setSelectedEmployeeIds([]); setPayroll(null); }}>
@@ -536,8 +309,8 @@ function AdminPayrollPage() {
               </Text>
             </Box>
             <HStack flexWrap="wrap" spacing={2}>
-              <ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={payroll.lines.length === 0} onClick={() => void exportInvoicesPdf()}>
-                Download invoices PDF
+              <ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={payroll.lines.length === 0} onClick={() => void downloadSalarySlipsPdf(payroll.lines, payroll.fromDate, payroll.toDate)}>
+                Download salary slips
               </ActionButton>
               <ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={payroll.lines.length === 0} onClick={() => void exportExcel()}>
                 Export Excel

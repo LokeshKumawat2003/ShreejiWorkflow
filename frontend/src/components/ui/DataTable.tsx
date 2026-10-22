@@ -62,15 +62,16 @@ function DataTable<T>({
 								{columns.map((column) => (
 									<Th
 										key={column.key}
-										py={3.5}
+										py={3}
 										w={column.width}
 										textAlign={column.align}
 										display={display(column)}
-										fontSize="xs"
+										bg="slate.50"
+										fontSize="11px"
 										fontWeight="700"
-										color="slate.600"
-										letterSpacing="0.04em"
-										borderColor="slate.100"
+										color="slate.500"
+										letterSpacing="0.06em"
+										borderColor="slate.200"
 									>
 										{column.header}
 									</Th>
@@ -84,11 +85,15 @@ function DataTable<T>({
 									cursor={onRowClick ? 'pointer' : undefined}
 									onClick={onRowClick ? () => onRowClick(row) : undefined}
 									transition="background 0.15s ease"
-									_hover={{ bg: 'slate.50' }}
-									sx={{ '&:last-of-type > td': { borderBottom: 'none' } }}
+									_hover={{ bg: '#F8F9FF' }}
+									sx={{
+										'&:last-of-type > td': { borderBottom: 'none' },
+										'& > td:first-of-type': { boxShadow: 'inset 3px 0 0 transparent', transition: 'box-shadow 0.15s ease' },
+										'&:hover > td:first-of-type': { boxShadow: 'inset 3px 0 0 var(--chakra-colors-brand-400)' },
+									}}
 								>
 									{columns.map((column) => (
-										<Td key={column.key} py={cellY} textAlign={column.align} display={display(column)} borderColor="slate.100" fontSize="sm">
+										<Td key={column.key} py={cellY} textAlign={column.align} display={display(column)} borderColor="slate.100" fontSize="sm" verticalAlign="middle">
 											{column.render(row, index)}
 										</Td>
 									))}

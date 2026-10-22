@@ -1,13 +1,10 @@
-import { AddIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
+import { AddIcon, ChevronLeftIcon, DeleteIcon, EditIcon, EmailIcon, PhoneIcon, ViewIcon } from '@chakra-ui/icons';
 import {
   Avatar,
-  Alert,
-  Badge,
   Box,
   Button,
   Heading,
   HStack,
-  IconButton,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -18,17 +15,26 @@ import {
   SimpleGrid,
   Spinner,
   Stack,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Th,
-  Thead,
-  Tooltip,
-  Tr,
   Text,
   useDisclosure,
 } from '@chakra-ui/react';
+import { useMemo, useState, type ReactNode } from 'react';
+import {
+  ActionButton,
+  BuildingIcon,
+  ContentCard,
+  DataTable,
+  EntityCell,
+  FilterBar,
+  FilterField,
+  FilterSelect,
+  IconAction,
+  MapPinIcon,
+  PeopleIcon,
+  SearchInput,
+  StatusBadge,
+  type DataTableColumn,
+} from '../../../components/ui';
 import type { OrganizationLocation, User } from '../../../types';
 
 type OrganizationDetailsPageProps = {
@@ -56,63 +62,160 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
   const isActive = organization.status !== 'disabled';
   const organizationId = organization.id || organization._id;
   const informationDialog = useDisclosure();
+  const [locationSearch, setLocationSearch] = useState('');
+  const [locationStatus, setLocationStatus] = useState<'all' | 'active' | 'disabled'>('all');
+  const [locationDesignation, setLocationDesignation] = useState('all');
+  const designationOptions = useMemo(
+    () => [...new Set(locations.map((location) => location.designation).filter(Boolean))].sort(),
+    [locations],
+  );
+  const activeLocationCount = locations.filter((location) => location.status === 'active').length;
+  const isLocationFiltered = Boolean(locationSearch.trim()) || locationStatus !== 'all' || locationDesignation !== 'all';
+  const filteredLocations = useMemo(() => {
+    const query = locationSearch.trim().toLowerCase();
+    return locations.filter((location) => (
+      (locationStatus === 'all' || location.status === locationStatus)
+      && (locationDesignation === 'all' || location.designation === locationDesignation)
+      && (!query || [location.workName, location.opNumber, location.name, location.address, location.designation]
+        .some((value) => value?.toLowerCase().includes(query)))
+    ));
+  }, [locationDesignation, locationSearch, locationStatus, locations]);
+
+  const locationColumns: DataTableColumn<OrganizationLocation>[] = [
+    {
+      key: 'work',
+      header: 'Work name',
+      render: (location) => <EntityCell name={location.workName || location.name} subtitle={location.opNumber ? `OP ${location.opNumber}` : 'No OP number'} />,
+    },
+    {
+      key: 'designation',
+      header: 'Designation',
+      render: (location) => <Text color="slate.700" textTransform="capitalize">{location.designation}</Text>,
+    },
+    {
+      key: 'address',
+      header: 'Address',
+      hideBelow: 'md',
+      render: (location) => (
+        <Button variant="link" color="brand.600" fontWeight="600" whiteSpace="normal" textAlign="left" maxW="380px" onClick={() => onViewLocation(location)}>
+          {location.address || location.name}
+        </Button>
+      ),
+    },
+    { key: 'status', header: 'Status', render: (location) => <StatusBadge status={location.status} /> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (location) => (
+        <HStack justify="flex-end" spacing={1.5}>
+          <IconAction label={`Open ${location.name}`} icon={<ViewIcon />} tone="primary" onClick={() => onViewLocation(location)} />
+          <IconAction label={`Edit ${location.name}`} icon={<EditIcon />} onClick={() => onEditLocation(location)} />
+          <IconAction label={`Delete ${location.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDeleteLocation(location)} />
+        </HStack>
+      ),
+    },
+  ];
 
   return (
     <Stack spacing={6}>
       <Button
         alignSelf="flex-start"
-        h="36px"
-        px={2}
+        h="34px"
+        px={3}
         variant="ghost"
+        borderRadius="full"
         fontSize="sm"
+        fontWeight="600"
         color="slate.600"
-        leftIcon={<ChevronLeftIcon />}
-        _hover={{ bg: 'slate.100', color: 'slate.900' }}
+        leftIcon={<ChevronLeftIcon boxSize={4} />}
+        _hover={{ bg: 'white', color: 'slate.900', boxShadow: 'sm' }}
         onClick={onBack}
       >
         Back to organizations
       </Button>
 
-      <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
-        <HStack spacing={4} minW={0}>
-          <Avatar size="lg" name={organization.organizationName} />
-          <Box minW={0}>
-            <Heading fontSize="26px" lineHeight="1.2" fontWeight="700" color="slate.900" noOfLines={2}>
-              {organization.organizationName || 'Organization'}
-            </Heading>
-            <Text mt={1} fontSize="14px" color="slate.500">
-              Account holder: {organization.name || 'Not available'}
-            </Text>
-          </Box>
-        </HStack>
-        <Button h="40px" fontSize="sm" leftIcon={<EditIcon />} colorScheme="brand" onClick={onEdit}>
-          Edit organization
-        </Button>
-      </HStack>
+      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
+        <Box
+          position="relative"
+          h={{ base: '84px', md: '104px' }}
+          bgGradient="linear(120deg, brand.600 0%, brand.500 45%, purple.400 100%)"
+          overflow="hidden"
+        >
+          <Box position="absolute" top="-60px" right="-30px" w="220px" h="220px" borderRadius="full" bg="whiteAlpha.200" />
+          <Box position="absolute" bottom="-90px" right="180px" w="180px" h="180px" borderRadius="full" bg="whiteAlpha.100" />
+          <Box position="absolute" top="-40px" left="35%" w="120px" h="120px" borderRadius="full" bg="whiteAlpha.100" />
+        </Box>
 
-      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-        <Heading as="h2" fontSize="16px" fontWeight="700" color="slate.900" px={{ base: 4, md: 6 }} py={4} borderBottom="1px solid" borderColor="slate.100">
-          Organization information
-        </Heading>
-        {isLoading ? (
-          <HStack justify="center" py={8}><Spinner color="brand.500" /></HStack>
-        ) : (
-          <HStack justify="space-between" align="center" flexWrap="wrap" gap={5} p={{ base: 4, md: 6 }}>
-            <SimpleGrid flex="1" minW="240px" columns={{ base: 1, sm: 3 }} spacingX={8} spacingY={4}>
-              <Detail label="Organization name" value={organization.organizationName} />
-              <Detail label="Account holder" value={organization.name} />
-              <Box>
-                <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">Account status</Text>
-                <Badge px={3} py={1} borderRadius="full" color={isActive ? 'green.600' : 'slate.500'} bg={isActive ? 'green.50' : 'slate.100'} fontSize="xs" fontWeight="600">
-                  {isActive ? 'ACTIVE' : 'INACTIVE'}
-                </Badge>
-              </Box>
+        <Box position="relative" px={{ base: 4, md: 6 }} pb={{ base: 5, md: 6 }}>
+          <Stack
+            direction={{ base: 'column', md: 'row' }}
+            justify="space-between"
+            align={{ base: 'flex-start', md: 'flex-end' }}
+            spacing={4}
+          >
+            <Box minW={0}>
+              <Avatar
+                mt={{ base: '-36px', md: '-44px' }}
+                boxSize={{ base: '72px', md: '88px' }}
+                fontSize={{ base: '2xl', md: '3xl' }}
+                name={organization.organizationName}
+                bg="brand.50"
+                color="brand.700"
+                border="4px solid white"
+                boxShadow="md"
+              />
+              <HStack mt={3} spacing={3} flexWrap="wrap">
+                <Heading fontSize={{ base: '20px', md: '24px' }} lineHeight="1.25" fontWeight="800" color="slate.900" noOfLines={2}>
+                  {organization.organizationName || 'Organization'}
+                </Heading>
+                <StatusBadge status={isActive ? 'active' : 'disabled'} />
+              </HStack>
+              <Text mt={1} fontSize="sm" color="slate.500" noOfLines={1}>
+                {[organization.industry, `Managed by ${organization.name || 'Not available'}`].filter(Boolean).join(' · ')}
+              </Text>
+            </Box>
+
+            <HStack spacing={2} flexShrink={0}>
+              <Button
+                h="40px"
+                px={4}
+                variant="outline"
+                borderRadius="full"
+                fontSize="sm"
+                bg="white"
+                borderColor="slate.200"
+                color="slate.700"
+                leftIcon={<ViewIcon />}
+                _hover={{ bg: 'slate.50', borderColor: 'slate.300' }}
+                onClick={informationDialog.onOpen}
+              >
+                Full details
+              </Button>
+              <ActionButton borderRadius="full" leftIcon={<EditIcon />} onClick={onEdit}>
+                Edit organization
+              </ActionButton>
+            </HStack>
+          </Stack>
+
+          {isLoading ? (
+            <HStack justify="center" pt={8} pb={2}><Spinner color="brand.500" /></HStack>
+          ) : (
+            <SimpleGrid mt={6} columns={{ base: 1, sm: 2, xl: 4 }} spacing={3}>
+              <InfoTile icon={<PeopleIcon boxSize={4} />} color="brand" label="Account holder" value={organization.name} />
+              <InfoTile icon={<EmailIcon boxSize={4} />} color="blue" label="Login email" value={organization.email} />
+              <InfoTile icon={<PhoneIcon boxSize={3.5} />} color="green" label="Phone" value={organization.phone} />
+              <InfoTile
+                icon={<MapPinIcon boxSize={4} />}
+                color="orange"
+                label="Locations"
+                value={isLoadingLocations && locations.length === 0
+                  ? 'Loading…'
+                  : `${locations.length} ${locations.length === 1 ? 'site' : 'sites'} · ${activeLocationCount} active`}
+              />
             </SimpleGrid>
-            <Button flexShrink={0} variant="outline" leftIcon={<ViewIcon />} onClick={informationDialog.onOpen}>
-              View organization details
-            </Button>
-          </HStack>
-        )}
+          )}
+        </Box>
       </Box>
 
       <Modal isOpen={informationDialog.isOpen} onClose={informationDialog.onClose} size="3xl" scrollBehavior="inside">
@@ -132,9 +235,7 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
               <Detail label="About the organization" value={organization.about} multiline />
               <Box>
                 <Text mb={1} fontSize="13px" fontWeight="600" color="slate.500">Account status</Text>
-                <Badge px={3} py={1} borderRadius="full" color={isActive ? 'green.600' : 'slate.500'} bg={isActive ? 'green.50' : 'slate.100'} fontSize="xs" fontWeight="600">
-                  {isActive ? 'ACTIVE' : 'INACTIVE'}
-                </Badge>
+                <StatusBadge status={isActive ? 'active' : 'disabled'} />
               </Box>
               <Detail label="Created" value={formatCreatedAt(organization.createdAt)} />
               <Detail label="Organization ID" value={organizationId} />
@@ -146,48 +247,105 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
         </ModalContent>
       </Modal>
 
-      <Stack spacing={4}>
-        <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
-          <Box>
-            <Heading as="h2" size="md" color="slate.900">Locations</Heading>
-            <Text mt={1} fontSize="sm" color="slate.500">Sites and offices for this organization</Text>
-          </Box>
-          <Button h="40px" px={4} fontSize="sm" leftIcon={<AddIcon />} colorScheme="brand" onClick={onAddLocation}>
+      <ContentCard
+        noPadding
+        icon={<BuildingIcon boxSize={5} />}
+        title="Locations"
+        subtitle={isLoadingLocations && locations.length === 0
+          ? 'Loading locations…'
+          : isLocationFiltered
+            ? `${filteredLocations.length} of ${locations.length} locations match your filters`
+            : `${locations.length} ${locations.length === 1 ? 'site' : 'sites'} for this organization`}
+        actions={(
+          <ActionButton size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={onAddLocation}>
             Add location
-          </Button>
-        </HStack>
-        <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-          {locationsError ? <Alert status="error" borderRadius={0}>{locationsError}</Alert> : null}
-          <TableContainer>
-            <Table variant="simple" size="md" fontSize="sm">
-              <Thead><Tr><Th fontSize="xs">Work name</Th><Th fontSize="xs">OP number</Th><Th fontSize="xs">Designation</Th><Th fontSize="xs">Address</Th><Th fontSize="xs">Status</Th><Th fontSize="xs" textAlign="right">Actions</Th></Tr></Thead>
-              <Tbody>
-                {isLoadingLocations ? (
-                  <Tr><Td colSpan={6} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
-                ) : locations.length === 0 && !locationsError ? (
-                  <Tr><Td colSpan={6} textAlign="center" py={10} color="slate.500">No locations yet. Add a location to get started.</Td></Tr>
-                ) : locations.map((location) => (
-                  <Tr key={location.id} _hover={{ bg: 'slate.50' }}>
-                    <Td>{location.workName}</Td>
-                    <Td>{location.opNumber || '—'}</Td>
-                    <Td textTransform="capitalize">{location.designation}</Td>
-                    <Td maxW="420px" whiteSpace="normal"><Button variant="link" color="brand.600" fontWeight="600" whiteSpace="normal" onClick={() => onViewLocation(location)}>{location.address || location.name}</Button></Td>
-                    <Td><Badge px={3} py={1} borderRadius="full" color={location.status === 'active' ? 'green.600' : 'slate.500'} bg={location.status === 'active' ? 'green.50' : 'slate.100'} fontSize="xs">{location.status === 'active' ? 'ACTIVE' : 'INACTIVE'}</Badge></Td>
-                    <Td textAlign="right">
-                      <HStack justify="flex-end" spacing={1}>
-                        <Tooltip label="Open location"><IconButton aria-label={`Open ${location.name}`} icon={<ViewIcon />} variant="ghost" color="slate.500" onClick={() => onViewLocation(location)} /></Tooltip>
-                        <Tooltip label="Edit location"><IconButton aria-label={`Edit ${location.name}`} icon={<EditIcon />} variant="ghost" color="slate.500" onClick={() => onEditLocation(location)} /></Tooltip>
-                        <Tooltip label="Delete location"><IconButton aria-label={`Delete ${location.name}`} icon={<DeleteIcon />} variant="ghost" color="red.600" onClick={() => onDeleteLocation(location)} /></Tooltip>
-                      </HStack>
-                    </Td>
-                  </Tr>
-                ))}
-              </Tbody>
-            </Table>
-          </TableContainer>
-        </Box>
-      </Stack>
+          </ActionButton>
+        )}
+        toolbar={(
+          <FilterBar
+            variant="inset"
+            canClear={isLocationFiltered}
+            onClear={() => {
+              setLocationSearch('');
+              setLocationStatus('all');
+              setLocationDesignation('all');
+            }}
+          >
+            <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 260px' }} maxW={{ md: '420px' }}>
+              <SearchInput value={locationSearch} onChange={setLocationSearch} placeholder="Work name, OP number or address..." label="Search locations" />
+            </FilterField>
+            <FilterField label="Designation">
+              <FilterSelect
+                label="Filter locations by designation"
+                value={locationDesignation}
+                onChange={setLocationDesignation}
+                options={[{ value: 'all', label: 'All designations' }, ...designationOptions.map((value) => ({ value, label: value }))]}
+                textTransform="capitalize"
+              />
+            </FilterField>
+            <FilterField label="Status">
+              <FilterSelect<'all' | 'active' | 'disabled'>
+                label="Filter locations by status"
+                value={locationStatus}
+                onChange={setLocationStatus}
+                options={[
+                  { value: 'all', label: 'All Status' },
+                  { value: 'active', label: 'Active' },
+                  { value: 'disabled', label: 'Inactive' },
+                ]}
+              />
+            </FilterField>
+          </FilterBar>
+        )}
+      >
+        <DataTable
+          columns={locationColumns}
+          rows={filteredLocations}
+          rowKey={(location) => location.id}
+          isLoading={isLoadingLocations}
+          error={locationsError}
+          emptyTitle={isLocationFiltered ? 'No matching locations' : 'No locations yet'}
+          emptyDescription={isLocationFiltered ? 'Try a different search or filter.' : 'Add a location to get started.'}
+        />
+      </ContentCard>
     </Stack>
+  );
+}
+
+function InfoTile({ icon, color, label, value }: { icon: ReactNode; color: string; label: string; value?: string }) {
+  return (
+    <HStack
+      spacing={3}
+      p={3}
+      minW={0}
+      bg="slate.50"
+      border="1px solid"
+      borderColor="slate.100"
+      borderRadius="md"
+      transition="all 0.15s ease"
+      _hover={{ bg: 'white', borderColor: 'slate.200', boxShadow: 'sm' }}
+    >
+      <Box
+        display="grid"
+        placeItems="center"
+        flexShrink={0}
+        w="38px"
+        h="38px"
+        borderRadius="10px"
+        bg={`${color}.100`}
+        color={`${color}.600`}
+      >
+        {icon}
+      </Box>
+      <Box minW={0}>
+        <Text fontSize="11px" fontWeight="700" letterSpacing="0.06em" textTransform="uppercase" color="slate.400">
+          {label}
+        </Text>
+        <Text fontSize="sm" fontWeight="600" color={value ? 'slate.900' : 'slate.400'} noOfLines={1} title={value}>
+          {value || 'Not available'}
+        </Text>
+      </Box>
+    </HStack>
   );
 }
 

@@ -77,6 +77,7 @@ export type PayrollLine = {
   organizationPhone: string;
   organizationAddress: string;
   organizationWebsite: string;
+  designation?: string;
   department: string;
   jobTitle: string;
   currency: string;

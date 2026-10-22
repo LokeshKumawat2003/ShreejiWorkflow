@@ -167,7 +167,7 @@ function OrganizationsPage() {
           isLoading={isViewing}
           onBack={() => setViewingOrganization(null)}
           onEdit={() => requestEdit(viewingOrganization)}
-          locations={locations.locations}
+          locationList={locations}
           onAddLocation={locationDialog.onOpen}
           onViewLocation={setSelectedLocation}
           onEditLocation={(location) => {
@@ -178,8 +178,6 @@ function OrganizationsPage() {
             setDeletingLocation(location);
             deleteLocationDialog.onOpen();
           }}
-          isLoadingLocations={locations.isLoading}
-          locationsError={locations.loadError}
         />
       ) : (
         <Stack spacing={6}>

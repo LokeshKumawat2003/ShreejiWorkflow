@@ -1,11 +1,14 @@
 import { DownloadIcon } from '@chakra-ui/icons';
-import { Stack } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { Stack, useToast } from '@chakra-ui/react';
+import { useState } from 'react';
 import { ActionButton, ContentCard, FilterBar, WalletIcon } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { getPayroll, type PayrollResponse } from '../../../services/attendanceService';
+import type { PayrollResponse } from '../../../services/attendanceService';
+import { usePayroll } from '../hooks/usePayroll';
 import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
 import { formatAmount, PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './PayrollShared';
+
+type ExportKind = 'slips' | 'pdf' | 'excel';
 
 type OrganizationPayrollPageProps = {
   organizationId?: string;
@@ -17,16 +20,30 @@ function getExportFilename(fromDate: string, toDate: string) {
 }
 
 function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPayrollPageProps) {
+  const toast = useToast();
   const [{ fromDate, toDate }, setRange] = useState(thisMonthRange);
-  const [payroll, setPayroll] = useState<PayrollResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const [exporting, setExporting] = useState<ExportKind | null>(null);
   const invalidRange = fromDate > toDate;
-  const canExport = Boolean(payroll && payroll.lines.length > 0 && !isLoading && !loadError);
+  const payrollState = usePayroll(invalidRange ? null : { fromDate, toDate, organizationId, locationId });
+  const { payroll, isLoading } = payrollState;
+  const loadError = invalidRange ? 'The start date must be on or before the end date.' : payrollState.error;
+  const canExport = Boolean(payroll && payroll.summary.employees > 0 && !isLoading && !loadError && !exporting);
 
-  async function exportPdf() {
-    if (!payroll) return;
+  async function runExport(kind: ExportKind) {
+    setExporting(kind);
+    try {
+      const fullPayroll = await payrollState.fetchAll();
+      if (kind === 'slips') await downloadSalarySlipsPdf(fullPayroll.lines, fromDate, toDate);
+      else if (kind === 'pdf') await exportPdf(fullPayroll);
+      else await exportExcel(fullPayroll);
+    } catch (error) {
+      toast({ title: error instanceof ApiError ? error.message : 'Unable to export payroll.', status: 'error', position: 'top' });
+    } finally {
+      setExporting(null);
+    }
+  }
 
+  async function exportPdf(payroll: PayrollResponse) {
     const [{ jsPDF }, { default: autoTable }] = await Promise.all([
       import('jspdf'),
       import('jspdf-autotable'),
@@ -66,9 +83,7 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     document.save(`${getExportFilename(fromDate, toDate)}.pdf`);
   }
 
-  async function exportExcel() {
-    if (!payroll) return;
-
+  async function exportExcel(payroll: PayrollResponse) {
     const XLSX = await import('xlsx');
     const workbook = XLSX.utils.book_new();
     const detailRows = payroll.lines.map((line) => ({
@@ -102,34 +117,9 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     XLSX.writeFile(workbook, `${getExportFilename(fromDate, toDate)}.xlsx`);
   }
 
-  useEffect(() => {
-    if (invalidRange) {
-      setPayroll(null);
-      setIsLoading(false);
-      setLoadError('The start date must be on or before the end date.');
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsLoading(true);
-    setLoadError('');
-    void getPayroll({ fromDate, toDate, organizationId, locationId }, controller.signal)
-      .then(setPayroll)
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setLoadError(error instanceof ApiError ? error.message : 'Unable to load payroll.');
-        setPayroll(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [fromDate, toDate, organizationId, locationId, invalidRange]);
-
   return (
     <Stack spacing={5}>
-      <PayrollSummary payroll={payroll} isLoading={isLoading} />
+      <PayrollSummary payroll={payroll} />
 
       <ContentCard
         noPadding
@@ -138,13 +128,13 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
         subtitle={`${periodLabel(fromDate, toDate)} · calculated from attendance`}
         actions={(
           <>
-            <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => payroll && void downloadSalarySlipsPdf(payroll.lines, fromDate, toDate)}>
+            <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'slips'} onClick={() => void runExport('slips')}>
               Salary slips
             </ActionButton>
-            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => void exportPdf()}>
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
               PDF
             </ActionButton>
-            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => void exportExcel()}>
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
               Excel
             </ActionButton>
           </>
@@ -156,7 +146,9 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
         )}
       >
         <PayrollTable
-          lines={payroll?.lines ?? []}
+          payroll={payroll}
+          pageSize={payrollState.pageSize}
+          onPageChange={payrollState.setPage}
           isLoading={isLoading}
           error={loadError}
           emptyTitle="No payroll for this period"

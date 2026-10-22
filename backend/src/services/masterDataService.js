@@ -6,6 +6,7 @@ const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 
 const { MASTER_DATA_TYPES } = MasterData;
+const MASTER_DATA_PAGE_SIZE = 10;
 
 const TYPE_LABELS = {
 	designation: 'designation',
@@ -102,10 +103,25 @@ async function listMasterData(user, options = {}) {
 	const search = normalizeName(options.search).slice(0, 100);
 	if (search) filter.name = new RegExp(escapeRegex(search), 'i');
 
-	const items = await MasterData.find(filter).sort({ type: 1, name: 1, _id: 1 }).lean();
-	if (user.role !== 'admin' || options.includeUsage !== 'true') return items.map((item) => publicMasterData(item));
-	const counts = await Promise.all(items.map(countUsage));
-	return items.map((item, index) => publicMasterData(item, counts[index]));
+	let pagination;
+	let query = MasterData.find(filter).sort({ type: 1, name: 1, _id: 1 });
+	if (options.page !== undefined) {
+		const requestedLimit = Number(options.limit);
+		const limit = Math.min(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : MASTER_DATA_PAGE_SIZE, 100);
+		const total = await MasterData.countDocuments(filter);
+		const totalPages = Math.max(1, Math.ceil(total / limit));
+		const requestedPage = Number(options.page);
+		const page = Math.min(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1, totalPages);
+		query = query.skip((page - 1) * limit).limit(limit);
+		pagination = { page, limit, total, totalPages };
+	}
+
+	const items = await query.lean();
+	const counts = user.role === 'admin' && options.includeUsage === 'true'
+		? await Promise.all(items.map(countUsage))
+		: [];
+	const publicItems = items.map((item, index) => publicMasterData(item, counts[index]));
+	return pagination ? { items: publicItems, pagination } : publicItems;
 }
 
 async function findItem(id) {

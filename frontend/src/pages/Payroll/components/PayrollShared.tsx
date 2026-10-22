@@ -1,6 +1,6 @@
 import { CalendarIcon, CheckCircleIcon } from '@chakra-ui/icons';
 import { Box, Button, HStack, Text, Tooltip } from '@chakra-ui/react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
 	DataTable,
 	EntityCell,
@@ -113,20 +113,17 @@ export function PeriodFields({ fromDate, toDate, onChange }: PeriodFieldsProps) 
 	);
 }
 
-export function PayrollSummary({ payroll, isLoading }: { payroll: PayrollResponse | null; isLoading: boolean }) {
-	const lines = payroll?.lines ?? [];
-	const present = lines.reduce((sum, line) => sum + line.presentDays, 0);
-	const absent = lines.reduce((sum, line) => sum + line.absentDays, 0);
-	const paidDays = lines.reduce((sum, line) => sum + line.paidDays, 0);
+export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null }) {
+	const { employees = 0, presentDays: present = 0, absentDays: absent = 0, paidDays = 0 } = payroll?.summary ?? {};
 	const totals = payroll?.totals ?? [];
-	const ready = !isLoading && payroll;
+	const ready = Boolean(payroll);
 
 	return (
 		<StatStrip
 			items={[
 				{
 					label: 'Employees',
-					value: ready ? lines.length : null,
+					value: ready ? employees : null,
 					helper: 'Included in this run',
 					color: 'brand.500',
 					icon: <PeopleIcon boxSize={5} />,
@@ -141,7 +138,7 @@ export function PayrollSummary({ payroll, isLoading }: { payroll: PayrollRespons
 				{
 					label: 'Paid days',
 					value: ready ? paidDays : null,
-					helper: lines.length ? `Avg ${(paidDays / lines.length).toFixed(1)} per employee` : 'No attendance yet',
+					helper: employees ? `Avg ${(paidDays / employees).toFixed(1)} per employee` : 'No attendance yet',
 					color: 'blue.500',
 					icon: <CalendarIcon />,
 				},
@@ -229,32 +226,22 @@ const payrollColumns: DataTableColumn<PayrollLine>[] = [
 ];
 
 type PayrollTableProps = {
-	lines: PayrollLine[];
+	payroll: PayrollResponse | null;
+	pageSize: number;
+	onPageChange: (page: number) => void;
 	isLoading?: boolean;
 	error?: string;
 	emptyTitle?: string;
 	emptyDescription?: string;
 };
 
-const PAYROLL_PAGE_SIZE = 10;
-
-export function PayrollTable({ lines, isLoading, error, emptyTitle = 'No payroll lines', emptyDescription }: PayrollTableProps) {
-	const [page, setPage] = useState(1);
-	const totalPages = Math.max(1, Math.ceil(lines.length / PAYROLL_PAGE_SIZE));
-	const currentPage = Math.min(page, totalPages);
-	const pageLines = useMemo(
-		() => lines.slice((currentPage - 1) * PAYROLL_PAGE_SIZE, currentPage * PAYROLL_PAGE_SIZE),
-		[currentPage, lines],
-	);
-
-	useEffect(() => {
-		setPage(1);
-	}, [lines]);
+export function PayrollTable({ payroll, pageSize, onPageChange, isLoading, error, emptyTitle = 'No payroll lines', emptyDescription }: PayrollTableProps) {
+	const pagination = payroll?.pagination;
 
 	return (
 		<DataTable
 			columns={payrollColumns}
-			rows={pageLines}
+			rows={payroll?.lines ?? []}
 			rowKey={(line) => line.employeeId}
 			isLoading={isLoading}
 			error={error}
@@ -262,15 +249,15 @@ export function PayrollTable({ lines, isLoading, error, emptyTitle = 'No payroll
 			emptyDescription={emptyDescription}
 			footer={(
 				<>
-					{lines.length > 0 && !error ? (
+					{pagination && pagination.total > 0 && !error ? (
 						<TableFooter
-							page={currentPage}
-							pageSize={PAYROLL_PAGE_SIZE}
-							total={lines.length}
-							totalPages={totalPages}
+							page={pagination.page}
+							pageSize={pageSize}
+							total={pagination.total}
+							totalPages={pagination.totalPages}
 							noun="employees"
 							isDisabled={isLoading}
-							onPageChange={setPage}
+							onPageChange={onPageChange}
 						/>
 					) : null}
 					<PayrollFormulaNote />

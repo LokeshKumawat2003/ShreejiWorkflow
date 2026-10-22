@@ -4,6 +4,7 @@ const Employee = require('../models/Employee');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { resolveMasterValue } = require('./masterDataService');
+const { escapeRegex } = require('../utils/validation');
 
 function publicLocation(location) {
 	const value = location.toObject ? location.toObject() : location;
@@ -78,10 +79,49 @@ async function resolveLocation(user, organizationId, locationId) {
 	return { location, organizationId: resolvedOrganizationId };
 }
 
-async function listLocations(user, organizationId) {
+const LOCATION_PAGE_SIZE = 10;
+const MAX_LOCATION_PAGE_SIZE = 100;
+
+function positiveInteger(value, fallback) {
+	const number = Number(value);
+	return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+}
+
+async function listLocations(user, organizationId, options = {}) {
 	const resolvedOrganizationId = await resolveOrganizationId(user, organizationId);
-	const locations = await Location.find({ organizationId: resolvedOrganizationId }).sort({ name: 1, _id: 1 });
-	return locations.map(publicLocation);
+	const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
+	const status = ['active', 'disabled'].includes(options.status) ? options.status : 'all';
+	const designation = typeof options.designation === 'string' ? options.designation.trim().toLowerCase().slice(0, 100) : '';
+	const limit = Math.min(positiveInteger(options.limit, LOCATION_PAGE_SIZE), MAX_LOCATION_PAGE_SIZE);
+	const scope = { organizationId: resolvedOrganizationId };
+	const filter = { ...scope };
+
+	if (status !== 'all') filter.status = status;
+	if (designation && designation !== 'all') filter.designation = designation;
+	if (search) {
+		const pattern = new RegExp(escapeRegex(search), 'i');
+		filter.$or = [{ workName: pattern }, { opNumber: pattern }, { name: pattern }, { address: pattern }, { designation: pattern }];
+	}
+
+	const [total, scopeTotal, scopeActive, designations] = await Promise.all([
+		Location.countDocuments(filter),
+		Location.countDocuments(scope),
+		Location.countDocuments({ ...scope, status: 'active' }),
+		Location.distinct('designation', scope),
+	]);
+	const totalPages = Math.max(1, Math.ceil(total / limit));
+	const page = Math.min(positiveInteger(options.page, 1), totalPages);
+	const locations = await Location.find(filter)
+		.sort({ name: 1, _id: 1 })
+		.skip((page - 1) * limit)
+		.limit(limit);
+
+	return {
+		locations: locations.map(publicLocation),
+		pagination: { page, limit, total, totalPages },
+		summary: { total: scopeTotal, active: scopeActive, inactive: scopeTotal - scopeActive },
+		designations: designations.filter(Boolean).sort(),
+	};
 }
 
 async function createLocation(user, organizationId, input) {

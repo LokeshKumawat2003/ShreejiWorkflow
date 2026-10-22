@@ -3,17 +3,37 @@ import type { OrganizationLocation } from '../types';
 
 export type CreateLocationInput = Pick<OrganizationLocation, 'workName' | 'opNumber' | 'name' | 'address' | 'designation' | 'status'>;
 
-type LocationsResponse = {
+export type LocationListParams = {
+	search?: string;
+	status?: 'all' | OrganizationLocation['status'];
+	designation?: string;
+	page?: number;
+	limit?: number;
+};
+
+export type LocationListResponse = {
 	locations: OrganizationLocation[];
+	pagination: { page: number; limit: number; total: number; totalPages: number };
+	summary: { total: number; active: number; inactive: number };
+	designations: string[];
 };
 
 type LocationResponse = {
 	location: OrganizationLocation;
 };
 
-export async function listOrganizationLocations(organizationId: string, signal?: AbortSignal) {
-	const { data } = await api.get<LocationsResponse>(`/organizations/${organizationId}/locations`, { signal });
-	return data.locations;
+export async function listOrganizationLocations(organizationId: string, params: LocationListParams = {}, signal?: AbortSignal) {
+	const { data } = await api.get<LocationListResponse>(`/organizations/${organizationId}/locations`, {
+		params: {
+			...(params.search ? { search: params.search } : {}),
+			...(params.status && params.status !== 'all' ? { status: params.status } : {}),
+			...(params.designation && params.designation !== 'all' ? { designation: params.designation } : {}),
+			...(params.page ? { page: params.page } : {}),
+			...(params.limit ? { limit: params.limit } : {}),
+		},
+		signal,
+	});
+	return data;
 }
 
 export async function createOrganizationLocation(organizationId: string, input: CreateLocationInput) {

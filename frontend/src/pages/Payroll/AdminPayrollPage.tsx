@@ -1,5 +1,5 @@
 import { CheckIcon, DownloadIcon, InfoOutlineIcon } from '@chakra-ui/icons';
-import { Alert, Box, Button, Flex, HStack, SimpleGrid, Skeleton, Stack, Text } from '@chakra-ui/react';
+import { Alert, Box, Button, Flex, HStack, SimpleGrid, Skeleton, Stack, Text, useToast } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import {
   ActionButton,
@@ -14,10 +14,11 @@ import {
   WalletIcon,
 } from '../../components/ui';
 import { ApiError } from '../../services/api';
-import { getPayroll, type PayrollLine, type PayrollResponse } from '../../services/attendanceService';
+import type { PayrollResponse } from '../../services/attendanceService';
 import { listEmployees } from '../../services/employeeService';
 import type { Employee } from '../../types';
 import { PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './components/PayrollShared';
+import { usePayroll, type PayrollQuery } from './hooks/usePayroll';
 import { downloadSalarySlipsPdf } from './utils/salarySlipPdf';
 
 const EMPLOYEE_PAGE_SIZE = 9;
@@ -26,17 +27,6 @@ type EmployeeScope = 'all' | 'selected';
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
-}
-
-function totalByCurrency(lines: PayrollLine[]) {
-  const totals = new Map<string, number>();
-  for (const line of lines) {
-    totals.set(line.currency, (totals.get(line.currency) || 0) + line.grossPay);
-  }
-  return [...totals.entries()].map(([currency, total]) => ({
-    currency,
-    total: Math.round((total + Number.EPSILON) * 100) / 100,
-  }));
 }
 
 function initialsOf(name: string) {
@@ -127,11 +117,16 @@ function AdminPayrollPage() {
   const [employeeError, setEmployeeError] = useState('');
   const [scope, setScope] = useState<EmployeeScope>('all');
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+  const toast = useToast();
   const [{ fromDate, toDate }, setRange] = useState(thisMonthRange);
-  const [payroll, setPayroll] = useState<PayrollResponse | null>(null);
+  const [runQuery, setRunQuery] = useState<PayrollQuery | null>(null);
+  const [runCount, setRunCount] = useState(0);
   const [payrollScope, setPayrollScope] = useState<EmployeeScope>('all');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationError, setGenerationError] = useState('');
+  const [isExporting, setIsExporting] = useState<'slips' | 'excel' | null>(null);
+  const payrollState = usePayroll(runQuery, runCount);
+  const { payroll } = payrollState;
+  const isGenerating = payrollState.isLoading && !payroll;
+  const generationError = payrollState.error;
   const invalidDateRange = fromDate > toDate;
   const canGenerate = !invalidDateRange && !isLoadingEmployees && (scope === 'all' || selectedEmployeeIds.length > 0);
 
@@ -164,14 +159,14 @@ function AdminPayrollPage() {
 
   function changeScope(next: EmployeeScope) {
     setScope(next);
-    setPayroll(null);
+    setRunQuery(null);
   }
 
   function toggleEmployee(employeeId: string) {
     setSelectedEmployeeIds((current) => (
       current.includes(employeeId) ? current.filter((id) => id !== employeeId) : [...current, employeeId]
     ));
-    setPayroll(null);
+    setRunQuery(null);
   }
 
   const allOnPageSelected = employees.length > 0 && employees.every((employee) => selectedEmployeeIds.includes(employee.id));
@@ -183,32 +178,30 @@ function AdminPayrollPage() {
         ? current.filter((id) => !pageIds.includes(id))
         : [...new Set([...current, ...pageIds])]
     ));
-    setPayroll(null);
+    setRunQuery(null);
   }
 
-  async function generatePayroll() {
+  function generatePayroll() {
     if (!canGenerate) return;
+    setRunQuery({ fromDate, toDate, ...(scope === 'selected' ? { employeeIds: selectedEmployeeIds } : {}) });
+    setRunCount((current) => current + 1);
+    setPayrollScope(scope);
+  }
 
-    setIsGenerating(true);
-    setGenerationError('');
-    setPayroll(null);
+  async function runExport(kind: 'slips' | 'excel') {
+    setIsExporting(kind);
     try {
-      const result = await getPayroll({ fromDate, toDate });
-      const lines = scope === 'all'
-        ? result.lines
-        : result.lines.filter((line) => selectedEmployeeIds.includes(line.employeeId));
-      setPayroll({ ...result, lines, totals: totalByCurrency(lines) });
-      setPayrollScope(scope);
+      const fullPayroll = await payrollState.fetchAll();
+      if (kind === 'slips') await downloadSalarySlipsPdf(fullPayroll.lines, fullPayroll.fromDate, fullPayroll.toDate);
+      else await exportExcel(fullPayroll);
     } catch (error) {
-      setGenerationError(errorMessage(error, 'Unable to generate payroll.'));
+      toast({ title: errorMessage(error, 'Unable to export payroll.'), status: 'error', position: 'top' });
     } finally {
-      setIsGenerating(false);
+      setIsExporting(null);
     }
   }
 
-  async function exportExcel() {
-    if (!payroll) return;
-
+  async function exportExcel(payroll: PayrollResponse) {
     const XLSX = await import('xlsx');
     const workbook = XLSX.utils.book_new();
     const detailRows = payroll.lines.map((line) => ({
@@ -239,7 +232,7 @@ function AdminPayrollPage() {
     const totalsSheet = XLSX.utils.aoa_to_sheet([
       ['Organization scope', 'All organizations'],
       ['Pay period', `${payroll.fromDate} to ${payroll.toDate}`],
-      ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.lines.length} selected employees`],
+      ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected employees`],
       [],
       ['Currency', 'Total payable'],
       ...payroll.totals.map(({ currency, total }) => [currency, total]),
@@ -273,7 +266,7 @@ function AdminPayrollPage() {
               toDate={toDate}
               onChange={(range) => {
                 setRange(range);
-                setPayroll(null);
+                setRunQuery(null);
               }}
             />
             <FilterField label="Employees" flex={{ base: '1 1 100%', md: '0 0 280px' }}>
@@ -294,7 +287,7 @@ function AdminPayrollPage() {
               isLoading={isGenerating}
               loadingText="Generating"
               isDisabled={!canGenerate}
-              onClick={() => void generatePayroll()}
+              onClick={generatePayroll}
             >
               Generate payroll
             </ActionButton>
@@ -333,7 +326,7 @@ function AdminPayrollPage() {
                 <Button size="sm" variant="outline" borderRadius="full" borderColor="slate.200" color="slate.700" isDisabled={employees.length === 0 || isLoadingEmployees} onClick={togglePage}>
                   {allOnPageSelected ? 'Unselect page' : 'Select page'}
                 </Button>
-                <Button size="sm" variant="ghost" borderRadius="full" color="slate.600" isDisabled={selectedEmployeeIds.length === 0} onClick={() => { setSelectedEmployeeIds([]); setPayroll(null); }}>
+                <Button size="sm" variant="ghost" borderRadius="full" color="slate.600" isDisabled={selectedEmployeeIds.length === 0} onClick={() => { setSelectedEmployeeIds([]); setRunQuery(null); }}>
                   Clear
                 </Button>
               </HStack>
@@ -381,25 +374,28 @@ function AdminPayrollPage() {
 
       {payroll ? (
         <Stack spacing={5}>
-          <PayrollSummary payroll={payroll} isLoading={false} />
+          <PayrollSummary payroll={payroll} />
           <ContentCard
             noPadding
             icon={<PeopleIcon boxSize={5} />}
             title="Payroll results"
-            subtitle={`${periodLabel(payroll.fromDate, payroll.toDate)} · ${payrollScope === 'all' ? 'All employees' : `${payroll.lines.length} selected`}`}
+            subtitle={`${periodLabel(payroll.fromDate, payroll.toDate)} · ${payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected`}`}
             actions={(
               <>
-                <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.lines.length === 0} onClick={() => void downloadSalarySlipsPdf(payroll.lines, payroll.fromDate, payroll.toDate)}>
+                <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'slips'} onClick={() => void runExport('slips')}>
                   Salary slips
                 </ActionButton>
-                <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.lines.length === 0} onClick={() => void exportExcel()}>
+                <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'excel'} onClick={() => void runExport('excel')}>
                   Excel
                 </ActionButton>
               </>
             )}
           >
             <PayrollTable
-              lines={payroll.lines}
+              payroll={payroll}
+              pageSize={payrollState.pageSize}
+              onPageChange={payrollState.setPage}
+              isLoading={payrollState.isLoading}
               emptyTitle="No payroll lines"
               emptyDescription="None of the chosen employees have attendance in this period."
             />

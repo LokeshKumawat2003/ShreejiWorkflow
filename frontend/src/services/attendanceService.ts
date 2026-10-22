@@ -94,6 +94,18 @@ export type PayrollResponse = {
   paidStatuses: AttendanceStatus[];
   lines: PayrollLine[];
   totals: { currency: string; total: number }[];
+  summary: { employees: number; presentDays: number; absentDays: number; paidDays: number };
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export type PayrollParams = {
+  fromDate: string;
+  toDate: string;
+  organizationId?: string;
+  locationId?: string;
+  employeeIds?: string[];
+  page?: number;
+  limit?: number;
 };
 
 export async function listAttendanceHistory(params: AttendanceHistoryParams, signal?: AbortSignal) {
@@ -109,11 +121,14 @@ export async function listAttendance(date: string, organizationId?: string, sign
   return data;
 }
 
-export async function getPayroll(
-  params: { fromDate: string; toDate: string; organizationId?: string; locationId?: string },
-  signal?: AbortSignal,
-) {
-  const { data } = await api.get<PayrollResponse>('/attendance/payroll', { params, signal });
+export async function getPayroll({ employeeIds, ...params }: PayrollParams, signal?: AbortSignal) {
+  const { data } = await api.get<PayrollResponse>('/attendance/payroll', {
+    params: {
+      ...params,
+      ...(employeeIds ? { employeeIds: employeeIds.join(',') } : {}),
+    },
+    signal,
+  });
   return data;
 }
 

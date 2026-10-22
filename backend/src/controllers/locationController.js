@@ -1,8 +1,7 @@
 const { createLocation, deleteLocation, listLocations, updateLocation } = require('../services/locationService');
 
 async function list(req, res) {
-	const locations = await listLocations(req.user, req.params.organizationId);
-	return res.json({ locations });
+	return res.json(await listLocations(req.user, req.params.organizationId, req.query));
 }
 
 async function create(req, res) {

@@ -45,6 +45,26 @@ export async function listMasterData(params: MasterDataListParams = {}, signal?:
 	return data.items;
 }
 
+export type MasterDataPage = {
+	items: MasterDataItem[];
+	pagination: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export async function listMasterDataPage(params: MasterDataListParams & { page: number; limit?: number }, signal?: AbortSignal) {
+	const { data } = await api.get<MasterDataPage>('/master-data', {
+		params: {
+			...(params.type ? { type: params.type } : {}),
+			...(params.status && params.status !== 'all' ? { status: params.status } : {}),
+			...(params.search ? { search: params.search } : {}),
+			...(params.includeUsage ? { includeUsage: 'true' } : {}),
+			page: params.page,
+			...(params.limit ? { limit: params.limit } : {}),
+		},
+		signal,
+	});
+	return data;
+}
+
 export async function createMasterData(input: MasterDataInput) {
 	const { data } = await api.post<{ item: MasterDataItem }>('/master-data', input);
 	return data.item;

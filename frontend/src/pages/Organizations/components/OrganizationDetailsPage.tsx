@@ -18,7 +18,7 @@ import {
   Text,
   useDisclosure,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
   ActionButton,
   BuildingIcon,
@@ -36,22 +36,19 @@ import {
   TableFooter,
   type DataTableColumn,
 } from '../../../components/ui';
-
-const LOCATION_PAGE_SIZE = 10;
 import type { OrganizationLocation, User } from '../../../types';
+import type { LocationStatusFilter, useLocations } from '../hooks/useLocations';
 
 type OrganizationDetailsPageProps = {
   organization: User;
   isLoading: boolean;
   onBack: () => void;
   onEdit: () => void;
-  locations: OrganizationLocation[];
+  locationList: ReturnType<typeof useLocations>;
   onAddLocation: () => void;
   onViewLocation: (location: OrganizationLocation) => void;
   onEditLocation: (location: OrganizationLocation) => void;
   onDeleteLocation: (location: OrganizationLocation) => void;
-  isLoadingLocations: boolean;
-  locationsError: string;
 };
 
 function formatCreatedAt(value?: string) {
@@ -61,39 +58,12 @@ function formatCreatedAt(value?: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
-function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, locations, onAddLocation, onViewLocation, onEditLocation, onDeleteLocation, isLoadingLocations, locationsError }: OrganizationDetailsPageProps) {
+function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, locationList, onAddLocation, onViewLocation, onEditLocation, onDeleteLocation }: OrganizationDetailsPageProps) {
   const isActive = organization.status !== 'disabled';
   const organizationId = organization.id || organization._id;
   const informationDialog = useDisclosure();
-  const [locationSearch, setLocationSearch] = useState('');
-  const [locationStatus, setLocationStatus] = useState<'all' | 'active' | 'disabled'>('all');
-  const [locationDesignation, setLocationDesignation] = useState('all');
-  const designationOptions = useMemo(
-    () => [...new Set(locations.map((location) => location.designation).filter(Boolean))].sort(),
-    [locations],
-  );
-  const activeLocationCount = locations.filter((location) => location.status === 'active').length;
-  const isLocationFiltered = Boolean(locationSearch.trim()) || locationStatus !== 'all' || locationDesignation !== 'all';
-  const filteredLocations = useMemo(() => {
-    const query = locationSearch.trim().toLowerCase();
-    return locations.filter((location) => (
-      (locationStatus === 'all' || location.status === locationStatus)
-      && (locationDesignation === 'all' || location.designation === locationDesignation)
-      && (!query || [location.workName, location.opNumber, location.name, location.address, location.designation]
-        .some((value) => value?.toLowerCase().includes(query)))
-    ));
-  }, [locationDesignation, locationSearch, locationStatus, locations]);
-  const [locationPage, setLocationPage] = useState(1);
-  const locationTotalPages = Math.max(1, Math.ceil(filteredLocations.length / LOCATION_PAGE_SIZE));
-  const currentLocationPage = Math.min(locationPage, locationTotalPages);
-  const pagedLocations = filteredLocations.slice(
-    (currentLocationPage - 1) * LOCATION_PAGE_SIZE,
-    currentLocationPage * LOCATION_PAGE_SIZE,
-  );
-
-  useEffect(() => {
-    setLocationPage(1);
-  }, [locationDesignation, locationSearch, locationStatus]);
+  const { summary, total: matchingTotal, isFiltered: isLocationFiltered, isLoading: isLoadingLocations, loadError: locationsError } = locationList;
+  const hasLoadedSummary = summary.total > 0 || !isLoadingLocations;
 
   const locationColumns: DataTableColumn<OrganizationLocation>[] = [
     {
@@ -222,9 +192,9 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
                 icon={<MapPinIcon boxSize={4} />}
                 color="orange"
                 label="Locations"
-                value={isLoadingLocations && locations.length === 0
+                value={!hasLoadedSummary
                   ? 'Loading…'
-                  : `${locations.length} ${locations.length === 1 ? 'site' : 'sites'} · ${activeLocationCount} active`}
+                  : `${summary.total} ${summary.total === 1 ? 'site' : 'sites'} · ${summary.active} active`}
               />
             </SimpleGrid>
           )}
@@ -264,11 +234,11 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
         noPadding
         icon={<BuildingIcon boxSize={5} />}
         title="Locations"
-        subtitle={isLoadingLocations && locations.length === 0
+        subtitle={!hasLoadedSummary
           ? 'Loading locations…'
           : isLocationFiltered
-            ? `${filteredLocations.length} of ${locations.length} locations match your filters`
-            : `${locations.length} ${locations.length === 1 ? 'site' : 'sites'} for this organization`}
+            ? `${matchingTotal} of ${summary.total} locations match your filters`
+            : `${summary.total} ${summary.total === 1 ? 'site' : 'sites'} for this organization`}
         actions={(
           <ActionButton size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={onAddLocation}>
             Add location
@@ -278,29 +248,25 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
           <FilterBar
             variant="inset"
             canClear={isLocationFiltered}
-            onClear={() => {
-              setLocationSearch('');
-              setLocationStatus('all');
-              setLocationDesignation('all');
-            }}
+            onClear={locationList.clearFilters}
           >
             <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 260px' }} maxW={{ md: '420px' }}>
-              <SearchInput value={locationSearch} onChange={setLocationSearch} placeholder="Work name, OP number or address..." label="Search locations" />
+              <SearchInput value={locationList.search} onChange={locationList.setSearch} placeholder="Work name, OP number or address..." label="Search locations" />
             </FilterField>
             <FilterField label="Designation">
               <FilterSelect
                 label="Filter locations by designation"
-                value={locationDesignation}
-                onChange={setLocationDesignation}
-                options={[{ value: 'all', label: 'All designations' }, ...designationOptions.map((value) => ({ value, label: value }))]}
+                value={locationList.designation}
+                onChange={locationList.setDesignation}
+                options={[{ value: 'all', label: 'All designations' }, ...locationList.designations.map((value) => ({ value, label: value }))]}
                 textTransform="capitalize"
               />
             </FilterField>
             <FilterField label="Status">
-              <FilterSelect<'all' | 'active' | 'disabled'>
+              <FilterSelect<LocationStatusFilter>
                 label="Filter locations by status"
-                value={locationStatus}
-                onChange={setLocationStatus}
+                value={locationList.status}
+                onChange={locationList.setStatus}
                 options={[
                   { value: 'all', label: 'All Status' },
                   { value: 'active', label: 'Active' },
@@ -313,18 +279,18 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
       >
         <DataTable
           columns={locationColumns}
-          rows={pagedLocations}
+          rows={locationList.locations}
           rowKey={(location) => location.id}
           onRowClick={onViewLocation}
-          footer={filteredLocations.length > 0 && !locationsError ? (
+          footer={matchingTotal > 0 && !locationsError ? (
             <TableFooter
-              page={currentLocationPage}
-              pageSize={LOCATION_PAGE_SIZE}
-              total={filteredLocations.length}
-              totalPages={locationTotalPages}
-              noun={filteredLocations.length === 1 ? 'location' : 'locations'}
+              page={locationList.page}
+              pageSize={locationList.pageSize}
+              total={matchingTotal}
+              totalPages={locationList.totalPages}
+              noun={matchingTotal === 1 ? 'location' : 'locations'}
               isDisabled={isLoadingLocations}
-              onPageChange={setLocationPage}
+              onPageChange={locationList.setPage}
             />
           ) : undefined}
           isLoading={isLoadingLocations}

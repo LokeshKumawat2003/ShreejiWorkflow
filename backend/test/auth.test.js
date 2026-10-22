@@ -646,6 +646,46 @@ test('payroll pays present days only and treats legacy statuses as absent', asyn
   }
 });
 
+test('payroll filters selected employees and paginates on the server with whole-run totals', async () => {
+  const originalAttendanceFind = Attendance.find;
+  const originalEmployeeFind = Employee.find;
+  const ids = ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022', '507f1f77bcf86cd799439023'];
+  Attendance.find = () => ({
+    lean: async () => ids.map((employeeId) => ({ employeeId, status: 'present' })),
+  });
+  Employee.find = () => ({
+    lean: async () => ids.map((id, index) => ({
+      _id: id,
+      name: `Employee ${String.fromCharCode(65 + index)}`,
+      email: `e${index}@example.com`,
+      dailySalary: 100,
+      currency: 'INR',
+    })),
+  });
+
+  try {
+    const organization = { id: '507f1f77bcf86cd799439011', role: 'organization' };
+    const options = { fromDate: '2026-10-01', toDate: '2026-10-31' };
+    const selected = await calculatePayroll(organization, { ...options, employeeIds: `${ids[0]},${ids[2]}`, page: '2', limit: '1' });
+    assert.deepEqual(selected.lines.map((line) => line.employeeId), [ids[2]]);
+    assert.deepEqual(selected.pagination, { page: 2, limit: 1, total: 2, totalPages: 2 });
+    assert.deepEqual(selected.summary, { employees: 2, presentDays: 2, absentDays: 0, paidDays: 2 });
+    assert.deepEqual(selected.totals, [{ currency: 'INR', total: 200 }]);
+
+    const everything = await calculatePayroll(organization, options);
+    assert.equal(everything.lines.length, 3);
+    assert.equal(everything.pagination, undefined);
+
+    await assert.rejects(
+      calculatePayroll(organization, { ...options, employeeIds: 'bad-id' }),
+      (error) => error.statusCode === 400 && error.message === 'Invalid employee id.',
+    );
+  } finally {
+    Attendance.find = originalAttendanceFind;
+    Employee.find = originalEmployeeFind;
+  }
+});
+
 test('attendance history remains visible for inactive employees with an existing record', async () => {
   const originalFindEmployees = Employee.find;
   const originalFindAttendance = Attendance.find;
@@ -1170,6 +1210,55 @@ test('document settings can only be updated by administrators and are validated 
     assert.equal(letter.workingHours, '');
   } finally {
     DocumentSettings.findOneAndUpdate = originalUpdate;
+  }
+});
+
+test('location lists filter, paginate and summarize on the server', async () => {
+  const originalCount = Location.countDocuments;
+  const originalDistinct = Location.distinct;
+  const originalFind = Location.find;
+  const organizationId = '507f1f77bcf86cd799439011';
+  let listFilter;
+  let skipped;
+  let limited;
+  Location.countDocuments = async (filter) => (filter.$or ? 12 : filter.status === 'active' ? 7 : 20);
+  Location.distinct = async () => ['plumber', '', 'cook'];
+  Location.find = (filter) => {
+    listFilter = filter;
+    return {
+      sort: () => ({
+        skip: (value) => {
+          skipped = value;
+          return {
+            limit: async (value) => {
+              limited = value;
+              return [{ _id: '507f1f77bcf86cd799439031', organizationId, workName: 'Site', name: 'Site', status: 'active', designation: 'cook' }];
+            },
+          };
+        },
+      }),
+    };
+  };
+
+  try {
+    const result = await listLocations(
+      { id: organizationId, role: 'organization' },
+      organizationId,
+      { search: 'si', status: 'active', designation: 'Cook', page: '2', limit: '5' },
+    );
+    assert.equal(listFilter.status, 'active');
+    assert.equal(listFilter.designation, 'cook');
+    assert.equal(listFilter.$or.length, 5);
+    assert.equal(skipped, 5);
+    assert.equal(limited, 5);
+    assert.deepEqual(result.pagination, { page: 2, limit: 5, total: 12, totalPages: 3 });
+    assert.deepEqual(result.summary, { total: 20, active: 7, inactive: 13 });
+    assert.deepEqual(result.designations, ['cook', 'plumber']);
+    assert.equal(result.locations[0].workName, 'Site');
+  } finally {
+    Location.countDocuments = originalCount;
+    Location.distinct = originalDistinct;
+    Location.find = originalFind;
   }
 });
 

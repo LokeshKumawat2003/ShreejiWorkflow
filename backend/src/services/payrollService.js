@@ -6,6 +6,24 @@ const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 
+const PAYROLL_PAGE_SIZE = 10;
+const MAX_PAYROLL_PAGE_SIZE = 100;
+
+function positiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+}
+
+function parseEmployeeIds(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const ids = (Array.isArray(value) ? value : String(value).split(','))
+    .map((id) => String(id).trim())
+    .filter(Boolean);
+  if (ids.length > 1000) throw httpError(400, 'Select 1000 employees or fewer.');
+  if (ids.some((id) => !mongoose.isValidObjectId(id))) throw httpError(400, 'Invalid employee id.');
+  return new Set(ids);
+}
+
 function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -106,20 +124,43 @@ async function calculatePayroll(user, options = {}) {
     };
   }).sort((left, right) => left.employeeName.localeCompare(right.employeeName));
 
+  const selectedIds = parseEmployeeIds(options.employeeIds);
+  const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
+  const pattern = search ? new RegExp(escapeRegex(search), 'i') : null;
+  const matchingLines = lines.filter((line) => (
+    (!selectedIds || selectedIds.has(line.employeeId))
+    && (!pattern || [line.employeeName, line.employeeEmail, line.designation, line.organizationName].some((value) => pattern.test(value || '')))
+  ));
+
   const totalsByCurrency = new Map();
-  for (const line of lines) {
+  const summary = { employees: matchingLines.length, presentDays: 0, absentDays: 0, paidDays: 0 };
+  for (const line of matchingLines) {
     totalsByCurrency.set(line.currency, (totalsByCurrency.get(line.currency) || 0) + line.grossPay);
+    summary.presentDays += line.presentDays;
+    summary.absentDays += line.absentDays;
+    summary.paidDays += line.paidDays;
   }
 
-  return {
+  const result = {
     fromDate,
     toDate,
     paidStatuses: ['present'],
-    lines,
+    lines: matchingLines,
+    summary,
     totals: [...totalsByCurrency.entries()].map(([currency, total]) => ({
       currency,
       total: Math.round((total + Number.EPSILON) * 100) / 100,
     })),
+  };
+
+  if (options.page === undefined) return result;
+  const limit = Math.min(positiveInteger(options.limit, PAYROLL_PAGE_SIZE), MAX_PAYROLL_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(matchingLines.length / limit));
+  const page = Math.min(positiveInteger(options.page, 1), totalPages);
+  return {
+    ...result,
+    lines: matchingLines.slice((page - 1) * limit, page * limit),
+    pagination: { page, limit, total: matchingLines.length, totalPages },
   };
 }
 

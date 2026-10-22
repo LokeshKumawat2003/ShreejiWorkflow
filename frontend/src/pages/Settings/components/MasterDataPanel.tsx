@@ -11,6 +11,7 @@ import {
 	FilterSelect,
 	IconAction,
 	SearchInput,
+	TableFooter,
 	type DataTableColumn,
 } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
@@ -18,7 +19,7 @@ import {
 	MASTER_DATA_LABELS,
 	createMasterData,
 	deleteMasterData,
-	listMasterData,
+	listMasterDataPage,
 	updateMasterData,
 } from '../../../services/masterDataService';
 import type { MasterDataItem, MasterDataType } from '../../../types';
@@ -30,6 +31,8 @@ type MasterDataPanelProps = {
 };
 
 type StatusFilter = 'all' | MasterDataItem['status'];
+
+const PAGE_SIZE = 10;
 
 const STATUS_OPTIONS = [
 	{ value: 'all', label: 'All statuses' },
@@ -55,6 +58,9 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 	const [search, setSearch] = useState('');
 	const [debouncedSearch, setDebouncedSearch] = useState('');
 	const [status, setStatus] = useState<StatusFilter>('all');
+	const [page, setPage] = useState(1);
+	const [total, setTotal] = useState(0);
+	const [totalPages, setTotalPages] = useState(1);
 	const [refreshToken, setRefreshToken] = useState(0);
 	const [editingItem, setEditingItem] = useState<MasterDataItem | null>(null);
 	const [isFormOpen, setIsFormOpen] = useState(false);
@@ -71,13 +77,20 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 	}, [search]);
 
 	useEffect(() => {
+		setPage(1);
+	}, [debouncedSearch, status, type]);
+
+	useEffect(() => {
 		const controller = new AbortController();
 		setIsLoading(true);
 		setLoadError('');
-		void listMasterData({ type, status, search: debouncedSearch, includeUsage: true }, controller.signal)
+		void listMasterDataPage({ type, status, search: debouncedSearch, includeUsage: true, page, limit: PAGE_SIZE }, controller.signal)
 			.then((result) => {
-				setItems(result);
-				if (status === 'all' && !debouncedSearch) onCountChange?.(type, result.length);
+				setItems(result.items);
+				setTotal(result.pagination.total);
+				setTotalPages(result.pagination.totalPages);
+				if (result.pagination.page !== page) setPage(result.pagination.page);
+				if (status === 'all' && !debouncedSearch) onCountChange?.(type, result.pagination.total);
 			})
 			.catch((error: unknown) => {
 				if (!controller.signal.aborted) setLoadError(errorMessage(error, `Unable to load ${label.singular} entries.`));
@@ -86,7 +99,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [debouncedSearch, label.singular, onCountChange, refreshToken, status, type]);
+	}, [debouncedSearch, label.singular, onCountChange, page, refreshToken, status, type]);
 
 	function openForm(item: MasterDataItem | null) {
 		setEditingItem(item);
@@ -138,7 +151,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 	}
 
 	const columns: DataTableColumn<MasterDataItem>[] = [
-		{ key: 'index', header: '#', width: '60px', render: (_, index) => <Text color="slate.500">{index + 1}</Text> },
+		{ key: 'index', header: '#', width: '60px', render: (_, index) => <Text color="slate.500">{(page - 1) * PAGE_SIZE + index + 1}</Text> },
 		{
 			key: 'name',
 			header: 'Name',
@@ -226,6 +239,17 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				size="sm"
 				isLoading={isLoading}
 				error={loadError}
+				footer={total > 0 && !loadError ? (
+					<TableFooter
+						page={page}
+						pageSize={PAGE_SIZE}
+						total={total}
+						totalPages={totalPages}
+						noun={total === 1 ? 'entry' : 'entries'}
+						isDisabled={isLoading}
+						onPageChange={setPage}
+					/>
+				) : undefined}
 				emptyTitle={isFiltered ? 'No matching entries' : `No ${label.singular} entries yet`}
 				emptyDescription={isFiltered ? 'Try a different search or filter.' : 'Add one to show it in the dropdown.'}
 			/>

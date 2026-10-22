@@ -6,8 +6,8 @@ const {
 } = require('../services/masterDataService');
 
 async function list(req, res) {
-	const items = await listMasterData(req.user, req.query);
-	return res.json({ items });
+	const result = await listMasterData(req.user, req.query);
+	return res.json(Array.isArray(result) ? { items: result } : result);
 }
 
 async function create(req, res) {

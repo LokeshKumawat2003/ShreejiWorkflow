@@ -22,6 +22,17 @@ export const MapPinIcon = createIcon({
 	),
 });
 
+export const WalletIcon = createIcon({
+	displayName: 'WalletIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M4 5h14a2 2 0 0 1 2 2v1h-7a4 4 0 0 0 0 8h7v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm9 5h9v4h-9a2 2 0 1 1 0-4Zm0 1.25a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"
+		/>
+	),
+});
+
 export const BuildingIcon = createIcon({
 	displayName: 'BuildingIcon',
 	viewBox: '0 0 24 24',

@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { requireAuth, requireRole } = require('../middleware/auth');
-const { getCompanyProfile, updateCompanyProfile } = require('../services/companyProfileService');
+const { getDocumentSettings, updateDocumentSettings } = require('../services/documentSettingsService');
 const { httpError } = require('../utils/httpError');
 
 const router = express.Router();
@@ -14,9 +14,9 @@ function requireDatabase(req, res, next) {
 }
 
 router.use(requireAuth, requireRole('admin', 'organization'), requireDatabase);
-router.get('/company', async (req, res) => res.json({ company: await getCompanyProfile() }));
-router.put('/company', requireRole('admin'), async (req, res) => (
-	res.json({ company: await updateCompanyProfile(req.user, req.body || {}) })
+router.get('/documents/:type', async (req, res) => res.json({ settings: await getDocumentSettings(req.params.type) }));
+router.put('/documents/:type', requireRole('admin'), async (req, res) => (
+	res.json({ settings: await updateDocumentSettings(req.user, req.params.type, req.body || {}) })
 ));
 
 module.exports = router;

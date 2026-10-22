@@ -11,7 +11,7 @@ export { default as FormInput } from './FormInput';
 export { default as FormSelect, type SelectOption } from './FormSelect';
 export { default as FormTextarea } from './FormTextarea';
 export { default as IconAction } from './IconAction';
-export { BuildingIcon, MapPinIcon, PeopleIcon } from './icons';
+export { BuildingIcon, MapPinIcon, PeopleIcon, WalletIcon } from './icons';
 export { default as MasterDataSelect } from './MasterDataSelect';
 export { default as PageHeader } from './PageHeader';
 export { default as Pagination } from './Pagination';

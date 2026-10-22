@@ -1,56 +1,28 @@
 import { DownloadIcon } from '@chakra-ui/icons';
+import { Stack } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import {
-  Alert,
-  Box,
-  HStack,
-  Spinner,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
+import { ActionButton, ContentCard, FilterBar, WalletIcon } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { getPayroll, type PayrollResponse } from '../../../services/attendanceService';
-import { ActionButton, FilterBar, FilterField, FilterInput } from '../../../components/ui';
 import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
+import { formatAmount, PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './PayrollShared';
 
 type OrganizationPayrollPageProps = {
   organizationId?: string;
   locationId?: string;
 };
 
-function localDateString(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatAmount(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(2)}`;
-  }
-}
-
 function getExportFilename(fromDate: string, toDate: string) {
   return `payroll-${fromDate}-to-${toDate}`;
 }
 
 function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPayrollPageProps) {
-  const today = new Date();
-  const [fromDate, setFromDate] = useState(localDateString(new Date(today.getFullYear(), today.getMonth(), 1)));
-  const [toDate, setToDate] = useState(localDateString(today));
+  const [{ fromDate, toDate }, setRange] = useState(thisMonthRange);
   const [payroll, setPayroll] = useState<PayrollResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const invalidRange = fromDate > toDate;
+  const canExport = Boolean(payroll && payroll.lines.length > 0 && !isLoading && !loadError);
 
   async function exportPdf() {
     if (!payroll) return;
@@ -156,107 +128,42 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
   }, [fromDate, toDate, organizationId, locationId, invalidRange]);
 
   return (
-    <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-      <HStack align="center" justify="space-between" flexWrap="wrap" gap={4} px={{ base: 3, md: 4 }} py={4} borderBottom="1px solid" borderColor="slate.100">
-        <Box>
-          <Text fontSize="md" fontWeight="700" color="slate.900">Payroll</Text>
-          <Text fontSize="sm" color="slate.500">
-            {payroll ? `${payroll.lines.length} employees · ${fromDate} to ${toDate}` : 'Calculated from attendance'}
-          </Text>
-        </Box>
-        <HStack flexWrap="wrap" spacing={2}>
-          <ActionButton
-            tone="neutral"
-            size="sm"
-            leftIcon={<DownloadIcon />}
-            isDisabled={!payroll || payroll.lines.length === 0 || isLoading || Boolean(loadError)}
-            onClick={() => payroll && void downloadSalarySlipsPdf(payroll.lines, fromDate, toDate)}
-          >
-            Salary slips
-          </ActionButton>
-          <ActionButton
-            tone="neutral"
-            size="sm"
-            leftIcon={<DownloadIcon />}
-            isDisabled={!payroll || payroll.lines.length === 0 || isLoading || Boolean(loadError)}
-            onClick={exportPdf}
-          >
-            Export PDF
-          </ActionButton>
-          <ActionButton
-            tone="neutral"
-            size="sm"
-            leftIcon={<DownloadIcon />}
-            isDisabled={!payroll || payroll.lines.length === 0 || isLoading || Boolean(loadError)}
-            onClick={exportExcel}
-          >
-            Export Excel
-          </ActionButton>
-        </HStack>
-      </HStack>
+    <Stack spacing={5}>
+      <PayrollSummary payroll={payroll} isLoading={isLoading} />
 
-      <FilterBar
-        variant="inset"
+      <ContentCard
+        noPadding
+        icon={<WalletIcon boxSize={5} />}
+        title="Payroll"
+        subtitle={`${periodLabel(fromDate, toDate)} · calculated from attendance`}
         actions={(
-          <HStack spacing={6} flexWrap="wrap">
-            {payroll?.totals.map(({ currency, total }) => (
-              <Box key={currency} pl={3} borderLeft="3px solid" borderColor="brand.500">
-                <Text fontSize="11px" fontWeight="700" color="slate.500" letterSpacing="0.06em">TOTAL PAYROLL · {currency}</Text>
-                <Text fontSize="lg" lineHeight="1.2" fontWeight="700" color="slate.900">{formatAmount(total, currency)}</Text>
-              </Box>
-            ))}
-          </HStack>
+          <>
+            <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => payroll && void downloadSalarySlipsPdf(payroll.lines, fromDate, toDate)}>
+              Salary slips
+            </ActionButton>
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => void exportPdf()}>
+              PDF
+            </ActionButton>
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} onClick={() => void exportExcel()}>
+              Excel
+            </ActionButton>
+          </>
+        )}
+        toolbar={(
+          <FilterBar variant="inset">
+            <PeriodFields fromDate={fromDate} toDate={toDate} onChange={setRange} />
+          </FilterBar>
         )}
       >
-        <FilterField label="From" flex={{ base: '1 1 45%', md: '0 0 175px' }}>
-          <FilterInput aria-label="Payroll start date" type="date" value={fromDate} max={toDate} onChange={(event) => setFromDate(event.target.value)} />
-        </FilterField>
-        <FilterField label="Through" flex={{ base: '1 1 45%', md: '0 0 175px' }}>
-          <FilterInput aria-label="Payroll end date" type="date" value={toDate} min={fromDate} onChange={(event) => setToDate(event.target.value)} />
-        </FilterField>
-      </FilterBar>
-
-      {loadError && <Alert status="error" borderRadius={0}>{loadError}</Alert>}
-      <TableContainer>
-        <Table variant="simple" size="md" fontSize="sm" minW="880px">
-          <Thead bg="slate.50">
-            <Tr>
-              <Th fontSize="xs">Employee</Th>
-              <Th fontSize="xs" isNumeric whiteSpace="nowrap">Daily salary</Th>
-              <Th fontSize="xs" isNumeric>Present</Th>
-              <Th fontSize="xs" isNumeric>Absent</Th>
-              <Th fontSize="xs" isNumeric whiteSpace="nowrap">Paid days</Th>
-              <Th fontSize="xs" isNumeric>Pay</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {isLoading ? (
-              <Tr><Td colSpan={6} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
-            ) : loadError ? (
-              <Tr><Td colSpan={6} textAlign="center" py={8} color="slate.500">Payroll could not be loaded.</Td></Tr>
-            ) : payroll && payroll.lines.length > 0 ? payroll.lines.map((line) => (
-              <Tr key={line.employeeId} _hover={{ bg: 'slate.50' }}>
-                <Td>
-                  <Text fontWeight="600" color="slate.900">{line.employeeName}</Text>
-                  <Text fontSize="xs" color="slate.500">{line.employeeEmail}</Text>
-                </Td>
-                <Td isNumeric whiteSpace="nowrap">{formatAmount(line.dailySalary, line.currency)}</Td>
-                <Td isNumeric>{line.presentDays}</Td>
-                <Td isNumeric>{line.absentDays}</Td>
-                <Td isNumeric fontWeight="600">{line.paidDays}</Td>
-                <Td isNumeric whiteSpace="nowrap" fontWeight="700" color="slate.900">{formatAmount(line.grossPay, line.currency)}</Td>
-              </Tr>
-            )) : (
-              <Tr><Td colSpan={6} textAlign="center" py={10} color="slate.500">No employees or attendance records for this period.</Td></Tr>
-            )}
-          </Tbody>
-        </Table>
-      </TableContainer>
-      <HStack justify="space-between" flexWrap="wrap" gap={2} px={{ base: 3, md: 4 }} py={3} borderTop="1px solid" borderColor="slate.100">
-        <Text fontSize="sm" color="slate.500">Daily salary × present days</Text>
-        <Text fontSize="sm" color="slate.500">Absent and unmarked days are unpaid</Text>
-      </HStack>
-    </Box>
+        <PayrollTable
+          lines={payroll?.lines ?? []}
+          isLoading={isLoading}
+          error={loadError}
+          emptyTitle="No payroll for this period"
+          emptyDescription="No employees or attendance records were found between these dates."
+        />
+      </ContentCard>
+    </Stack>
   );
 }
 

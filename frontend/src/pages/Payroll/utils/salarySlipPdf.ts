@@ -1,12 +1,5 @@
 import type { PayrollLine } from '../../../services/attendanceService';
-import { getCompanyProfile } from '../../../services/settingsService';
-
-export type SalarySlipCompany = { name: string; address: string };
-
-export const SALARY_SLIP_COMPANY: SalarySlipCompany = {
-  name: 'M/S. SHREEJI CARETAKER COMPANY',
-  address: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)',
-};
+import { loadDocumentSettings } from '../../../services/settingsService';
 
 export const SALARY_SLIP_RATES = {
   bonus: 0.0833,
@@ -124,20 +117,11 @@ const FRAME_WIDTH = PAGE_WIDTH - FRAME_X * 2;
 const LEFT = 20;
 const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
 
-async function loadCompany(): Promise<SalarySlipCompany> {
-  try {
-    const company = await getCompanyProfile();
-    return { name: company.name || SALARY_SLIP_COMPANY.name, address: company.address };
-  } catch {
-    return SALARY_SLIP_COMPANY;
-  }
-}
-
 export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: string, toDate: string) {
   const [{ jsPDF }, { default: autoTable }, company] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
-    loadCompany(),
+    loadDocumentSettings('salary-slip'),
   ]);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
   const monthYear = salaryMonthYear(fromDate, toDate);
@@ -146,7 +130,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
   pdf.setFont('times', 'bold');
   let nameFontSize = 17;
   pdf.setFontSize(nameFontSize);
-  while (nameFontSize > 11 && pdf.getTextWidth(company.name) > FRAME_WIDTH - 10) {
+  while (nameFontSize > 11 && pdf.getTextWidth(company.companyName) > FRAME_WIDTH - 10) {
     nameFontSize -= 0.5;
     pdf.setFontSize(nameFontSize);
   }
@@ -169,7 +153,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     pdf.setTextColor(0);
     pdf.setFont('times', 'bold');
     pdf.setFontSize(nameFontSize);
-    pdf.text(company.name, PAGE_WIDTH / 2, top + 19, { align: 'center' });
+    pdf.text(company.companyName, PAGE_WIDTH / 2, top + 19, { align: 'center' });
     if (addressLines.length > 0) {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(8.5);
@@ -177,7 +161,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     }
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(10.5);
-    pdf.text('Salary Slip', PAGE_WIDTH / 2, top + 31 + shift, { align: 'center' });
+    pdf.text(company.title, PAGE_WIDTH / 2, top + 31 + shift, { align: 'center' });
 
     pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
@@ -232,9 +216,10 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     pdf.text(`IFSC Code:-${slip.ifscCode}`, LEFT + 2, tableEnd + 19);
 
     const signY = top + SLIP_HEIGHT - 14;
-    pdf.text('Propritior/Manager:', PAGE_WIDTH / 2 + 10, signY);
+    const signatoryWidth = company.signatoryLabel ? pdf.getTextWidth(company.signatoryLabel) + 2 : 0;
+    if (company.signatoryLabel) pdf.text(company.signatoryLabel, PAGE_WIDTH / 2 + 10, signY);
     pdf.setLineWidth(0.2);
-    pdf.line(PAGE_WIDTH / 2 + 41, signY + 0.5, PAGE_WIDTH - LEFT, signY + 0.5);
+    pdf.line(PAGE_WIDTH / 2 + 10 + signatoryWidth, signY + 0.5, PAGE_WIDTH - LEFT, signY + 0.5);
 
     if (slot === 0 && index < lines.length - 1) {
       pdf.setLineDashPattern([1.5, 1.5], 0);

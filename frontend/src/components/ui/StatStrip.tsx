@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 export type StatStripItem = {
 	label: string;
-	value: number | null | undefined;
+	value: number | string | null | undefined;
 	helper?: string;
 	color?: string;
 	icon?: ReactNode;
@@ -50,9 +50,17 @@ function StatStrip({ items }: StatStripProps) {
 								<Text fontSize="xs" fontWeight="700" color="slate.500" letterSpacing="0.06em" textTransform="uppercase">
 									{item.label}
 								</Text>
-								{typeof item.value === 'number' ? (
-									<Text mt={2} fontSize="3xl" lineHeight="1" fontWeight="800" color="slate.900" letterSpacing="-0.02em">
-										{formatValue(item.value)}
+								{typeof item.value === 'number' || typeof item.value === 'string' ? (
+									<Text
+										mt={2}
+										fontSize={typeof item.value === 'string' && item.value.length > 9 ? '2xl' : '3xl'}
+										lineHeight="1"
+										fontWeight="800"
+										color="slate.900"
+										letterSpacing="-0.02em"
+										whiteSpace="nowrap"
+									>
+										{typeof item.value === 'number' ? formatValue(item.value) : item.value}
 									</Text>
 								) : (
 									<Skeleton mt={2} h="30px" w="56px" borderRadius="sm" />

@@ -30,8 +30,8 @@ const { createOrganization, updateOrganization } = require('../src/services/orga
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 const MasterData = require('../src/models/MasterData');
 const { createMasterData, deleteMasterData, updateMasterData } = require('../src/services/masterDataService');
-const CompanyProfile = require('../src/models/CompanyProfile');
-const { DEFAULT_COMPANY_PROFILE, getCompanyProfile, updateCompanyProfile } = require('../src/services/companyProfileService');
+const DocumentSettings = require('../src/models/DocumentSettings');
+const { DOCUMENT_FIELDS, getDocumentSettings, updateDocumentSettings } = require('../src/services/documentSettingsService');
 
 test('health endpoint works without MongoDB', async (t) => {
   process.env.NODE_ENV = 'test';
@@ -1100,55 +1100,76 @@ test('master data in use cannot be deleted', async () => {
   }
 });
 
-test('company profile falls back to the default header until saved', async () => {
-  const originalFindOne = CompanyProfile.findOne;
-  CompanyProfile.findOne = () => ({ lean: async () => null });
+test('document settings fall back to separate defaults until saved', async () => {
+  const originalFindOne = DocumentSettings.findOne;
+  const keys = [];
+  DocumentSettings.findOne = (filter) => {
+    keys.push(filter.key);
+    return { lean: async () => null };
+  };
 
   try {
-    const company = await getCompanyProfile();
-    assert.equal(company.name, DEFAULT_COMPANY_PROFILE.name);
-    assert.equal(company.address, DEFAULT_COMPANY_PROFILE.address);
-    assert.equal(company.registeredAddress, DEFAULT_COMPANY_PROFILE.registeredAddress);
-    assert.equal(company.phone, DEFAULT_COMPANY_PROFILE.phone);
-    assert.equal(company.email, DEFAULT_COMPANY_PROFILE.email);
+    const slip = await getDocumentSettings('salary-slip');
+    const letter = await getDocumentSettings('appointment-letter');
+    assert.deepEqual(keys, ['salarySlip', 'appointmentLetter']);
+    assert.equal(slip.companyName, DOCUMENT_FIELDS.salarySlip.companyName.default);
+    assert.equal(slip.signatoryLabel, 'Propritior/Manager:');
+    assert.equal(letter.companyName, DOCUMENT_FIELDS.appointmentLetter.companyName.default);
+    assert.equal(letter.email, 'shreejicaretaker2007@gmail.com');
+    assert.equal(letter.terms.split('\n').length, 3);
+    assert.equal('phone' in slip, false);
+    await assert.rejects(getDocumentSettings('invoice'), (error) => error.statusCode === 404);
   } finally {
-    CompanyProfile.findOne = originalFindOne;
+    DocumentSettings.findOne = originalFindOne;
   }
 });
 
-test('company profile can only be updated by administrators with a name', async () => {
-  const originalUpdate = CompanyProfile.findOneAndUpdate;
+test('document settings can only be updated by administrators and are validated per document', async () => {
+  const originalUpdate = DocumentSettings.findOneAndUpdate;
+  let filter;
   let update;
-  CompanyProfile.findOneAndUpdate = (filter, change) => {
+  DocumentSettings.findOneAndUpdate = (query, change) => {
+    filter = query;
     update = change;
-    return { lean: async () => ({ ...change.$set, updatedAt: new Date('2026-10-22T00:00:00Z') }) };
+    return { lean: async () => ({ key: query.key, values: change.$set.values, updatedAt: new Date('2026-10-22T00:00:00Z') }) };
   };
 
   try {
     await assert.rejects(
-      updateCompanyProfile({ id: '507f1f77bcf86cd799439011', role: 'organization' }, { name: 'Other Co' }),
+      updateDocumentSettings({ id: '507f1f77bcf86cd799439011', role: 'organization' }, 'salary-slip', { companyName: 'Other Co' }),
       (error) => error.statusCode === 403,
     );
     await assert.rejects(
-      updateCompanyProfile({ id: '507f1f77bcf86cd799439099', role: 'admin' }, { name: '  ' }),
+      updateDocumentSettings({ id: '507f1f77bcf86cd799439099', role: 'admin' }, 'salary-slip', { companyName: '  ', title: 'Salary Slip' }),
       (error) => error.statusCode === 400 && error.message === 'Company name is required.',
     );
     await assert.rejects(
-      updateCompanyProfile({ id: '507f1f77bcf86cd799439099', role: 'admin' }, { name: 'Shreeji', email: 'not-an-email' }),
+      updateDocumentSettings({ id: '507f1f77bcf86cd799439099', role: 'admin' }, 'appointment-letter', {
+        companyName: 'Shreeji', title: 'Letter', shortName: 'Shreeji', email: 'not-an-email',
+      }),
       (error) => error.statusCode === 400 && error.message === 'Enter a valid company email.',
     );
-    const company = await updateCompanyProfile(
+
+    const slip = await updateDocumentSettings(
       { id: '507f1f77bcf86cd799439099', role: 'admin' },
-      { name: '  Shreeji Services  ', address: ' Kankroli ', registeredAddress: ' N-33 ', phone: ' 98765 ', email: ' Office@Shreeji.in ' },
+      'salary-slip',
+      { companyName: '  Shreeji Services  ', address: ' Kankroli ', title: 'Pay Slip', signatoryLabel: 'Manager:', phone: '123' },
     );
-    assert.deepEqual(update, {
-      $set: { name: 'Shreeji Services', address: 'Kankroli', registeredAddress: 'N-33', phone: '98765', email: 'office@shreeji.in' },
-    });
-    assert.equal(company.name, 'Shreeji Services');
-    assert.equal(company.address, 'Kankroli');
-    assert.equal(company.email, 'office@shreeji.in');
+    assert.deepEqual(filter, { key: 'salarySlip' });
+    assert.deepEqual(update, { $set: { values: { companyName: 'Shreeji Services', address: 'Kankroli', title: 'Pay Slip', signatoryLabel: 'Manager:' } } });
+    assert.equal(slip.title, 'Pay Slip');
+
+    const letter = await updateDocumentSettings(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      'appointment-letter',
+      { companyName: 'Shreeji', title: 'APPOINTMENT LETTER', shortName: 'Shreeji Co', email: ' Office@Shreeji.in ', terms: 'One\r\nTwo' },
+    );
+    assert.deepEqual(filter, { key: 'appointmentLetter' });
+    assert.equal(letter.email, 'office@shreeji.in');
+    assert.equal(letter.terms, 'One\nTwo');
+    assert.equal(letter.workingHours, '');
   } finally {
-    CompanyProfile.findOneAndUpdate = originalUpdate;
+    DocumentSettings.findOneAndUpdate = originalUpdate;
   }
 });
 

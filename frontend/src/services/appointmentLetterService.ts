@@ -1,16 +1,8 @@
 import type { Employee, OrganizationLocation } from '../types';
-import { getCompanyProfile, type CompanyProfileInput } from './settingsService';
+import { loadDocumentSettings, type AppointmentLetterSettings } from './settingsService';
 
 type PdfDocument = InstanceType<typeof import('jspdf').jsPDF>;
-type LetterCompany = Omit<CompanyProfileInput, 'address'>;
 type Segment = { text: string; bold?: boolean; underline?: boolean };
-
-export const APPOINTMENT_LETTER_COMPANY: LetterCompany = {
-  name: 'M/s. SHREEJI CARETAKER COMPANY',
-  registeredAddress: 'N-33, GOVIND NAGAR, R.H.B. COLONY, KANKROLI\nDistt :-Rajsamand , Pin :-313342 ( Rajasthan )',
-  phone: '9784785808',
-  email: 'shreejicaretaker2007@gmail.com',
-};
 
 const MARGIN = 15;
 const BODY_SIZE = 10.5;
@@ -25,17 +17,6 @@ function formatDate(value?: string | null) {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${day}-${month}-${date.getFullYear()}`;
-}
-
-function letterCompanyName(name: string) {
-  return name.replace(/^m\/s\.?\s*/i, 'M/s. ');
-}
-
-function shortCompanyName(name: string) {
-  return name
-    .replace(/^m\/s\.?\s*/i, '')
-    .toLowerCase()
-    .replace(/\b([a-z])/g, (letter) => letter.toUpperCase());
 }
 
 function positionOf(employee: Employee, location: OrganizationLocation) {
@@ -58,12 +39,12 @@ function jobLocationOf(employee: Employee, location: OrganizationLocation) {
   return `${organization}${/[.,]$/.test(organization) ? ' ' : ', '}${site}`;
 }
 
-function salaryOf(employee: Employee) {
+function salaryOf(employee: Employee, settings: AppointmentLetterSettings) {
   if (employee.dailySalary > 0) {
     const amount = employee.dailySalary.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-    return `Rs. ${amount} per day (as per Central Govt. minimum Wage Act)`;
+    return `Rs. ${amount} per day`;
   }
-  return 'As per Central Govt. minimum Wage Act. ("C" Class City)';
+  return settings.salaryText.trim();
 }
 
 function setFont(pdf: PdfDocument, bold = false, size = BODY_SIZE) {
@@ -104,7 +85,7 @@ function writeDetail(pdf: PdfDocument, label: string, value: Segment[], y: numbe
 
 function addAppointmentLetter(
   pdf: PdfDocument,
-  company: LetterCompany,
+  settings: AppointmentLetterSettings,
   employee: Employee,
   location: OrganizationLocation,
   index: number,
@@ -115,35 +96,35 @@ function addAppointmentLetter(
   const textWidth = pageWidth - MARGIN * 2;
   const position = positionOf(employee, location);
   const name = employee.name.trim().toUpperCase();
-  const shortName = shortCompanyName(company.name) || 'Shreeji Caretaker Company';
+  const shortName = settings.shortName.trim();
   const reference = location.opNumber?.trim() || String(index + 1).padStart(2, '0');
 
   pdf.setTextColor(20, 20, 20);
   pdf.setDrawColor(40, 40, 40);
 
+  const companyName = settings.companyName.trim();
   setFont(pdf, true, 19);
-  const title = letterCompanyName(company.name);
-  const titleSize = Math.min(19, (19 * textWidth) / Math.max(pdf.getTextWidth(title), 1));
-  setFont(pdf, true, titleSize);
-  pdf.text(title, center, 22, { align: 'center' });
+  setFont(pdf, true, Math.min(19, (19 * textWidth) / Math.max(pdf.getTextWidth(companyName), 1)));
+  pdf.text(companyName, center, 22, { align: 'center' });
 
   let y = 29;
   setFont(pdf, false, 10.5);
-  const addressLines = company.registeredAddress.split('\n').map((line) => line.trim()).filter(Boolean);
+  const phone = settings.phone.trim();
+  const addressLines = settings.registeredAddress.split('\n').map((line) => line.trim()).filter(Boolean);
   addressLines.forEach((line, lineIndex) => {
     let text = lineIndex === 0 ? `Registered address:-${line}` : line;
-    if (lineIndex === addressLines.length - 1 && company.phone.trim()) text += ` Mob-${company.phone.trim()}`;
+    if (lineIndex === addressLines.length - 1 && phone) text += ` Mob-${phone}`;
     const wrapped = pdf.splitTextToSize(text, textWidth) as string[];
     pdf.text(wrapped, center, y, { align: 'center' });
     y += wrapped.length * 5;
   });
-  if (addressLines.length === 0 && company.phone.trim()) {
-    pdf.text(`Mob-${company.phone.trim()}`, center, y, { align: 'center' });
+  if (addressLines.length === 0 && phone) {
+    pdf.text(`Mob-${phone}`, center, y, { align: 'center' });
     y += 5;
   }
-  if (company.email.trim()) {
+  if (settings.email.trim()) {
     setFont(pdf, false, 11.5);
-    pdf.text(`Mail to:- ${company.email.trim()}`, center, y + 0.5, { align: 'center' });
+    pdf.text(`Mail to:- ${settings.email.trim()}`, center, y + 0.5, { align: 'center' });
     y += 5.5;
   }
 
@@ -155,13 +136,14 @@ function addAppointmentLetter(
 
   y += 6;
   setFont(pdf, false, 9.5);
-  pdf.text(`Ref: SCC/Appointment/${reference}`, MARGIN, y);
+  pdf.text(`Ref: ${settings.refPrefix.trim()}${reference}`, MARGIN, y);
   pdf.text(`Date: ${formatDate(new Date().toISOString())}`, pageWidth - MARGIN, y, { align: 'right' });
 
   y += 9;
+  const title = settings.title.trim();
   setFont(pdf, true, 11);
-  pdf.text('APPOINTMENT LETTER', center, y, { align: 'center' });
-  const headingWidth = pdf.getTextWidth('APPOINTMENT LETTER');
+  pdf.text(title, center, y, { align: 'center' });
+  const headingWidth = pdf.getTextWidth(title);
   pdf.setLineWidth(0.3);
   pdf.line(center - headingWidth / 2, y + 1, center + headingWidth / 2, y + 1);
 
@@ -188,56 +170,48 @@ function addAppointmentLetter(
   y = writeRich(pdf, [
     { text: 'We are pleased to offer you the position of ' },
     { text: position, bold: true },
-    { text: ` with ${shortName} on the following terms and conditions.` },
+    { text: `${shortName ? ` with ${shortName}` : ''} on the following terms and conditions.` },
   ], MARGIN, y, textWidth);
 
   y += 8;
   const joiningDate = formatDate(employee.dateOfJoining) || formatDate(employee.locationAssignedAt) || 'To be confirmed';
+  const optionalRows: [string, string][] = [
+    ['Salary', salaryOf(employee, settings)],
+    ['Job Location', jobLocationOf(employee, location)],
+    ['Working Hours', settings.workingHours.trim()],
+    ['Leave Policy', settings.leavePolicy.trim()],
+  ];
   y = writeDetail(pdf, 'Date of Joining', [{ text: joiningDate, underline: true }], y, textWidth);
   y = writeDetail(pdf, 'Job Title', [{ text: ` ${jobTitleOf(employee, position)}`, bold: true }], y, textWidth);
-  y = writeDetail(pdf, 'Salary', [{ text: ` ${salaryOf(employee)}` }], y, textWidth);
-  y = writeDetail(pdf, 'Job Location', [{ text: ` ${jobLocationOf(employee, location) || 'As assigned by the employer'}` }], y, textWidth);
-  y = writeDetail(pdf, 'Working Hours', [{ text: ' 8 Hrs. as per requirement' }], y, textWidth);
-  y = writeDetail(pdf, 'Leave Policy', [{ text: ' Weekly off & Govt. Holidays' }], y, textWidth);
+  optionalRows
+    .filter(([, value]) => value)
+    .forEach(([label, value]) => {
+      y = writeDetail(pdf, label, [{ text: ` ${value}` }], y, textWidth);
+    });
 
-  y += 3;
-  setFont(pdf);
-  pdf.text('Terms and Conditions', MARGIN, y);
-  y += LINE + 2;
-  [
-    'Please sign the duly copy of the appointment letter signifying your acceptance.',
-    'We welcome you to your and look forward to fruitful collaboration.',
-    'This appointment letter is valid on Consent of terms & condition by employer.',
-  ].forEach((term, termIndex) => {
-    pdf.text(`${termIndex + 1}.`, MARGIN + 7, y);
-    y = writeRich(pdf, [{ text: term }], MARGIN + 13, y, textWidth - 13) + 0.5;
-  });
+  const terms = settings.terms.split('\n').map((term) => term.trim()).filter(Boolean);
+  if (terms.length > 0) {
+    y += 3;
+    setFont(pdf);
+    pdf.text('Terms and Conditions', MARGIN, y);
+    y += LINE + 2;
+    terms.forEach((term, termIndex) => {
+      pdf.text(`${termIndex + 1}.`, MARGIN + 7, y);
+      y = writeRich(pdf, [{ text: term }], MARGIN + 13, y, textWidth - 13) + 0.5;
+    });
+  }
 
   const signatureY = Math.max(y + 18, 222);
-  pdf.text('With best Wishes,', MARGIN, signatureY);
-  pdf.text(`For:- ${shortName}`, MARGIN, signatureY + 10);
-  pdf.text('Authorized signatory', MARGIN, signatureY + 28);
-}
-
-async function loadLetterCompany(): Promise<LetterCompany> {
-  try {
-    const company = await getCompanyProfile();
-    return {
-      name: company.name || APPOINTMENT_LETTER_COMPANY.name,
-      registeredAddress: company.registeredAddress ?? '',
-      phone: company.phone ?? '',
-      email: company.email ?? '',
-    };
-  } catch {
-    return APPOINTMENT_LETTER_COMPANY;
-  }
+  if (settings.closing.trim()) pdf.text(settings.closing.trim(), MARGIN, signatureY);
+  if (shortName) pdf.text(`For:- ${shortName}`, MARGIN, signatureY + 10);
+  if (settings.signatoryTitle.trim()) pdf.text(settings.signatoryTitle.trim(), MARGIN, signatureY + 28);
 }
 
 export async function createAppointmentLettersPdf(employees: Employee[], location: OrganizationLocation) {
   if (employees.length === 0) return null;
-  const [{ jsPDF }, company] = await Promise.all([import('jspdf'), loadLetterCompany()]);
+  const [{ jsPDF }, settings] = await Promise.all([import('jspdf'), loadDocumentSettings('appointment-letter')]);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
-  employees.forEach((employee, index) => addAppointmentLetter(pdf, company, employee, location, index));
+  employees.forEach((employee, index) => addAppointmentLetter(pdf, settings, employee, location, index));
   return pdf;
 }
 

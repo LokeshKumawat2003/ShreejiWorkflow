@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, ViewIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon } from '@chakra-ui/icons';
 import { HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import {
@@ -122,7 +122,6 @@ function EmployeeTable({
       align: 'right',
       render: (employee) => (
         <HStack justify="flex-end" spacing={1.5}>
-          <IconAction label={`View ${employee.name}`} icon={<ViewIcon />} tone="primary" onClick={() => onView(employee)} />
           {role === 'admin' && (
             <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} onClick={() => onEdit(employee)} />
           )}
@@ -193,6 +192,7 @@ function EmployeeTable({
           columns={columns}
           rows={employees}
           rowKey={(employee) => employee.id}
+          onRowClick={onView}
           isLoading={isLoading}
           error={loadError}
           emptyTitle={isFiltered ? 'No matching employees' : 'No employees yet'}

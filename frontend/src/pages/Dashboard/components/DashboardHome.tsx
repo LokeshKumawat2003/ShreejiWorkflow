@@ -252,6 +252,7 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 					columns={recentColumns}
 					rows={summary?.recentEmployees || []}
 					rowKey={(employee) => employee.id}
+					onRowClick={() => onNavigate('Employees')}
 					isLoading={isLoading && !summary}
 					emptyTitle="No employees yet"
 					emptyDescription="Employees you add will show up here."

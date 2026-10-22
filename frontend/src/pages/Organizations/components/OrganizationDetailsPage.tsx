@@ -18,7 +18,7 @@ import {
   Text,
   useDisclosure,
 } from '@chakra-ui/react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActionButton,
   BuildingIcon,
@@ -33,8 +33,11 @@ import {
   PeopleIcon,
   SearchInput,
   StatusBadge,
+  TableFooter,
   type DataTableColumn,
 } from '../../../components/ui';
+
+const LOCATION_PAGE_SIZE = 10;
 import type { OrganizationLocation, User } from '../../../types';
 
 type OrganizationDetailsPageProps = {
@@ -80,6 +83,17 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
         .some((value) => value?.toLowerCase().includes(query)))
     ));
   }, [locationDesignation, locationSearch, locationStatus, locations]);
+  const [locationPage, setLocationPage] = useState(1);
+  const locationTotalPages = Math.max(1, Math.ceil(filteredLocations.length / LOCATION_PAGE_SIZE));
+  const currentLocationPage = Math.min(locationPage, locationTotalPages);
+  const pagedLocations = filteredLocations.slice(
+    (currentLocationPage - 1) * LOCATION_PAGE_SIZE,
+    currentLocationPage * LOCATION_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setLocationPage(1);
+  }, [locationDesignation, locationSearch, locationStatus]);
 
   const locationColumns: DataTableColumn<OrganizationLocation>[] = [
     {
@@ -97,9 +111,9 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
       header: 'Address',
       hideBelow: 'md',
       render: (location) => (
-        <Button variant="link" color="brand.600" fontWeight="600" whiteSpace="normal" textAlign="left" maxW="380px" onClick={() => onViewLocation(location)}>
+        <Text color="slate.600" maxW="380px" noOfLines={2}>
           {location.address || location.name}
-        </Button>
+        </Text>
       ),
     },
     { key: 'status', header: 'Status', render: (location) => <StatusBadge status={location.status} /> },
@@ -109,7 +123,6 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
       align: 'right',
       render: (location) => (
         <HStack justify="flex-end" spacing={1.5}>
-          <IconAction label={`Open ${location.name}`} icon={<ViewIcon />} tone="primary" onClick={() => onViewLocation(location)} />
           <IconAction label={`Edit ${location.name}`} icon={<EditIcon />} onClick={() => onEditLocation(location)} />
           <IconAction label={`Delete ${location.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDeleteLocation(location)} />
         </HStack>
@@ -300,8 +313,20 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
       >
         <DataTable
           columns={locationColumns}
-          rows={filteredLocations}
+          rows={pagedLocations}
           rowKey={(location) => location.id}
+          onRowClick={onViewLocation}
+          footer={filteredLocations.length > 0 && !locationsError ? (
+            <TableFooter
+              page={currentLocationPage}
+              pageSize={LOCATION_PAGE_SIZE}
+              total={filteredLocations.length}
+              totalPages={locationTotalPages}
+              noun={filteredLocations.length === 1 ? 'location' : 'locations'}
+              isDisabled={isLoadingLocations}
+              onPageChange={setLocationPage}
+            />
+          ) : undefined}
           isLoading={isLoadingLocations}
           error={locationsError}
           emptyTitle={isLocationFiltered ? 'No matching locations' : 'No locations yet'}

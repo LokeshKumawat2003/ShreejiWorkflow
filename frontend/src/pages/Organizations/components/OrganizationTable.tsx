@@ -1,4 +1,4 @@
-import { DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
+import { DeleteIcon, EditIcon } from '@chakra-ui/icons';
 import { HStack, Text } from '@chakra-ui/react';
 import {
   BuildingIcon,
@@ -100,7 +100,6 @@ function OrganizationTable({
       align: 'right',
       render: (organization) => (
         <HStack justify="flex-end" spacing={1.5}>
-          <IconAction label={`View ${organization.organizationName}`} icon={<ViewIcon />} tone="primary" onClick={() => onView(organization)} />
           <IconAction label={`Edit ${organization.organizationName}`} icon={<EditIcon />} onClick={() => onEdit(organization)} />
           <IconAction label={`Delete ${organization.organizationName}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(organization)} />
         </HStack>
@@ -140,6 +139,7 @@ function OrganizationTable({
         columns={columns}
         rows={organizations}
         rowKey={(organization) => organization.id || organization._id || organization.email}
+        onRowClick={onView}
         isLoading={isLoading}
         error={loadError}
         emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}

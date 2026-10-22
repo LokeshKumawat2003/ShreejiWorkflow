@@ -11,6 +11,8 @@ export type DataTableColumn<T> = {
 	hideBelow?: 'md' | 'lg';
 };
 
+const INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, label, [role="button"], [role="menuitem"]';
+
 type DataTableProps<T> = {
 	columns: DataTableColumn<T>[];
 	rows: T[];
@@ -83,7 +85,17 @@ function DataTable<T>({
 								<Tr
 									key={rowKey(row)}
 									cursor={onRowClick ? 'pointer' : undefined}
-									onClick={onRowClick ? () => onRowClick(row) : undefined}
+									tabIndex={onRowClick ? 0 : undefined}
+									onClick={onRowClick ? (event) => {
+										if ((event.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
+										onRowClick(row);
+									} : undefined}
+									onKeyDown={onRowClick ? (event) => {
+										if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
+										event.preventDefault();
+										onRowClick(row);
+									} : undefined}
+									_focusVisible={{ outline: 'none', bg: '#F3F4FF' }}
 									transition="background 0.15s ease"
 									_hover={{ bg: '#F8F9FF' }}
 									sx={{

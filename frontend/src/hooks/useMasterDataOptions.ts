@@ -10,6 +10,7 @@ function useMasterDataOptions(isEnabled = true) {
 	const [options, setOptions] = useState<MasterDataOptions>(EMPTY_OPTIONS);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState('');
+	const [isLoaded, setIsLoaded] = useState(false);
 
 	useEffect(() => {
 		if (!isEnabled) return undefined;
@@ -21,6 +22,7 @@ function useMasterDataOptions(isEnabled = true) {
 				const grouped: MasterDataOptions = { designation: [], employmentType: [], skillCategory: [] };
 				for (const item of items) grouped[item.type].push(item);
 				setOptions(grouped);
+				setIsLoaded(true);
 			})
 			.catch(() => {
 				if (!controller.signal.aborted) setError('Unable to load dropdown options.');
@@ -31,7 +33,7 @@ function useMasterDataOptions(isEnabled = true) {
 		return () => controller.abort();
 	}, [isEnabled]);
 
-	return { options, isLoading, error };
+	return { options, isLoading, isLoaded, error };
 }
 
 export function findMasterItem(items: MasterDataItem[], value: string) {

@@ -92,7 +92,7 @@ async function calculatePayroll(user, options = {}) {
     const counts = attendanceByEmployee.get(String(employee._id)) || { present: 0, absent: 0 };
     const paidDays = counts.present;
     const dailySalary = Number(employee.dailySalary) || 0;
-    const currency = employee.currency || 'NRI';
+    const currency = !employee.currency || employee.currency === 'NRI' ? 'INR' : employee.currency;
     const grossPay = Math.round((dailySalary * paidDays + Number.EPSILON) * 100) / 100;
     const organization = organizationDetailsById.get(String(employee.organizationId)) || {};
     return {

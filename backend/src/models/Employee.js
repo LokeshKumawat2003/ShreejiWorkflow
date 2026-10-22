@@ -31,7 +31,7 @@ const employeeSchema = new mongoose.Schema(
     phone: { type: String, trim: true, maxlength: 30, default: '' },
     address: { type: String, trim: true, maxlength: 500, default: '' },
     dailySalary: { type: Number, min: 0, max: 1000000000000, default: 0 },
-    currency: { type: String, trim: true, uppercase: true, match: /^[A-Z]{3}$/, default: 'NRI' },
+    currency: { type: String, trim: true, uppercase: true, match: /^[A-Z]{3}$/, default: 'INR' },
     bankName: { type: String, trim: true, maxlength: 120, default: '' },
     bankBranch: { type: String, trim: true, maxlength: 120, default: '' },
     bankAccountHolder: { type: String, trim: true, maxlength: 100, default: '' },

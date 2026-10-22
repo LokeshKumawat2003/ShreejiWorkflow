@@ -1,5 +1,6 @@
 import {
 	Alert,
+	AlertIcon,
 	Modal,
 	ModalBody,
 	ModalCloseButton,
@@ -8,6 +9,7 @@ import {
 	ModalHeader,
 	ModalOverlay,
 	Stack,
+	Text,
 } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ActionButton, FormInput, FormSelect } from '../../../components/ui';
@@ -58,11 +60,19 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} closeOnEsc={!isSaving} closeOnOverlayClick={!isSaving} isCentered>
 			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
-			<ModalContent borderRadius="lg">
-				<ModalHeader color="slate.900">{item ? `Edit ${label.singular}` : `Add ${label.singular}`}</ModalHeader>
-				<ModalCloseButton isDisabled={isSaving} />
-				<ModalBody>
-					{error ? <Alert status="error" borderRadius="md" mb={4} fontSize="sm">{error}</Alert> : null}
+			<ModalContent borderRadius="xl" overflow="hidden" boxShadow="0 24px 64px rgba(15, 23, 42, 0.2)">
+				<ModalHeader pb={3} pr={12} borderBottom="1px solid" borderColor="slate.100">
+					<Text fontSize="xl" fontWeight="800" color="slate.900">{item ? `Edit ${label.singular}` : `Add ${label.singular}`}</Text>
+					<Text mt={0.5} fontSize="sm" fontWeight="400" color="slate.500">{label.description}</Text>
+				</ModalHeader>
+				<ModalCloseButton top={5} right={5} borderRadius="md" isDisabled={isSaving} />
+				<ModalBody py={5}>
+					{error ? (
+						<Alert status="error" borderRadius="md" mb={4} fontSize="sm">
+							<AlertIcon />
+							{error}
+						</Alert>
+					) : null}
 					<form id="master-data-form" onSubmit={handleSubmit}>
 						<Stack spacing={4}>
 							<FormInput
@@ -84,10 +94,10 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 						</Stack>
 					</form>
 				</ModalBody>
-				<ModalFooter gap={3} borderTop="1px solid" borderColor="slate.100" bg="slate.50" borderBottomRadius="lg">
+				<ModalFooter gap={3} px={6} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
 					<ActionButton tone="neutral" onClick={onClose} isDisabled={isSaving}>Cancel</ActionButton>
 					<ActionButton type="submit" form="master-data-form" isLoading={isSaving} isDisabled={!name.trim()}>
-						{item ? 'Save changes' : 'Add'}
+						{item ? 'Save changes' : `Add ${label.singular}`}
 					</ActionButton>
 				</ModalFooter>
 			</ModalContent>

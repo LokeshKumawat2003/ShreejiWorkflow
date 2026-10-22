@@ -55,7 +55,7 @@ function publicEmployee(employee, role = 'organization') {
 		phone: value.phone || '',
 		address: value.address || '',
 		dailySalary: value.dailySalary ?? 0,
-		currency: value.currency || 'NRI',
+		currency: !value.currency || value.currency === 'NRI' ? 'INR' : value.currency,
 		bankName: value.bankName || '',
 		bankBranch: value.bankBranch || '',
 		bankAccountHolder: value.bankAccountHolder || '',
@@ -190,7 +190,7 @@ function validateEmployeeInput(input, { partial = false } = {}) {
 		fields.dailySalary = dailySalary;
 	}
 	if (!partial || input.currency !== undefined) {
-		const currency = typeof input.currency === 'string' ? input.currency.trim().toUpperCase() : 'NRI';
+		const currency = typeof input.currency === 'string' ? input.currency.trim().toUpperCase() : 'INR';
 		if (!/^[A-Z]{3}$/.test(currency)) throw httpError(400, 'Currency must be a three-letter code.');
 		fields.currency = currency;
 	}

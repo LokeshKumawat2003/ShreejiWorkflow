@@ -8,6 +8,7 @@ export { default as FilterBar, FilterField } from './FilterBar';
 export { default as FilterInput } from './FilterInput';
 export { default as FilterSelect } from './FilterSelect';
 export { default as FormInput } from './FormInput';
+export { default as FormSection } from './FormSection';
 export { default as FormSelect, type SelectOption } from './FormSelect';
 export { default as FormTextarea } from './FormTextarea';
 export { default as IconAction } from './IconAction';

@@ -15,6 +15,8 @@ export type EmployeeInput = {
   employmentType: string;
   skillCategory: string;
   dateOfJoining: string;
+  dailySalary?: number;
+  currency?: string;
   basicPay: number;
   dearnessAllowance: number;
   otherAllowances: string;

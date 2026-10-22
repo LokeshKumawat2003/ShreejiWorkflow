@@ -14,8 +14,8 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useState, type FormEvent } from 'react';
-import ActionButton from '../../../components/common/ActionButton';
-import FormInput from '../../../components/common/FormInput';
+import ActionButton from '../../../components/ui/ActionButton';
+import FormInput from '../../../components/ui/FormInput';
 import type { CreateOrganizationInput } from '../../../services/organizationService';
 
 type CreateOrganizationDialogProps = {

@@ -14,8 +14,8 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
-import ActionButton from '../../../components/common/ActionButton';
-import FormInput from '../../../components/common/FormInput';
+import ActionButton from '../../../components/ui/ActionButton';
+import FormInput from '../../../components/ui/FormInput';
 import type { UpdateOrganizationInput } from '../../../services/organizationService';
 import type { User } from '../../../types';
 

@@ -18,9 +18,9 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
-import ActionButton from '../../../components/common/ActionButton';
-import FormInput from '../../../components/common/FormInput';
-import MasterDataSelect from '../../../components/common/MasterDataSelect';
+import ActionButton from '../../../components/ui/ActionButton';
+import FormInput from '../../../components/ui/FormInput';
+import MasterDataSelect from '../../../components/ui/MasterDataSelect';
 import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { EmployeeInput } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';

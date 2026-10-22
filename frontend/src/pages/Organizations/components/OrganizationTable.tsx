@@ -1,27 +1,19 @@
-import { DeleteIcon, EditIcon, SearchIcon, ViewIcon } from '@chakra-ui/icons';
+import { DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
+import { Box, Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import {
-  Badge,
-  Avatar,
-  HStack,
-  Box,
-  IconButton,
-  Input,
-  InputGroup,
-  InputLeftElement,
-  Select,
-  Spinner,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tooltip,
-  Tr,
-} from '@chakra-ui/react';
-import Pagination from '../../../components/common/Pagination';
+  DataTable,
+  EntityCell,
+  FilterSelect,
+  IconAction,
+  SearchInput,
+  StatusBadge,
+  TableFooter,
+  type DataTableColumn,
+} from '../../../components/ui';
 import type { User } from '../../../types';
+
+type StatusFilter = 'all' | 'active' | 'disabled';
+type SortOrder = 'name-asc' | 'name-desc' | 'newest' | 'oldest';
 
 type OrganizationTableProps = {
   organizations: User[];
@@ -32,16 +24,29 @@ type OrganizationTableProps = {
   search: string;
   isLoading: boolean;
   loadError: string;
-  statusFilter: 'all' | 'active' | 'disabled';
-  sortOrder: 'name-asc' | 'name-desc' | 'newest' | 'oldest';
+  statusFilter: StatusFilter;
+  sortOrder: SortOrder;
   onSearchChange: (value: string) => void;
-  onStatusChange: (value: 'all' | 'active' | 'disabled') => void;
-  onSortChange: (value: 'name-asc' | 'name-desc' | 'newest' | 'oldest') => void;
+  onStatusChange: (value: StatusFilter) => void;
+  onSortChange: (value: SortOrder) => void;
   onPageChange: (value: number) => void;
   onView: (organization: User) => void;
   onEdit: (organization: User) => void;
   onDelete: (organization: User) => void;
 };
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'active', label: 'Active' },
+  { value: 'disabled', label: 'Inactive' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'name-asc', label: 'Name A–Z' },
+  { value: 'name-desc', label: 'Name Z–A' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+];
 
 function OrganizationTable({
   organizations,
@@ -62,163 +67,100 @@ function OrganizationTable({
   onEdit,
   onDelete,
 }: OrganizationTableProps) {
-  const firstOrganization = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastOrganization = Math.min(page * pageSize, total);
+  const isFiltered = Boolean(search.trim()) || statusFilter !== 'all';
+
+  const columns: DataTableColumn<User>[] = [
+    {
+      key: 'organization',
+      header: 'Organization',
+      render: (organization) => (
+        <EntityCell name={organization.organizationName || organization.name || organization.email} subtitle={organization.email} />
+      ),
+    },
+    {
+      key: 'holder',
+      header: 'Account holder',
+      hideBelow: 'md',
+      render: (organization) => <Text color="slate.600">{organization.name || '—'}</Text>,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (organization) => <StatusBadge status={organization.status} />,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (organization) => (
+        <HStack justify="flex-end" spacing={0.5}>
+          <IconAction label={`View ${organization.organizationName}`} icon={<ViewIcon />} onClick={() => onView(organization)} />
+          <IconAction label={`Edit ${organization.organizationName}`} icon={<EditIcon />} onClick={() => onEdit(organization)} />
+          <IconAction label={`Delete ${organization.organizationName}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(organization)} />
+        </HStack>
+      ),
+    },
+  ];
 
   return (
-    <>
-      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-        <HStack
-          align="center"
-          justify="space-between"
-          flexWrap="wrap"
-          gap={4}
-          px={{ base: 3, md: 4 }}
-          py={4}
-          borderBottom="1px solid"
-          borderColor="slate.100"
-        >
-          <InputGroup flex="1" minW="220px" maxW="370px">
-            <InputLeftElement pointerEvents="none" color="slate.400"><SearchIcon /></InputLeftElement>
-            <Input
-              aria-label="Search organizations"
-              placeholder="Search organizations..."
-              h="40px"
-              fontSize="sm"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-            />
-          </InputGroup>
-          <HStack spacing={3} ml="auto" flexWrap="wrap">
-            <Box minW="176px">
-              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Status</Text>
-              <Select
-                aria-label="Filter organizations by status"
-                h="40px"
-                fontSize="sm"
-                value={statusFilter}
-                onChange={(event) => onStatusChange(event.target.value as typeof statusFilter)}
-              >
-                <option value="all">All</option>
-                <option value="active">Active</option>
-                <option value="disabled">Inactive</option>
-              </Select>
-            </Box>
-            <Box minW="176px">
-              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Sort by</Text>
-              <Select
-                aria-label="Sort organizations"
-                h="40px"
-                fontSize="sm"
-                value={sortOrder}
-                onChange={(event) => onSortChange(event.target.value as typeof sortOrder)}
-              >
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </Select>
-            </Box>
-          </HStack>
-        </HStack>
+    <Stack spacing={4}>
+      <Flex gap={3} direction={{ base: 'column', md: 'row' }} align={{ base: 'stretch', md: 'center' }}>
+        <SearchInput
+          isPill
+          flex="1"
+          maxW="none"
+          size="lg"
+          value={search}
+          onChange={onSearchChange}
+          placeholder="Search organization, holder or email..."
+          label="Search organizations"
+        />
+        <FilterSelect<StatusFilter>
+          label="Filter organizations by status"
+          size="lg"
+          borderRadius="full"
+          minW="170px"
+          value={statusFilter}
+          options={STATUS_OPTIONS}
+          onChange={onStatusChange}
+        />
+      </Flex>
 
-        <TableContainer>
-        <Table variant="simple" size="md" fontSize="sm">
-          <Thead>
-            <Tr>
-              <Th fontSize="xs">Organization</Th>
-              <Th fontSize="xs">Account holder</Th>
-              <Th fontSize="xs">Email</Th>
-              <Th fontSize="xs">Members</Th>
-              <Th fontSize="xs">Status</Th>
-              <Th fontSize="xs" textAlign="right">Actions</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {isLoading ? (
-              <Tr><Td colSpan={6} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
-            ) : loadError ? (
-              <Tr><Td colSpan={6} textAlign="center" py={10} color="red.600">{loadError}</Td></Tr>
-            ) : organizations.length === 0 ? (
-              <Tr><Td colSpan={6} textAlign="center" py={10} color="slate.500">No organizations found.</Td></Tr>
-            ) : organizations.map((organization) => (
-              <Tr key={organization.id}>
-                <Td>
-                  <HStack spacing={3}>
-                    <Avatar size="sm" name={organization.organizationName} />
-                    <Text fontWeight="600" color="slate.900">{organization.organizationName}</Text>
-                  </HStack>
-                </Td>
-                <Td>{organization.name}</Td>
-                <Td>{organization.email}</Td>
-                <Td color="slate.500">—</Td>
-                <Td>
-                  <Badge
-                    px={3}
-                    py={1}
-                    borderRadius="full"
-                    color={organization.status === 'active' ? 'green.600' : 'slate.500'}
-                    bg={organization.status === 'active' ? 'green.50' : 'slate.100'}
-                    fontSize="xs"
-                    fontWeight="600"
-                  >
-                    {organization.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
-                  </Badge>
-                </Td>
-                <Td>
-                  <HStack justify="flex-end" spacing={1}>
-                    <Tooltip label="View organization">
-                      <IconButton
-                        aria-label={`View ${organization.organizationName}`}
-                        icon={<ViewIcon />}
-                        size="md"
-                        variant="ghost"
-                        color="slate.500"
-                        _hover={{ bg: 'slate.100', color: 'brand.600' }}
-                        onClick={() => onView(organization)}
-                      />
-                    </Tooltip>
-                    <Tooltip label="Edit organization">
-                      <IconButton
-                        aria-label={`Edit ${organization.organizationName}`}
-                        icon={<EditIcon />}
-                        size="md"
-                        variant="ghost"
-                        color="slate.500"
-                        _hover={{ bg: 'slate.100', color: 'brand.600' }}
-                        onClick={() => onEdit(organization)}
-                      />
-                    </Tooltip>
-                    <Tooltip label="Delete organization">
-                      <IconButton
-                        aria-label={`Delete ${organization.organizationName}`}
-                        icon={<DeleteIcon />}
-                        size="md"
-                        variant="ghost"
-                        color="red.600"
-                        _hover={{ bg: 'red.50', color: 'red.600' }}
-                        onClick={() => onDelete(organization)}
-                      />
-                    </Tooltip>
-                  </HStack>
-                </Td>
-              </Tr>
-            ))}
-          </Tbody>
-        </Table>
-        </TableContainer>
-        <HStack justify="space-between" flexWrap="wrap" gap={3} px={{ base: 3, md: 4 }} py={3} borderTop="1px solid" borderColor="slate.100">
-          <Text fontSize="sm" color="slate.500">Showing {firstOrganization}-{lastOrganization} of {total}</Text>
-          <Pagination
-            currentPage={page}
-            totalPages={totalPages}
-            isDisabled={isLoading || Boolean(loadError)}
-            onPageChange={onPageChange}
-          />
-        </HStack>
+      <HStack spacing={4} align="center">
+        <Text fontSize="sm" fontWeight="600" color="slate.700" whiteSpace="nowrap">Organization directory</Text>
+        <FilterSelect<SortOrder>
+          label="Sort organizations"
+          borderRadius="full"
+          flex="1"
+          value={sortOrder}
+          options={SORT_OPTIONS}
+          onChange={onSortChange}
+        />
+      </HStack>
+
+      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
+        <DataTable
+          columns={columns}
+          rows={organizations}
+          rowKey={(organization) => organization.id || organization._id || organization.email}
+          isLoading={isLoading}
+          error={loadError}
+          emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}
+          emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
+          footer={(
+            <TableFooter
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              totalPages={totalPages}
+              noun={total === 1 ? 'organization' : 'organizations'}
+              isDisabled={isLoading || Boolean(loadError)}
+              onPageChange={onPageChange}
+            />
+          )}
+        />
       </Box>
-      <Text srOnly aria-live="polite">{total} organizations</Text>
-    </>
+    </Stack>
   );
 }
 

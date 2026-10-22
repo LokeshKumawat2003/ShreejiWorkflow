@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '../../../services/api';
 import { listEmployees, type EmployeeListParams } from '../../../services/employeeService';
 import type { Employee } from '../../../types';
-import Pagination from '../../../components/common/Pagination';
+import Pagination from '../../../components/ui/Pagination';
 
 type AssignEmployeeDialogProps = {
   isOpen: boolean;

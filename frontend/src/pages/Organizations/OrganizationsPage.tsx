@@ -190,10 +190,10 @@ function OrganizationsPage() {
             </Box>
             <Button
               h="40px"
-              px={4}
-              borderRadius="8px"
+              px={5}
+              borderRadius="full"
               fontSize="sm"
-              leftIcon={<AddIcon />}
+              leftIcon={<AddIcon boxSize={2.5} />}
               colorScheme="brand"
               onClick={createDialog.onOpen}
             >

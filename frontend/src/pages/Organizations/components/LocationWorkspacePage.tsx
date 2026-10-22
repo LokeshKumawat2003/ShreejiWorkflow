@@ -1,10 +1,10 @@
 import { ChevronLeftIcon } from '@chakra-ui/icons';
 import { Avatar, Box, Button, Heading, HStack, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
 import type { OrganizationLocation, User } from '../../../types';
-import AttendanceRegisterGrid from '../../Employees/components/AttendanceRegisterGrid';
-import OrganizationAttendanceHistory from './OrganizationAttendanceHistory';
+import AttendanceRegisterGrid from '../../Attendance/components/AttendanceRegisterGrid';
+import AttendanceHistory from '../../Attendance/components/AttendanceHistory';
 import OrganizationEmployeesPage from './OrganizationEmployeesPage';
-import OrganizationPayrollPage from './OrganizationPayrollPage';
+import OrganizationPayrollPage from '../../Payroll/components/OrganizationPayrollPage';
 
 type LocationWorkspacePageProps = {
 	organization: User;
@@ -43,7 +43,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 						{organizationId ? <AttendanceRegisterGrid organizationId={organizationId} locationId={location.id} /> : <Text color="red.600">This organization has no valid ID.</Text>}
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
-						{organizationId ? <OrganizationAttendanceHistory organizationId={organizationId} locationId={location.id} canEdit /> : <Text color="red.600">This organization has no valid ID.</Text>}
+						{organizationId ? <AttendanceHistory organizationId={organizationId} locationId={location.id} canEdit /> : <Text color="red.600">This organization has no valid ID.</Text>}
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						{organizationId ? <OrganizationPayrollPage organizationId={organizationId} locationId={location.id} /> : <Text color="red.600">This organization has no valid ID.</Text>}

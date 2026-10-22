@@ -607,6 +607,7 @@ async function getAttendanceRegister(user, input = {}) {
 
 module.exports = {
   bulkMarkAttendance,
+  currentDateInTimeZone,
   getAttendanceRegister,
   listAttendance,
   listAttendanceHistory,

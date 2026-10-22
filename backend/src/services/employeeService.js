@@ -282,6 +282,7 @@ async function listEmployees(user, options = {}) {
 		|| options.activeOnly === true
 		|| options.unassigned === 'true'
 		|| options.unassigned === true;
+	const scopeFilter = { ...filter };
 	if (activeOnly) filter.status = 'active';
 	else if (status !== 'all') filter.status = status;
 
@@ -315,10 +316,19 @@ async function listEmployees(user, options = {}) {
 		.sort(sort)
 		.skip((page - 1) * limit)
 		.limit(limit);
+	const [scopeTotal, scopeActive] = await Promise.all([
+		activeOnly ? null : Employee.countDocuments(scopeFilter),
+		Employee.countDocuments({ ...scopeFilter, status: 'active' }),
+	]);
 
 	return {
 		employees: employees.map((employee) => publicEmployee(employee, user.role)),
 		pagination: { page, limit, total, totalPages },
+		summary: {
+			total: scopeTotal ?? scopeActive,
+			active: scopeActive,
+			inactive: activeOnly ? 0 : Math.max(0, scopeTotal - scopeActive),
+		},
 	};
 }
 

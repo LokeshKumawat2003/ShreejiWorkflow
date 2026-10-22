@@ -1,27 +1,21 @@
-import { DeleteIcon, EditIcon, SearchIcon, ViewIcon } from '@chakra-ui/icons';
+import { DeleteIcon, EditIcon, ViewIcon } from '@chakra-ui/icons';
+import { Box, Flex, HStack, Stack, Text } from '@chakra-ui/react';
 import {
-  Avatar,
-  Badge,
-  Box,
-  HStack,
-  IconButton,
-  Input,
-  InputGroup,
-  InputLeftElement,
-  Select,
-  Spinner,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tooltip,
-  Tr,
-} from '@chakra-ui/react';
-import Pagination from '../../../components/common/Pagination';
+  DataTable,
+  EntityCell,
+  FilterSelect,
+  IconAction,
+  SearchInput,
+  StatStrip,
+  StatusBadge,
+  TableFooter,
+  type DataTableColumn,
+} from '../../../components/ui';
+import type { EmployeeSummary } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus, UserRole } from '../../../types';
+
+type SortOrder = 'name-asc' | 'name-desc' | 'newest' | 'oldest';
+type StatusFilter = 'all' | EmployeeStatus;
 
 type EmployeeTableProps = {
   employees: Employee[];
@@ -30,20 +24,36 @@ type EmployeeTableProps = {
   pageSize: number;
   total: number;
   totalPages: number;
+  summary?: EmployeeSummary | null;
+  scopeLabel?: string;
   search: string;
-  status: 'all' | EmployeeStatus;
-  sort: 'name-asc' | 'name-desc' | 'newest' | 'oldest';
+  status: StatusFilter;
+  sort: SortOrder;
   isLoading: boolean;
   loadError: string;
+  showStatusFilter?: boolean;
   onSearchChange: (value: string) => void;
-  onStatusChange: (value: 'all' | EmployeeStatus) => void;
-  onSortChange: (value: EmployeeTableProps['sort']) => void;
+  onStatusChange: (value: StatusFilter) => void;
+  onSortChange: (value: SortOrder) => void;
   onPageChange: (page: number) => void;
   onView: (employee: Employee) => void;
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
   deleteLabel: string;
 };
+
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All Status' },
+  { value: 'active', label: 'Active' },
+  { value: 'disabled', label: 'Inactive' },
+];
+
+const SORT_OPTIONS = [
+  { value: 'name-asc', label: 'Name A–Z' },
+  { value: 'name-desc', label: 'Name Z–A' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+];
 
 function EmployeeTable({
   employees,
@@ -52,11 +62,14 @@ function EmployeeTable({
   pageSize,
   total,
   totalPages,
+  summary,
+  scopeLabel = 'All employee records',
   search,
   status,
   sort,
   isLoading,
   loadError,
+  showStatusFilter = true,
   onSearchChange,
   onStatusChange,
   onSortChange,
@@ -66,141 +79,110 @@ function EmployeeTable({
   onDelete,
   deleteLabel,
 }: EmployeeTableProps) {
-  const firstItem = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastItem = Math.min(page * pageSize, total);
-  const columnCount = 5;
+  const isFiltered = Boolean(search.trim()) || status !== 'all';
+
+  const columns: DataTableColumn<Employee>[] = [
+    {
+      key: 'employee',
+      header: 'Employee',
+      render: (employee) => <EntityCell name={employee.name} subtitle={employee.email} />,
+    },
+    {
+      key: 'phone',
+      header: 'Phone',
+      hideBelow: 'md',
+      render: (employee) => <Text color="slate.600" whiteSpace="nowrap">{employee.phone || '—'}</Text>,
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (employee) => <StatusBadge status={employee.status} />,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (employee) => (
+        <HStack justify="flex-end" spacing={0.5}>
+          <IconAction label={`View ${employee.name}`} icon={<ViewIcon />} onClick={() => onView(employee)} />
+          {role === 'admin' && (
+            <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} onClick={() => onEdit(employee)} />
+          )}
+          <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
+        </HStack>
+      ),
+    },
+  ];
 
   return (
-    <>
-      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
-        <HStack
-          align="center"
-          justify="space-between"
-          flexWrap="wrap"
-          gap={4}
-          px={{ base: 3, md: 4 }}
-          py={4}
-          borderBottom="1px solid"
-          borderColor="slate.100"
-        >
-          <InputGroup flex="1" minW="220px" maxW="370px">
-            <InputLeftElement pointerEvents="none" color="slate.400"><SearchIcon /></InputLeftElement>
-            <Input
-              aria-label="Search employees"
-              placeholder="Search employees..."
-              h="40px"
-              fontSize="sm"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-            />
-          </InputGroup>
-          <HStack spacing={3} ml="auto" flexWrap="wrap">
-            <Box minW="150px">
-              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Status</Text>
-              <Select aria-label="Filter employees by status" h="40px" fontSize="sm" value={status} onChange={(event) => onStatusChange(event.target.value as typeof status)}>
-                <option value="all">All</option>
-                <option value="active">Active</option>
-                <option value="disabled">Inactive</option>
-              </Select>
-            </Box>
-            <Box minW="160px">
-              <Text mb={1} ml={2} fontSize="xs" color="slate.500">Sort by</Text>
-              <Select aria-label="Sort employees" h="40px" fontSize="sm" value={sort} onChange={(event) => onSortChange(event.target.value as typeof sort)}>
-                <option value="name-asc">Name (A-Z)</option>
-                <option value="name-desc">Name (Z-A)</option>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </Select>
-            </Box>
-          </HStack>
-        </HStack>
+    <Stack spacing={4}>
+      <StatStrip
+        items={[
+          { label: 'Total Employees', value: summary?.total, helper: scopeLabel, color: 'brand.500' },
+          { label: 'Active', value: summary?.active, helper: 'Currently assigned', color: 'green.500' },
+          { label: 'Inactive', value: summary?.inactive, helper: 'Not active' },
+        ]}
+      />
 
-        <TableContainer>
-          <Table variant="simple" size="md" fontSize="sm">
-            <Thead>
-              <Tr>
-                <Th fontSize="xs">Employee</Th>
-                <Th fontSize="xs">Email</Th>
-                <Th fontSize="xs">Phone</Th>
-                <Th fontSize="xs">Status</Th>
-                <Th fontSize="xs" textAlign="right">Actions</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {isLoading ? (
-                <Tr><Td colSpan={columnCount} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
-              ) : loadError ? (
-                <Tr><Td colSpan={columnCount} textAlign="center" py={10} color="red.600">{loadError}</Td></Tr>
-              ) : employees.length === 0 ? (
-                <Tr><Td colSpan={columnCount} textAlign="center" py={10} color="slate.500">No employees found.</Td></Tr>
-              ) : employees.map((employee) => (
-                <Tr key={employee.id}>
-                  <Td>
-                    <HStack spacing={3} minW="180px">
-                      <Avatar size="sm" name={employee.name} />
-                      <Text fontWeight="600" color="slate.900">{employee.name}</Text>
-                    </HStack>
-                  </Td>
-                  <Td>{employee.email}</Td>
-                  <Td whiteSpace="nowrap">{employee.phone || '—'}</Td>
-                  <Td>
-                    <Badge
-                      px={3}
-                      py={1}
-                      borderRadius="full"
-                      color={employee.status === 'active' ? 'green.600' : 'slate.500'}
-                      bg={employee.status === 'active' ? 'green.50' : 'slate.100'}
-                      fontSize="xs"
-                      fontWeight="600"
-                    >
-                      {employee.status === 'active' ? 'ACTIVE' : 'INACTIVE'}
-                    </Badge>
-                  </Td>
-                  <Td>
-                    <HStack justify="flex-end" spacing={1}>
-                      <Tooltip label="View employee">
-                        <IconButton aria-label={`View ${employee.name}`} icon={<ViewIcon />} size="md" variant="ghost" color="slate.500" onClick={() => onView(employee)} />
-                      </Tooltip>
-                      {role === 'admin' && (
-                        <Tooltip label="Edit employee">
-                          <IconButton aria-label={`Edit ${employee.name}`} icon={<EditIcon />} size="md" variant="ghost" color="slate.500" onClick={() => onEdit(employee)} />
-                        </Tooltip>
-                      )}
-                      <Tooltip label={deleteLabel}>
-                        <IconButton
-                          aria-label={`${deleteLabel} ${employee.name}`}
-                          icon={<DeleteIcon />}
-                          size="sm"
-                          minW="34px"
-                          h="34px"
-                          variant="ghost"
-                          color="red.600"
-                          bg="red.50"
-                          borderRadius="md"
-                          _hover={{ bg: 'red.100', color: 'red.700' }}
-                          _active={{ bg: 'red.200' }}
-                          onClick={() => onDelete(employee)}
-                        />
-                      </Tooltip>
-                    </HStack>
-                  </Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </TableContainer>
-        <HStack justify="space-between" flexWrap="wrap" gap={3} px={{ base: 3, md: 4 }} py={3} borderTop="1px solid" borderColor="slate.100">
-          <Text fontSize="sm" color="slate.500">Showing {firstItem}-{lastItem} of {total}</Text>
-          <Pagination
-            currentPage={page}
-            totalPages={totalPages}
-            isDisabled={isLoading || Boolean(loadError)}
-            onPageChange={onPageChange}
+      <Flex gap={3} direction={{ base: 'column', md: 'row' }} align={{ base: 'stretch', md: 'center' }}>
+        <SearchInput
+          isPill
+          flex="1"
+          maxW="none"
+          size="lg"
+          value={search}
+          onChange={onSearchChange}
+          placeholder="Search name or email..."
+          label="Search employees"
+        />
+        {showStatusFilter && (
+          <FilterSelect<StatusFilter>
+            label="Filter employees by status"
+            size="lg"
+            borderRadius="full"
+            minW="170px"
+            value={status}
+            options={STATUS_OPTIONS}
+            onChange={onStatusChange}
           />
-        </HStack>
+        )}
+      </Flex>
+
+      <HStack spacing={4} align="center">
+        <Text fontSize="sm" fontWeight="600" color="slate.700" whiteSpace="nowrap">Employee directory</Text>
+        <FilterSelect<SortOrder>
+          label="Sort employees"
+          borderRadius="full"
+          flex="1"
+          value={sort}
+          options={SORT_OPTIONS}
+          onChange={onSortChange}
+        />
+      </HStack>
+
+      <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
+        <DataTable
+          columns={columns}
+          rows={employees}
+          rowKey={(employee) => employee.id}
+          isLoading={isLoading}
+          error={loadError}
+          emptyTitle={isFiltered ? 'No matching employees' : 'No employees yet'}
+          emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
+          footer={(
+            <TableFooter
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              totalPages={totalPages}
+              noun={total === 1 ? 'employee' : 'employees'}
+              isDisabled={isLoading || Boolean(loadError)}
+              onPageChange={onPageChange}
+            />
+          )}
+        />
       </Box>
-      <Text srOnly aria-live="polite">{total} employees</Text>
-    </>
+    </Stack>
   );
 }
 

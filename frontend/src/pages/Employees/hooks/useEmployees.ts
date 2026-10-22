@@ -10,6 +10,7 @@ import {
   updateEmployee,
   type EmployeeListParams,
   type EmployeeInput,
+  type EmployeeSummary,
 } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';
 
@@ -28,6 +29,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [summary, setSummary] = useState<EmployeeSummary | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -54,6 +56,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
         setPageSize(result.pagination.limit);
         setTotal(result.pagination.total);
         setTotalPages(result.pagination.totalPages);
+        setSummary(result.summary ?? null);
       })
       .catch((error: unknown) => {
         if (isActive && !controller.signal.aborted) {
@@ -134,6 +137,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     pageSize,
     total,
     totalPages,
+    summary,
     search,
     status,
     sort,

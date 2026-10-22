@@ -180,15 +180,15 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
         <Stack spacing={5}>
           <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
             <Box>
-              <Heading size="md" color="slate.900">Employees</Heading>
-              <Text mt={1} fontSize="sm" color="slate.500">Employee roster for {organizationName}</Text>
+              <Heading size="md" color="slate.900">Employee Roster</Heading>
+              <Text mt={1} fontSize="sm" color="slate.500">Manage employees assigned to {organizationName}</Text>
             </Box>
             <HStack flexWrap="wrap" gap={3}>
-              <Button h="40px" px={4} fontSize="sm" leftIcon={<AddIcon />} variant="outline" onClick={assignmentDialog.onOpen}>
+              <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} variant="outline" onClick={assignmentDialog.onOpen}>
                 Assign existing
               </Button>
-              <Button h="40px" px={4} fontSize="sm" leftIcon={<AddIcon />} colorScheme="brand" onClick={openCreateDialog}>
-                Add employee
+              <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
+                Add Employee
               </Button>
             </HStack>
           </HStack>
@@ -199,6 +199,8 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
             pageSize={employees.pageSize}
             total={employees.total}
             totalPages={employees.totalPages}
+            summary={employees.summary}
+            showStatusFilter={false}
             search={employees.search}
             status={employees.status}
             sort={employees.sort}

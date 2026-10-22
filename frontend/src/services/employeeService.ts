@@ -58,7 +58,10 @@ type EmployeeListResponse = {
     total: number;
     totalPages: number;
   };
+  summary?: EmployeeSummary;
 };
+
+export type EmployeeSummary = { total: number; active: number; inactive: number };
 
 type EmployeeResponse = { employee: Employee };
 

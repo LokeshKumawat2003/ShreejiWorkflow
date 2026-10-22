@@ -134,13 +134,13 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
             </Box>
             <HStack flexWrap="wrap" gap={3}>
               {role === 'admin' && organizationId && (
-                <Button h="40px" px={4} borderRadius="8px" fontSize="sm" leftIcon={<AddIcon />} variant="outline" onClick={assignmentDialog.onOpen}>
+                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} variant="outline" onClick={assignmentDialog.onOpen}>
                   Assign existing employee
                 </Button>
               )}
               {role === 'admin' && (
-                <Button h="40px" px={4} borderRadius="8px" fontSize="sm" leftIcon={<AddIcon />} colorScheme="brand" onClick={openCreateDialog}>
-                  Add employee
+                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
+                  Add Employee
                 </Button>
               )}
             </HStack>
@@ -153,6 +153,9 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
             pageSize={employees.pageSize}
             total={employees.total}
             totalPages={employees.totalPages}
+            summary={employees.summary}
+            scopeLabel={role === 'organization' ? 'In this organization' : 'All employee records'}
+            showStatusFilter={role === 'admin'}
             search={employees.search}
             status={employees.status}
             sort={employees.sort}

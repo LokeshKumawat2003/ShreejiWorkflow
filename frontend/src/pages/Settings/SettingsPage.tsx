@@ -1,5 +1,6 @@
-import { Badge, Box, Heading, HStack, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
+import { Badge, Box, HStack, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
 import { useCallback, useState } from 'react';
+import { PageHeader } from '../../components/ui';
 import { MASTER_DATA_LABELS } from '../../services/masterDataService';
 import type { MasterDataType } from '../../types';
 import MasterDataPanel from './components/MasterDataPanel';
@@ -14,10 +15,7 @@ function SettingsPage() {
 
 	return (
 		<Stack spacing={6}>
-			<Box>
-				<Heading fontSize="2xl" fontWeight="700" color="slate.900">Settings</Heading>
-				<Text mt={1} fontSize="sm" color="slate.500">Manage the master data used in employee and location forms.</Text>
-			</Box>
+			<PageHeader title="Settings" description="Manage the master data used in employee and location forms." />
 
 			<Box>
 				<Text mb={3} fontSize="xs" fontWeight="700" color="slate.400" letterSpacing="1.2px">MASTER DATA</Text>

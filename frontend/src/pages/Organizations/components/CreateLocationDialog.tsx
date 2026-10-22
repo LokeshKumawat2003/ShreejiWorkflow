@@ -1,7 +1,7 @@
-import { FormControl, FormLabel, Input, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Select, Textarea } from '@chakra-ui/react';
+import { FormControl, FormLabel, Modal, ModalBody, ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalOverlay, Stack } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
-import ActionButton from '../../../components/common/ActionButton';
-import MasterDataSelect from '../../../components/common/MasterDataSelect';
+import { ActionButton, FormInput, FormSelect, FormTextarea, MasterDataSelect } from '../../../components/ui';
+import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
 import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { CreateLocationInput } from '../../../services/locationService';
 import type { OrganizationLocation } from '../../../types';
@@ -51,35 +51,29 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 				<ModalCloseButton isDisabled={isSaving} />
 				<ModalBody>
 					<form id="location-form" onSubmit={(event) => void handleSubmit(event)}>
-						<FormControl isRequired mb={4}>
-							<FormLabel fontSize="sm" fontWeight="600">Work name</FormLabel>
-							<Input autoFocus maxLength={120} value={workName} onChange={(event) => setWorkName(event.target.value)} placeholder="Kitchen operations" />
-						</FormControl>
-						<FormControl mb={4}>
-							<FormLabel fontSize="sm" fontWeight="600">OP number</FormLabel>
-							<Input maxLength={50} value={opNumber} onChange={(event) => setOpNumber(event.target.value)} placeholder="OP-001" />
-						</FormControl>
-						<FormControl isRequired mb={4}>
-							<FormLabel fontSize="sm" fontWeight="600">Address</FormLabel>
-							<Textarea autoFocus maxLength={500} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, city, region, postal code" />
-						</FormControl>
-						<FormControl isRequired mb={4}>
-							<FormLabel fontSize="sm" fontWeight="600">Designation</FormLabel>
-							<MasterDataSelect
-								items={masterOptions.designation}
-								valueKey="code"
-								placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
-								value={designation}
-								onChange={setDesignation}
+						<Stack spacing={4}>
+							<FormInput label="Work name" isRequired autoFocus maxLength={120} value={workName} onChange={(event) => setWorkName(event.target.value)} placeholder="Kitchen operations" />
+							<FormInput label="OP number" maxLength={50} value={opNumber} onChange={(event) => setOpNumber(event.target.value)} placeholder="OP-001" />
+							<FormTextarea label="Address" isRequired maxLength={500} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, city, region, postal code" />
+							<FormControl isRequired>
+								<FormLabel {...fieldLabelStyles}>Designation</FormLabel>
+								<MasterDataSelect
+									h="44px"
+									{...fieldStyles}
+									items={masterOptions.designation}
+									valueKey="code"
+									placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
+									value={designation}
+									onChange={setDesignation}
+								/>
+							</FormControl>
+							<FormSelect
+								label="Status"
+								value={status}
+								onChange={(event) => setStatus(event.target.value as OrganizationLocation['status'])}
+								options={[{ value: 'active', label: 'Active' }, { value: 'disabled', label: 'Inactive' }]}
 							/>
-						</FormControl>
-						<FormControl>
-							<FormLabel fontSize="sm" fontWeight="600">Status</FormLabel>
-							<Select value={status} onChange={(event) => setStatus(event.target.value as OrganizationLocation['status'])}>
-								<option value="active">Active</option>
-								<option value="disabled">Inactive</option>
-							</Select>
-						</FormControl>
+						</Stack>
 					</form>
 				</ModalBody>
 				<ModalFooter gap={3} borderTop="1px solid" borderColor="slate.100" bg="slate.50">

@@ -1,36 +1,17 @@
-import { AddIcon, DeleteIcon, EditIcon, SearchIcon } from '@chakra-ui/icons';
+import { AddIcon, DeleteIcon, EditIcon } from '@chakra-ui/icons';
+import { HStack, Switch, Text, useToast } from '@chakra-ui/react';
+import { useEffect, useState } from 'react';
 import {
-	Alert,
-	AlertDialog,
-	AlertDialogBody,
-	AlertDialogContent,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogOverlay,
-	Box,
-	Flex,
-	HStack,
-	IconButton,
-	Input,
-	InputGroup,
-	InputLeftElement,
-	Select,
-	Skeleton,
-	Stack,
-	Switch,
-	Table,
-	TableContainer,
-	Tbody,
-	Td,
-	Text,
-	Th,
-	Thead,
-	Tooltip,
-	Tr,
-	useToast,
-} from '@chakra-ui/react';
-import { useEffect, useRef, useState } from 'react';
-import ActionButton from '../../../components/common/ActionButton';
+	ActionButton,
+	ConfirmDialog,
+	ContentCard,
+	DataTable,
+	FilterSelect,
+	IconAction,
+	SearchInput,
+	Toolbar,
+	type DataTableColumn,
+} from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
 	MASTER_DATA_LABELS,
@@ -48,6 +29,12 @@ type MasterDataPanelProps = {
 };
 
 type StatusFilter = 'all' | MasterDataItem['status'];
+
+const STATUS_OPTIONS = [
+	{ value: 'all', label: 'All statuses' },
+	{ value: 'active', label: 'Active' },
+	{ value: 'disabled', label: 'Inactive' },
+];
 
 function errorMessage(error: unknown, fallback: string) {
 	return error instanceof ApiError ? error.message : fallback;
@@ -75,7 +62,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 	const [togglingId, setTogglingId] = useState('');
 	const [deletingItem, setDeletingItem] = useState<MasterDataItem | null>(null);
 	const [isDeleting, setIsDeleting] = useState(false);
-	const cancelRef = useRef<HTMLButtonElement>(null!);
+	const isFiltered = Boolean(debouncedSearch) || status !== 'all';
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -123,10 +110,9 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 	}
 
 	async function toggleStatus(item: MasterDataItem) {
-		const nextStatus = item.status === 'active' ? 'disabled' : 'active';
 		setTogglingId(item.id);
 		try {
-			const updated = await updateMasterData(item.id, { status: nextStatus });
+			const updated = await updateMasterData(item.id, { status: item.status === 'active' ? 'disabled' : 'active' });
 			setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, ...updated } : entry)));
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to update status.'), status: 'error', position: 'top' });
@@ -150,131 +136,87 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		}
 	}
 
+	const columns: DataTableColumn<MasterDataItem>[] = [
+		{ key: 'index', header: '#', width: '60px', render: (_, index) => <Text color="slate.500">{index + 1}</Text> },
+		{
+			key: 'name',
+			header: 'Name',
+			render: (item) => (
+				<>
+					<Text fontWeight="600" color="slate.900">{item.name}</Text>
+					{type === 'employmentType' ? <Text fontSize="xs" color="slate.400">Code: {item.code}</Text> : null}
+				</>
+			),
+		},
+		{
+			key: 'usage',
+			header: 'Used by',
+			render: (item) => (
+				<Text color={item.usageCount ? 'slate.900' : 'slate.400'}>
+					{item.usageCount ?? 0} record{item.usageCount === 1 ? '' : 's'}
+				</Text>
+			),
+		},
+		{ key: 'created', header: 'Created', hideBelow: 'md', render: (item) => <Text color="slate.500">{formatDate(item.createdAt)}</Text> },
+		{
+			key: 'active',
+			header: 'Active',
+			render: (item) => (
+				<Switch
+					aria-label={`${item.status === 'active' ? 'Disable' : 'Enable'} ${item.name}`}
+					colorScheme="green"
+					isChecked={item.status === 'active'}
+					isDisabled={togglingId === item.id}
+					onChange={() => void toggleStatus(item)}
+				/>
+			),
+		},
+		{
+			key: 'actions',
+			header: 'Actions',
+			align: 'right',
+			render: (item) => (
+				<HStack spacing={0.5} justify="flex-end">
+					<IconAction label={`Edit ${item.name}`} icon={<EditIcon />} onClick={() => openForm(item)} />
+					<IconAction
+						label={item.usageCount ? `${item.name} is in use: disable it instead` : `Delete ${item.name}`}
+						icon={<DeleteIcon />}
+						tone="danger"
+						isDisabled={Boolean(item.usageCount)}
+						onClick={() => setDeletingItem(item)}
+					/>
+				</HStack>
+			),
+		},
+	];
+
 	return (
-		<Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
-			<Flex
-				direction={{ base: 'column', md: 'row' }}
-				justify="space-between"
-				align={{ base: 'stretch', md: 'center' }}
-				gap={3}
-				px={{ base: 4, md: 5 }}
-				py={4}
-				borderBottom="1px solid"
-				borderColor="slate.100"
-			>
-				<Box>
-					<Text fontWeight="700" color="slate.900">{label.title}</Text>
-					<Text fontSize="sm" color="slate.500">{label.description}</Text>
-				</Box>
+		<ContentCard
+			title={label.title}
+			subtitle={label.description}
+			noPadding
+			actions={(
 				<ActionButton leftIcon={<AddIcon boxSize={3} />} size="sm" h="36px" onClick={() => openForm(null)}>
 					Add {label.singular}
 				</ActionButton>
-			</Flex>
-
-			<HStack spacing={3} px={{ base: 4, md: 5 }} py={3} bg="slate.50" borderBottom="1px solid" borderColor="slate.100" flexWrap="wrap">
-				<InputGroup maxW={{ base: '100%', md: '320px' }} size="sm">
-					<InputLeftElement pointerEvents="none" color="slate.400">
-						<SearchIcon boxSize={3} />
-					</InputLeftElement>
-					<Input
-						aria-label={`Search ${label.singular}`}
-						placeholder={`Search ${label.singular}`}
-						value={search}
-						onChange={(event) => setSearch(event.target.value)}
-						bg="white"
-						borderRadius="md"
-					/>
-				</InputGroup>
-				<Select
-					aria-label="Filter by status"
-					size="sm"
-					w="auto"
-					value={status}
-					onChange={(event) => setStatus(event.target.value as StatusFilter)}
-					bg="white"
-					borderRadius="md"
-				>
-					<option value="all">All statuses</option>
-					<option value="active">Active</option>
-					<option value="disabled">Inactive</option>
-				</Select>
-			</HStack>
-
-			{loadError ? (
-				<Alert status="error">{loadError}</Alert>
-			) : isLoading && items.length === 0 ? (
-				<Stack p={5} spacing={3}>
-					{[0, 1, 2].map((row) => <Skeleton key={row} h="40px" borderRadius="md" />)}
-				</Stack>
-			) : items.length === 0 ? (
-				<Box py={12} textAlign="center">
-					<Text fontWeight="600" color="slate.900">
-						{debouncedSearch || status !== 'all' ? 'No matching entries' : `No ${label.singular} entries yet`}
-					</Text>
-					<Text fontSize="sm" color="slate.500">
-						{debouncedSearch || status !== 'all' ? 'Try a different search or filter.' : `Add one to show it in the dropdown.`}
-					</Text>
-				</Box>
-			) : (
-				<TableContainer opacity={isLoading ? 0.6 : 1} transition="opacity 0.15s">
-					<Table size="sm" variant="simple">
-						<Thead bg="slate.50">
-							<Tr>
-								<Th py={3} w="60px">#</Th>
-								<Th py={3}>Name</Th>
-								<Th py={3}>Used by</Th>
-								<Th py={3}>Created</Th>
-								<Th py={3}>Active</Th>
-								<Th py={3} textAlign="right">Actions</Th>
-							</Tr>
-						</Thead>
-						<Tbody>
-							{items.map((item, index) => (
-								<Tr key={item.id} _hover={{ bg: 'slate.50' }}>
-									<Td color="slate.500">{index + 1}</Td>
-									<Td>
-										<Text fontWeight="600" color="slate.900">{item.name}</Text>
-										{type === 'employmentType' ? <Text fontSize="xs" color="slate.400">Code: {item.code}</Text> : null}
-									</Td>
-									<Td>
-										<Text fontSize="sm" color={item.usageCount ? 'slate.900' : 'slate.400'}>
-											{item.usageCount ?? 0} record{item.usageCount === 1 ? '' : 's'}
-										</Text>
-									</Td>
-									<Td color="slate.500" fontSize="sm">{formatDate(item.createdAt)}</Td>
-									<Td>
-										<Switch
-											aria-label={`${item.status === 'active' ? 'Disable' : 'Enable'} ${item.name}`}
-											colorScheme="green"
-											isChecked={item.status === 'active'}
-											isDisabled={togglingId === item.id}
-											onChange={() => void toggleStatus(item)}
-										/>
-									</Td>
-									<Td textAlign="right">
-										<HStack spacing={1} justify="flex-end">
-											<Tooltip label="Edit" hasArrow>
-												<IconButton aria-label={`Edit ${item.name}`} icon={<EditIcon />} size="sm" variant="ghost" onClick={() => openForm(item)} />
-											</Tooltip>
-											<Tooltip label={item.usageCount ? 'In use: disable it instead' : 'Delete'} hasArrow>
-												<IconButton
-													aria-label={`Delete ${item.name}`}
-													icon={<DeleteIcon />}
-													size="sm"
-													variant="ghost"
-													color="red.500"
-													isDisabled={Boolean(item.usageCount)}
-													onClick={() => setDeletingItem(item)}
-												/>
-											</Tooltip>
-										</HStack>
-									</Td>
-								</Tr>
-							))}
-						</Tbody>
-					</Table>
-				</TableContainer>
 			)}
+			toolbar={(
+				<Toolbar>
+					<SearchInput value={search} onChange={setSearch} placeholder={`Search ${label.singular}`} size="sm" />
+					<FilterSelect<StatusFilter> label="Filter by status" size="sm" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+				</Toolbar>
+			)}
+		>
+			<DataTable
+				columns={columns}
+				rows={items}
+				rowKey={(item) => item.id}
+				size="sm"
+				isLoading={isLoading}
+				error={loadError}
+				emptyTitle={isFiltered ? 'No matching entries' : `No ${label.singular} entries yet`}
+				emptyDescription={isFiltered ? 'Try a different search or filter.' : 'Add one to show it in the dropdown.'}
+			/>
 
 			<MasterDataFormDialog
 				isOpen={isFormOpen}
@@ -286,21 +228,15 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				onSave={(input) => void saveItem(input)}
 			/>
 
-			<AlertDialog isOpen={Boolean(deletingItem)} leastDestructiveRef={cancelRef} onClose={() => setDeletingItem(null)}>
-				<AlertDialogOverlay>
-					<AlertDialogContent>
-						<AlertDialogHeader>Delete {label.singular}?</AlertDialogHeader>
-						<AlertDialogBody>
-							"{deletingItem?.name}" will be removed from the {label.singular} dropdown.
-						</AlertDialogBody>
-						<AlertDialogFooter>
-							<ActionButton ref={cancelRef} tone="neutral" onClick={() => setDeletingItem(null)}>Cancel</ActionButton>
-							<ActionButton tone="danger" onClick={() => void confirmDelete()} isLoading={isDeleting} ml={3}>Delete</ActionButton>
-						</AlertDialogFooter>
-					</AlertDialogContent>
-				</AlertDialogOverlay>
-			</AlertDialog>
-		</Box>
+			<ConfirmDialog
+				isOpen={Boolean(deletingItem)}
+				title={`Delete ${label.singular}?`}
+				description={`"${deletingItem?.name}" will be removed from the ${label.singular} dropdown.`}
+				isLoading={isDeleting}
+				onClose={() => setDeletingItem(null)}
+				onConfirm={() => void confirmDelete()}
+			/>
+		</ContentCard>
 	);
 }
 

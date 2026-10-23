@@ -1,51 +1,30 @@
-import { DownloadIcon, EditIcon } from '@chakra-ui/icons';
-import {
-  Alert,
-  Badge,
-  Box,
-  FormControl,
-  FormLabel,
-  HStack,
-  IconButton,
-  Menu,
-  MenuButton,
-  MenuItem,
-  MenuList,
-  Modal,
-  ModalBody,
-  ModalCloseButton,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalOverlay,
-  Select,
-  Spinner,
-  Table,
-  TableContainer,
-  Tbody,
-  Td,
-  Text,
-  Th,
-  Thead,
-  Tr,
-} from '@chakra-ui/react';
+import { DownloadIcon } from '@chakra-ui/icons';
+import { Alert, Box, HStack, Text } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import { FilterBar, FilterField, FilterInput, FilterSelect, Pagination, SearchInput } from '../../../components/ui';
+import {
+  ActionButton,
+  DataTable,
+  EntityCell,
+  FilterBar,
+  FilterField,
+  FilterInput,
+  FilterSelect,
+  SearchInput,
+  TableFooter,
+  type DataTableColumn,
+} from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
   getAttendanceRegister,
   listAttendanceHistory,
-  markAttendance,
   type AttendanceHistoryEntry,
   type AttendanceStatus,
 } from '../../../services/attendanceService';
-import ActionButton from '../../../components/ui/ActionButton';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
 
 type AttendanceHistoryProps = {
   organizationId?: string;
   locationId?: string;
-  canEdit?: boolean;
 };
 
 const PAGE_SIZE = 10;
@@ -57,6 +36,11 @@ function errorMessage(error: unknown) {
 function formatDate(value: string) {
   const date = new Date(`${value}T00:00:00.000Z`);
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+}
+
+function formatWeekday(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return new Intl.DateTimeFormat(undefined, { weekday: 'long', timeZone: 'UTC' }).format(date);
 }
 
 function formatDateTime(value?: string) {
@@ -71,7 +55,65 @@ function currentMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function AttendanceHistory({ organizationId, locationId, canEdit = false }: AttendanceHistoryProps) {
+function StatusPill({ status }: { status: AttendanceStatus }) {
+  const isPresent = status === 'present';
+  return (
+    <HStack
+      as="span"
+      display="inline-flex"
+      spacing={1.5}
+      px={2.5}
+      py={0.5}
+      borderRadius="full"
+      bg={isPresent ? 'green.50' : 'red.50'}
+      color={isPresent ? 'green.700' : 'red.600'}
+      fontSize="xs"
+      fontWeight="700"
+    >
+      <Box w="6px" h="6px" borderRadius="full" bg={isPresent ? 'green.500' : 'red.400'} />
+      <Text as="span">{isPresent ? 'Present' : 'Absent'}</Text>
+    </HStack>
+  );
+}
+
+const historyColumns: DataTableColumn<AttendanceHistoryEntry>[] = [
+  {
+    key: 'date',
+    header: 'Date',
+    render: (record) => (
+      <Box whiteSpace="nowrap">
+        <Text fontWeight="600" color="slate.900">{formatDate(record.date)}</Text>
+        <Text fontSize="xs" color="slate.500">{formatWeekday(record.date)}</Text>
+      </Box>
+    ),
+  },
+  {
+    key: 'employee',
+    header: 'Employee',
+    render: (record) => <EntityCell name={record.employeeName} subtitle={record.employeeEmail || undefined} minW="200px" />,
+  },
+  {
+    key: 'role',
+    header: 'Department / job',
+    hideBelow: 'md',
+    render: (record) => (
+      <Box>
+        <Text color="slate.800" fontWeight="500">{record.jobTitle || '—'}</Text>
+        {record.department ? <Text fontSize="xs" color="slate.500">{record.department}</Text> : null}
+      </Box>
+    ),
+  },
+  { key: 'status', header: 'Attendance', render: (record) => <StatusPill status={record.status} /> },
+  {
+    key: 'updated',
+    header: 'Last updated',
+    align: 'right',
+    hideBelow: 'lg',
+    render: (record) => <Text fontSize="xs" color="slate.500" whiteSpace="nowrap">{formatDateTime(record.updatedAt)}</Text>,
+  },
+];
+
+function AttendanceHistory({ organizationId, locationId }: AttendanceHistoryProps) {
   const [records, setRecords] = useState<AttendanceHistoryEntry[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'all' | AttendanceStatus>('all');
@@ -82,15 +124,11 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [editingRecord, setEditingRecord] = useState<AttendanceHistoryEntry | null>(null);
-  const [editingStatus, setEditingStatus] = useState<AttendanceStatus>('present');
-  const [isSaving, setIsSaving] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [saveError, setSaveError] = useState('');
   const [registerMonth, setRegisterMonth] = useState(currentMonth);
   const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | null>(null);
   const [exportError, setExportError] = useState('');
   const canExportRegister = Boolean(organizationId && locationId);
+  const hasFilters = Boolean(search) || status !== 'all' || Boolean(fromDate) || Boolean(toDate);
 
   async function exportRegister(format: 'pdf' | 'excel') {
     if (!organizationId || !locationId || !registerMonth) return;
@@ -158,49 +196,12 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
     setPage(1);
   }
 
-  function openEdit(record: AttendanceHistoryEntry) {
-    setEditingRecord(record);
-    setEditingStatus(record.status);
-    setSaveError('');
-    setIsEditOpen(true);
-  }
-
-  async function saveAttendance() {
-    if (!editingRecord) return;
-    setIsSaving(true);
-    setSaveError('');
-    try {
-      const updated = await markAttendance({
-        employeeId: editingRecord.employeeId,
-        date: editingRecord.date,
-        status: editingStatus,
-        ...(organizationId ? { organizationId } : {}),
-        ...(locationId ? { locationId } : {}),
-      });
-      setRecords((current) => current.map((record) => (
-        record.id === editingRecord.id
-          ? { ...record, status: updated.status, updatedAt: updated.updatedAt || record.updatedAt }
-          : record
-      )));
-      setIsEditOpen(false);
-      setEditingRecord(null);
-    } catch (error) {
-      setSaveError(errorMessage(error));
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  const firstRecord = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const lastRecord = Math.min(page * PAGE_SIZE, total);
-  const columnCount = canEdit ? 7 : 6;
-
   return (
-    <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="8px" overflow="hidden">
+    <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="xl" overflow="hidden" boxShadow="sm">
       <FilterBar
         variant="inset"
         bg="white"
-        canClear={Boolean(search) || status !== 'all' || Boolean(fromDate) || Boolean(toDate)}
+        canClear={hasFilters}
         onClear={() => {
           changeSearch('');
           changeStatus('all');
@@ -236,7 +237,7 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
           align="flex-end"
           flexWrap="wrap"
           gap={3}
-          px={{ base: 3, md: 4 }}
+          px={{ base: 3, md: 5 }}
           py={3}
           bg="slate.50"
           borderBottom="1px solid"
@@ -279,104 +280,27 @@ function AttendanceHistory({ organizationId, locationId, canEdit = false }: Atte
       )}
       {exportError && <Alert status="error">{exportError}</Alert>}
 
-      {loadError ? (
-        <Alert status="error">{loadError}</Alert>
-      ) : (
-        <TableContainer>
-          <Table variant="simple" size="md" fontSize="sm">
-            <Thead>
-              <Tr>
-                <Th fontSize="xs">Date</Th>
-                <Th fontSize="xs">Employee</Th>
-                <Th fontSize="xs">Department</Th>
-                <Th fontSize="xs">Job title</Th>
-                <Th fontSize="xs">Attendance</Th>
-                <Th fontSize="xs">Last updated</Th>
-                {canEdit && <Th fontSize="xs" textAlign="right">Actions</Th>}
-              </Tr>
-            </Thead>
-            <Tbody>
-              {isLoading ? (
-                <Tr><Td colSpan={columnCount} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
-              ) : records.length === 0 ? (
-                <Tr><Td colSpan={columnCount} textAlign="center" py={10} color="slate.500">No attendance history found.</Td></Tr>
-              ) : records.map((record) => (
-                <Tr key={record.id}>
-                  <Td whiteSpace="nowrap">{formatDate(record.date)}</Td>
-                  <Td>
-                    <Text fontWeight="600" color="slate.900">{record.employeeName}</Text>
-                    {record.employeeEmail && <Text fontSize="xs" color="slate.500">{record.employeeEmail}</Text>}
-                  </Td>
-                  <Td>{record.department || '—'}</Td>
-                  <Td>{record.jobTitle || '—'}</Td>
-                  <Td>
-                    <Badge
-                      px={3}
-                      py={1}
-                      borderRadius="full"
-                      color={record.status === 'present' ? 'green.600' : 'red.600'}
-                      bg={record.status === 'present' ? 'green.50' : 'red.50'}
-                      fontSize="xs"
-                      fontWeight="600"
-                    >
-                      {record.status.toUpperCase()}
-                    </Badge>
-                  </Td>
-                  <Td whiteSpace="nowrap">{formatDateTime(record.updatedAt)}</Td>
-                  {canEdit && (
-                    <Td textAlign="right">
-                      <Menu>
-                        <MenuButton
-                          as={IconButton}
-                          aria-label={`Attendance actions for ${record.employeeName} on ${formatDate(record.date)}`}
-                          title="Attendance actions"
-                          icon={<Text fontSize="xl" lineHeight="1">⋮</Text>}
-                          size="sm"
-                          variant="ghost"
-                        />
-                        <MenuList>
-                          <MenuItem icon={<EditIcon />} onClick={() => openEdit(record)}>Edit attendance</MenuItem>
-                        </MenuList>
-                      </Menu>
-                    </Td>
-                  )}
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        </TableContainer>
-      )}
-      <HStack justify="space-between" flexWrap="wrap" gap={3} px={{ base: 3, md: 4 }} py={3} borderTop="1px solid" borderColor="slate.100">
-        <Text fontSize="sm" color="slate.500">Showing {firstRecord}-{lastRecord} of {total}</Text>
-        <Pagination currentPage={page} totalPages={totalPages} isDisabled={isLoading || Boolean(loadError)} onPageChange={setPage} />
-      </HStack>
-
-      {canEdit && (
-        <Modal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)} size="md">
-          <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
-          <ModalContent borderRadius="xl">
-            <ModalHeader>Edit attendance</ModalHeader>
-            <ModalCloseButton isDisabled={isSaving} />
-            <ModalBody>
-              <Text mb={4} fontSize="sm" color="slate.600">
-                {editingRecord?.employeeName} · {editingRecord ? formatDate(editingRecord.date) : ''}
-              </Text>
-              <FormControl>
-                <FormLabel>Status</FormLabel>
-                <Select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value as AttendanceStatus)}>
-                  <option value="present">Present</option>
-                  <option value="absent">Absent</option>
-                </Select>
-              </FormControl>
-              {saveError && <Alert mt={4} status="error">{saveError}</Alert>}
-            </ModalBody>
-            <ModalFooter gap={3}>
-              <ActionButton tone="neutral" onClick={() => setIsEditOpen(false)} isDisabled={isSaving}>Cancel</ActionButton>
-              <ActionButton onClick={() => void saveAttendance()} isLoading={isSaving}>Save changes</ActionButton>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-      )}
+      <DataTable
+        columns={historyColumns}
+        rows={records}
+        rowKey={(record) => record.id}
+        size="sm"
+        isLoading={isLoading}
+        error={loadError}
+        emptyTitle={hasFilters ? 'No matching attendance' : 'No attendance history yet'}
+        emptyDescription={hasFilters ? 'Try a different search, status or date range.' : 'Attendance marked for employees will appear here.'}
+        footer={total > 0 && !loadError ? (
+          <TableFooter
+            page={page}
+            pageSize={PAGE_SIZE}
+            total={total}
+            totalPages={totalPages}
+            noun="records"
+            isDisabled={isLoading}
+            onPageChange={setPage}
+          />
+        ) : null}
+      />
     </Box>
   );
 }

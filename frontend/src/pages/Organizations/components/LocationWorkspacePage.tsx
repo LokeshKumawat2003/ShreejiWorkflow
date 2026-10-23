@@ -119,7 +119,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 						{organizationId ? <AttendanceRegisterGrid organizationId={organizationId} locationId={location.id} /> : missingId}
 					</TabPanel>
 					<TabPanel p={0}>
-						{organizationId ? <AttendanceHistory organizationId={organizationId} locationId={location.id} canEdit /> : missingId}
+						{organizationId ? <AttendanceHistory organizationId={organizationId} locationId={location.id} /> : missingId}
 					</TabPanel>
 					<TabPanel p={0}>
 						{organizationId ? <LocationPayrollPage organizationId={organizationId} locationId={location.id} /> : missingId}

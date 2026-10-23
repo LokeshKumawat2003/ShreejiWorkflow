@@ -1,4 +1,4 @@
-import { Alert, Box, Skeleton, Stack, Table, TableContainer, Tbody, Td, Th, Thead, Tr } from '@chakra-ui/react';
+import { Alert, Box, Skeleton, Stack, Table, TableContainer, Tbody, Td, Tfoot, Th, Thead, Tr } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import EmptyState from './EmptyState';
 
@@ -25,6 +25,8 @@ type DataTableProps<T> = {
 	onRowClick?: (row: T) => void;
 	size?: 'sm' | 'md';
 	footer?: ReactNode;
+	/** Optional totals row, keyed by column key. */
+	summary?: Partial<Record<string, ReactNode>>;
 };
 
 function DataTable<T>({
@@ -39,6 +41,7 @@ function DataTable<T>({
 	onRowClick,
 	size = 'md',
 	footer,
+	summary,
 }: DataTableProps<T>) {
 	const cellY = size === 'sm' ? 3 : 4;
 	const display = (column: DataTableColumn<T>) => (column.hideBelow ? { base: 'none', [column.hideBelow]: 'table-cell' } : undefined);
@@ -112,6 +115,29 @@ function DataTable<T>({
 								</Tr>
 							))}
 						</Tbody>
+						{summary ? (
+							<Tfoot>
+								<Tr>
+									{columns.map((column) => (
+										<Td
+											key={column.key}
+											py={cellY}
+											textAlign={column.align}
+											display={display(column)}
+											bg="slate.50"
+											borderTop="1px solid"
+											borderColor="slate.200"
+											borderBottom="none"
+											fontSize="sm"
+											fontWeight="700"
+											color="slate.900"
+										>
+											{summary[column.key]}
+										</Td>
+									))}
+								</Tr>
+							</Tfoot>
+						) : null}
 					</Table>
 				</TableContainer>
 			</Box>

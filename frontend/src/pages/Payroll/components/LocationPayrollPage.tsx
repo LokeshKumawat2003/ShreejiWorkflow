@@ -6,31 +6,30 @@ import {
 	Button,
 	Flex,
 	HStack,
-	Image,
 	Skeleton,
 	Stack,
-	Table,
-	Tbody,
-	Td,
 	Text,
-	Tfoot,
-	Th,
-	Thead,
-	Tr,
 	useToast,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import { ActionButton, ContentCard, FilterBar, FilterField, FilterInput, PeopleIcon, StatStrip, TableFooter, WalletIcon } from '../../../components/ui';
-import { ApiError } from '../../../services/api';
-import { getPayroll, getWageRegister, type WageRegisterResponse } from '../../../services/attendanceService';
-import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
 import {
-	exportWageRegisterExcel,
-	exportWageRegisterPdf,
-	formatRegisterNumber,
-	registerContractLine,
-	registerHeadings,
-} from '../utils/wageRegisterExport';
+	ActionButton,
+	ContentCard,
+	DataTable,
+	EntityCell,
+	FilterBar,
+	FilterField,
+	FilterInput,
+	PeopleIcon,
+	StatStrip,
+	TableFooter,
+	WalletIcon,
+	type DataTableColumn,
+} from '../../../components/ui';
+import { ApiError } from '../../../services/api';
+import { getPayroll, getWageRegister, type WageRegisterResponse, type WageRegisterRow } from '../../../services/attendanceService';
+import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
+import { exportWageRegisterExcel, exportWageRegisterPdf, registerContractLine } from '../utils/wageRegisterExport';
 import { formatAmount } from './PayrollShared';
 
 type LocationPayrollPageProps = {
@@ -51,7 +50,46 @@ const MONTH_PRESETS = [
 	{ label: 'Last month', value: () => { const today = new Date(); return monthValue(new Date(today.getFullYear(), today.getMonth() - 1, 1)); } },
 ];
 
-const cellBorder = { border: '1px solid', borderColor: 'slate.300' } as const;
+function rupees(value: number, decimals: 0 | 2 = 0) {
+	return formatAmount(decimals === 0 ? Math.round(value) : Math.round(value * 100) / 100);
+}
+
+function registerColumns(register: WageRegisterResponse): DataTableColumn<WageRegisterRow>[] {
+	const { bonusRate, epfRate, esiRate } = register.rates;
+	const amount = (value: number, decimals: 0 | 2 = 0) => <Text color="slate.700" whiteSpace="nowrap">{rupees(value, decimals)}</Text>;
+	return [
+		{ key: 'serial', header: '#', width: '48px', render: (row) => <Text color="slate.500" fontWeight="600">{row.serial}</Text> },
+		{
+			key: 'employee',
+			header: 'Employee',
+			render: (row) => (
+				<EntityCell
+					name={row.employeeName}
+					subtitle={[row.showParentName && row.parentName ? `S/O. ${row.parentName}` : '', row.post].filter(Boolean).join(' · ') || '—'}
+					minW="200px"
+				/>
+			),
+		},
+		{ key: 'workingDays', header: 'Days', align: 'right', render: (row) => (
+			<Box as="span" display="inline-block" px={2.5} py={0.5} borderRadius="full" bg="blue.50" color="blue.700" fontWeight="700" fontSize="xs">{row.workingDays}</Box>
+		) },
+		{
+			key: 'dailyWage',
+			header: 'Daily wage',
+			align: 'right',
+			hideBelow: 'md',
+			render: (row) => (row.dailyWage
+				? amount(row.dailyWage, 2)
+				: <Text color="orange.500" fontWeight="600" whiteSpace="nowrap">Not set</Text>),
+		},
+		{ key: 'wages', header: 'Wages', align: 'right', render: (row) => amount(row.wages, 2) },
+		{ key: 'bonus', header: `Bonus ${bonusRate}%`, align: 'right', hideBelow: 'lg', render: (row) => amount(row.bonus, 2) },
+		{ key: 'totalWages', header: 'Total wages', align: 'right', hideBelow: 'md', render: (row) => amount(row.totalWages, 2) },
+		{ key: 'epf', header: `EPF ${epfRate}%`, align: 'right', hideBelow: 'lg', render: (row) => <Text color="red.500" whiteSpace="nowrap">{row.epf ? `− ${rupees(row.epf)}` : '—'}</Text> },
+		{ key: 'esi', header: `ESI ${esiRate}%`, align: 'right', hideBelow: 'lg', render: (row) => <Text color="red.500" whiteSpace="nowrap">{row.esi ? `− ${rupees(row.esi)}` : '—'}</Text> },
+		{ key: 'grossPayment', header: 'Net payment', align: 'right', render: (row) => <Text fontWeight="800" color="slate.900" whiteSpace="nowrap">{rupees(row.grossPayment)}</Text> },
+	];
+}
 
 function errorMessage(error: unknown, fallback: string) {
 	return error instanceof ApiError ? error.message : fallback;
@@ -219,115 +257,65 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 							</Stack>
 						) : null}
 
-						<Box px={{ base: 3, md: 5 }} py={5}>
-							<Box border="1px solid" borderColor="slate.200" borderRadius="md" bg="white" px={{ base: 3, md: 6 }} py={5} fontFamily="'Times New Roman', Times, serif" color="slate.900">
-								<Stack spacing={1} align="center" textAlign="center">
-									<Text fontSize={{ base: 'lg', md: '2xl' }} fontWeight="700" textDecoration="underline">{register.header.title}</Text>
-									{register.header.formTitle ? <Text fontSize={{ base: 'sm', md: 'md' }} fontWeight="700">{register.header.formTitle}</Text> : null}
-									{registerContractLine(register) ? (
-										<Text fontSize={{ base: 'xs', md: 'sm' }} fontWeight="700" textDecoration="underline">{registerContractLine(register)}</Text>
-									) : null}
-								</Stack>
-								<Flex mt={3} justify="space-between" gap={3} flexWrap="wrap" fontSize={{ base: 'xs', md: 'sm' }} fontWeight="700">
-									<Text>Name of Contractor :- {register.header.contractorName}</Text>
-									<Text>Period- {register.periodLabel}</Text>
-								</Flex>
-								{register.header.loaReference ? (
-									<Text mt={1} fontSize={{ base: 'xs', md: 'sm' }} fontWeight="700">{register.header.loaReference}</Text>
-								) : (
-									<Text mt={1} fontSize="xs" color="slate.400" fontFamily="body">Add the LOA / work order reference from Edit location to print it here.</Text>
-								)}
-
-								<Box mt={3} overflowX="auto" opacity={isLoading ? 0.6 : 1} transition="opacity 0.15s ease">
-									<Table size="sm" minW="900px" sx={{ borderCollapse: 'collapse', 'th, td': { ...cellBorder, fontFamily: "'Times New Roman', Times, serif" } }}>
-										<Thead>
-											<Tr>
-												{registerHeadings(register).map((heading) => (
-													<Th key={heading.key} textAlign="center" fontSize="10px" color="slate.900" textTransform="uppercase" letterSpacing="0" lineHeight="1.25" px={2} py={2} maxW={heading.key === 'name' ? undefined : '96px'} whiteSpace="normal">
-														{heading.title}
-													</Th>
-												))}
-											</Tr>
-											<Tr>
-												{registerHeadings(register).map((heading) => (
-													<Th key={heading.key} textAlign="center" fontSize="11px" color="slate.900" px={2} py={1}>{heading.letter}</Th>
-												))}
-											</Tr>
-										</Thead>
-										<Tbody>
-											{register.rows.length === 0 ? (
-												<Tr><Td colSpan={11} textAlign="center" py={8} color="slate.500" fontFamily="body">No employees at this location for {register.periodLabel}.</Td></Tr>
-											) : register.rows.map((row) => (
-												<Tr key={row.employeeId} _hover={{ bg: 'slate.50' }}>
-													<Td textAlign="center">{row.serial}</Td>
-													<Td>
-														<Text fontWeight="600" textTransform="uppercase">{row.employeeName}</Text>
-														{row.showParentName ? <Text fontSize="xs" textTransform="uppercase">S/O. {row.parentName}</Text> : null}
-													</Td>
-													<Td textAlign="center">{row.post || '—'}</Td>
-													<Td textAlign="center">{row.workingDays}</Td>
-													<Td textAlign="center" color={row.dailyWage ? undefined : 'orange.500'}>{formatRegisterNumber(row.dailyWage)}</Td>
-													<Td textAlign="center">{formatRegisterNumber(row.wages)}</Td>
-													<Td textAlign="center">{formatRegisterNumber(row.bonus, 2)}</Td>
-													<Td textAlign="center">{formatRegisterNumber(row.totalWages, 2)}</Td>
-													<Td textAlign="center">{formatRegisterNumber(row.epf, 0)}</Td>
-													<Td textAlign="center">{formatRegisterNumber(row.esi, 0)}</Td>
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(row.grossPayment, 0)}</Td>
-												</Tr>
-											))}
-										</Tbody>
-										{totals && totals.employees > 0 ? (
-											<Tfoot>
-												<Tr fontWeight="700" bg="slate.50">
-													<Td />
-													<Td fontWeight="700">TOTAL{register.pagination.totalPages > 1 ? ' (all pages)' : ''}</Td>
-													<Td />
-													<Td textAlign="center" fontWeight="700">{totals.workingDays}</Td>
-													<Td />
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(totals.wages)}</Td>
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(totals.bonus, 0)}</Td>
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(totals.totalWages, 0)}</Td>
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(totals.epf, 0)}</Td>
-													<Td textAlign="center" fontWeight="700">{formatRegisterNumber(totals.esi, 0)}</Td>
-													<Td textAlign="center" fontWeight="800">{formatRegisterNumber(totals.grossPayment, 0)}</Td>
-												</Tr>
-											</Tfoot>
-										) : null}
-									</Table>
-								</Box>
-								{register.header.note ? <Text mt={3} fontSize={{ base: 'xs', md: 'sm' }}>Note:-{register.header.note}</Text> : null}
-								{register.header.signatoryCompany || register.header.signatoryTitle || register.header.signatureImage ? (
-									<Box mt={4} ml={{ base: 0, md: '8%' }} w="fit-content" textAlign="center" fontSize={{ base: 'xs', md: 'sm' }}>
-										<Flex h="56px" align="flex-end" justify="center">
-											{register.header.signatureImage
-												? <Image src={register.header.signatureImage} alt="Signature" maxH="52px" maxW="180px" objectFit="contain" />
-												: null}
-										</Flex>
-										{register.header.signatoryCompany ? <Text fontWeight="700">{register.header.signatoryCompany}</Text> : null}
-										{register.header.signatoryTitle ? <Text>{register.header.signatoryTitle}</Text> : null}
-									</Box>
-								) : null}
+						<Flex px={{ base: 4, md: 5 }} py={3} gap={{ base: 2, md: 6 }} flexWrap="wrap" fontSize="sm" borderBottom="1px solid" borderColor="slate.100">
+							<Box minW={0}>
+								<Text fontSize="11px" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="0.06em">Work</Text>
+								<Text color="slate.800" fontWeight="600" noOfLines={2}>{registerContractLine(register) || '—'}</Text>
 							</Box>
-							<HStack mt={3} spacing={2} fontSize="xs" color="slate.500" fontFamily="body">
-								<InfoOutlineIcon />
-								<Text>
-									F = D × E · H = F × {register.rates.bonusRate}% · J = F + H · K = EPF {register.rates.epfRate}% of F
-									{register.rates.epfWageCeiling ? ` (max ${register.rates.epfWageCeiling})` : ''} · L = ESI {register.rates.esiRate}% of F · N = J − K − L. Rates and header text are in Settings → Wage register.
+							<Box>
+								<Text fontSize="11px" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="0.06em">LOA / work order</Text>
+								<Text color={register.header.loaReference ? 'slate.800' : 'slate.400'} fontWeight={register.header.loaReference ? '600' : '400'}>
+									{register.header.loaReference || 'Not set — add it from Edit location'}
 								</Text>
-							</HStack>
-						</Box>
+							</Box>
+							<Box>
+								<Text fontSize="11px" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="0.06em">Period</Text>
+								<Text color="slate.800" fontWeight="600">{register.periodLabel}</Text>
+							</Box>
+						</Flex>
 
-						{register.pagination.total > PAGE_SIZE ? (
-							<TableFooter
-								page={register.pagination.page}
-								pageSize={PAGE_SIZE}
-								total={register.pagination.total}
-								totalPages={register.pagination.totalPages}
-								noun="employees"
-								isDisabled={isLoading}
-								onPageChange={setPage}
-							/>
-						) : null}
+						<DataTable
+							columns={registerColumns(register)}
+							rows={register.rows}
+							rowKey={(row) => row.employeeId}
+							size="sm"
+							isLoading={isLoading}
+							emptyTitle="No employees on this register"
+							emptyDescription={`No employees at this location for ${register.periodLabel}.`}
+							summary={hasRows && totals ? {
+								employee: <Text>Total{register.pagination.totalPages > 1 ? ' (all pages)' : ''}</Text>,
+								workingDays: totals.workingDays,
+								wages: rupees(totals.wages, 2),
+								bonus: rupees(totals.bonus),
+								totalWages: rupees(totals.totalWages),
+								epf: totals.epf ? `− ${rupees(totals.epf)}` : '—',
+								esi: totals.esi ? `− ${rupees(totals.esi)}` : '—',
+								grossPayment: <Text color="green.600" fontWeight="800" whiteSpace="nowrap">{rupees(totals.grossPayment)}</Text>,
+							} : undefined}
+							footer={(
+								<>
+									{register.pagination.total > PAGE_SIZE ? (
+										<TableFooter
+											page={register.pagination.page}
+											pageSize={PAGE_SIZE}
+											total={register.pagination.total}
+											totalPages={register.pagination.totalPages}
+											noun="employees"
+											isDisabled={isLoading}
+											onPageChange={setPage}
+										/>
+									) : null}
+									<HStack px={{ base: 4, md: 5 }} py={3} spacing={2} align="flex-start" fontSize="xs" color="slate.500" bg="slate.50" borderTop="1px solid" borderColor="slate.100">
+										<InfoOutlineIcon mt="2px" />
+										<Text>
+											Wages = days × daily wage · Bonus {register.rates.bonusRate}% · EPF {register.rates.epfRate}%
+											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}% · Net = total wages − EPF − ESI.
+											The Excel and PDF downloads use the FORM XVII layout; edit it in Settings → Wage register.
+										</Text>
+									</HStack>
+								</>
+							)}
+						/>
 					</Box>
 				)}
 			</ContentCard>

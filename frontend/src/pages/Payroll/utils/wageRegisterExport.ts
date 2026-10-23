@@ -91,7 +91,7 @@ function imageSize(dataUrl: string) {
 }
 
 /** Downloads the Cloudinary e-sign so it can be embedded; the export still works without it. */
-async function loadSignatureImage(url: string): Promise<SignatureImage | null> {
+export async function loadSignatureImage(url: string): Promise<SignatureImage | null> {
 	if (!url) return null;
 	try {
 		const response = await fetch(url);
@@ -107,7 +107,7 @@ async function loadSignatureImage(url: string): Promise<SignatureImage | null> {
 	}
 }
 
-function fitInto(size: { width: number; height: number }, maxWidth: number, maxHeight: number) {
+export function fitInto(size: { width: number; height: number }, maxWidth: number, maxHeight: number) {
 	const scale = Math.min(maxWidth / size.width, maxHeight / size.height);
 	return { width: size.width * scale, height: size.height * scale };
 }

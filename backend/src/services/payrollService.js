@@ -301,4 +301,107 @@ async function calculateWageRegister(user, options = {}) {
   };
 }
 
-module.exports = { calculatePayroll, calculateWageRegister, wageRegisterRow };
+function monthRange(month) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw httpError(400, 'Select a valid month.');
+  const [year, monthNumber] = month.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return { year, monthNumber, fromDate: `${month}-01`, toDate: `${month}-${String(lastDay).padStart(2, '0')}` };
+}
+
+/** Bank transfer list for a month: one row per paid employee, amount = FORM XVII net payment (column N). */
+async function calculateBankPayments(user, options = {}) {
+  if (user.role !== 'admin') throw httpError(403, 'Only admins can prepare bank payment letters.');
+  const { year, monthNumber, fromDate, toDate } = monthRange(options.month);
+  if (options.locationId && !options.organizationId) throw httpError(400, 'Select an organization for this location.');
+
+  const organizationId = await resolveOrganizationId(user, options.organizationId);
+  if (options.locationId && !mongoose.isValidObjectId(options.locationId)) throw httpError(400, 'Invalid location id.');
+  const locationFilter = {};
+  if (organizationId) locationFilter.organizationId = organizationId;
+  if (options.locationId) locationFilter._id = options.locationId;
+
+  const [locations, organizations, wageSettings, letter] = await Promise.all([
+    Location.find(locationFilter).lean(),
+    User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) }).select('_id organizationName').lean(),
+    getDocumentSettings('wageRegister'),
+    getDocumentSettings('bankLetter'),
+  ]);
+  if (options.locationId && locations.length === 0) throw httpError(404, 'Location not found for this organization.');
+  const rates = {
+    bonusRate: rate(wageSettings, 'bonusRate'),
+    epfRate: rate(wageSettings, 'epfRate'),
+    epfWageCeiling: rate(wageSettings, 'epfWageCeiling'),
+    esiRate: rate(wageSettings, 'esiRate'),
+  };
+  const organizationNames = new Map(organizations.map((organization) => [String(organization._id), organization.organizationName || '']));
+
+  // Same employees and amounts as each location's FORM XVII register (column N).
+  const registers = await Promise.all(locations
+    .filter((location) => organizationNames.has(String(location.organizationId)))
+    .map(async (location) => {
+      const payroll = await calculatePayroll(user, {
+        organizationId: String(location.organizationId),
+        locationId: String(location._id),
+        fromDate,
+        toDate,
+      });
+      return payroll.lines.map((line) => ({ line, location, amount: wageRegisterRow(line, rates).grossPayment }));
+    }));
+
+  const allRows = registers
+    .flat()
+    .filter(({ amount }) => amount > 0)
+    .sort((left, right) => (
+      (organizationNames.get(String(left.location.organizationId)) || '').localeCompare(organizationNames.get(String(right.location.organizationId)) || '')
+      || (left.location.workName || left.location.name || '').localeCompare(right.location.workName || right.location.name || '')
+      || left.line.employeeName.localeCompare(right.line.employeeName)
+    ))
+    .map(({ line, location, amount }, index) => ({
+      serial: index + 1,
+      employeeId: line.employeeId,
+      employeeName: line.employeeName,
+      organizationName: organizationNames.get(String(location.organizationId)) || '',
+      locationName: location.workName || location.name || '',
+      designation: line.designation,
+      workingDays: line.presentDays,
+      accountHolder: line.bankAccountHolder,
+      accountNumber: line.bankAccountNumber,
+      ifsc: line.bankRoutingCode,
+      bankName: line.bankName,
+      bankBranch: line.bankBranch,
+      amount,
+      missingBankDetails: !line.bankAccountNumber || !line.bankRoutingCode || !line.bankName,
+    }));
+
+  const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
+  const pattern = search ? new RegExp(escapeRegex(search), 'i') : null;
+  const rows = pattern
+    ? allRows.filter((row) => [row.employeeName, row.accountNumber, row.ifsc, row.bankName, row.organizationName, row.locationName].some((value) => pattern.test(value || '')))
+    : allRows;
+
+  const summary = {
+    employees: rows.length,
+    total: rows.reduce((sum, row) => sum + row.amount, 0),
+    missingBankDetails: rows.filter((row) => row.missingBankDetails).length,
+    banks: new Set(rows.map((row) => row.bankName.trim().toUpperCase()).filter(Boolean)).size,
+  };
+
+  const monthLabel = `${MONTH_NAMES[monthNumber - 1].slice(0, 3)}-${year}`;
+  const result = {
+    month: options.month,
+    fromDate,
+    toDate,
+    periodLabel: `${MONTH_NAMES[monthNumber - 1]}-${year}`,
+    referencePrefix: `${letter.refPrefix}/ ${monthLabel}/`,
+    letter,
+    rows,
+    summary,
+  };
+  if (options.page === undefined) return result;
+  const limit = Math.min(positiveInteger(options.limit, PAYROLL_PAGE_SIZE), MAX_PAYROLL_PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(rows.length / limit));
+  const page = Math.min(positiveInteger(options.page, 1), totalPages);
+  return { ...result, rows: rows.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: rows.length, totalPages } };
+}
+
+module.exports = { calculateBankPayments, calculatePayroll, calculateWageRegister, wageRegisterRow };

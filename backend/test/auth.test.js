@@ -25,7 +25,7 @@ const {
   parseAttendanceSheet,
 } = require('../src/services/attendanceService');
 const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
-const { calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
+const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 const MasterData = require('../src/models/MasterData');
@@ -1314,6 +1314,69 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
     Employee.find = originals.employeeFind;
     Attendance.find = originals.attendanceFind;
     User.findOne = originals.userFindOne;
+    DocumentSettings.findOne = originals.settingsFindOne;
+  }
+});
+
+test('bank payments list wage register employees with their column N amount and bank details', async () => {
+  const originals = {
+    employeeFind: Employee.find,
+    attendanceFind: Attendance.find,
+    userFind: User.find,
+    userFindOne: User.findOne,
+    locationFind: Location.find,
+    locationFindOne: Location.findOne,
+    settingsFindOne: DocumentSettings.findOne,
+  };
+  const organizationId = '507f1f77bcf86cd799439011';
+  const location = { _id: '507f1f77bcf86cd799439099', organizationId, workName: 'AMC Horticulture Work', designation: 'mali' };
+  const employees = [
+    { _id: '507f1f77bcf86cd799439021', organizationId, name: 'Nehpal Singh', email: 'n@example.com', dailySalary: 781, epfoApplicable: true, esicApplicable: true, bankName: 'UCO BANK', bankAccountNumber: '03770110094938', bankRoutingCode: 'UCBA0000377' },
+    { _id: '507f1f77bcf86cd799439022', organizationId, name: 'Pawan Kumar', email: 'p@example.com', dailySalary: 650, bankName: '', bankAccountNumber: '', bankRoutingCode: '' },
+    { _id: '507f1f77bcf86cd799439023', organizationId, name: 'Zero Days', email: 'z@example.com', dailySalary: 500, bankName: 'SBI', bankAccountNumber: '1', bankRoutingCode: 'SBIN0000001' },
+  ];
+  const attendance = [
+    ...Array.from({ length: 26 }, () => ({ employeeId: employees[0]._id, organizationId, status: 'present' })),
+    ...Array.from({ length: 10 }, () => ({ employeeId: employees[1]._id, organizationId, status: 'present' })),
+  ];
+  Employee.find = () => ({ distinct: async () => employees.map(({ _id }) => _id), lean: async () => employees });
+  Attendance.find = () => ({ lean: async () => attendance });
+  User.find = () => ({ select: () => ({ lean: async () => [{ _id: organizationId, organizationName: 'Powergrid' }] }) });
+  User.findOne = async () => ({ id: organizationId });
+  Location.find = () => ({ lean: async () => [location] });
+  Location.findOne = async () => location;
+  DocumentSettings.findOne = () => ({ lean: async () => null });
+
+  try {
+    await assert.rejects(
+      calculateBankPayments({ id: organizationId, role: 'organization' }, { month: '2026-09' }),
+      (error) => error.statusCode === 403,
+    );
+    await assert.rejects(calculateBankPayments({ id: 'admin', role: 'admin' }, { month: '2026-13' }), (error) => error.statusCode === 400);
+
+    const result = await calculateBankPayments({ id: 'admin', role: 'admin' }, { month: '2026-09' });
+    assert.equal(result.referencePrefix, 'SCC/PNB-NEFT/ SEP-2026/');
+    assert.equal(result.letter.accountNumber, '409100C100000077');
+    assert.deepEqual(result.rows.map((row) => [row.employeeName, row.amount, row.missingBankDetails]), [
+      ['Nehpal Singh', 20045, false],
+      ['Pawan Kumar', 7041, true],
+    ]);
+    assert.equal(result.rows[0].accountNumber, '03770110094938');
+    assert.equal(result.rows[0].ifsc, 'UCBA0000377');
+    assert.equal(result.rows[0].locationName, 'AMC Horticulture Work');
+    assert.equal(result.rows[0].organizationName, 'Powergrid');
+    assert.deepEqual(result.summary, { employees: 2, total: 27086, missingBankDetails: 1, banks: 1 });
+
+    const searched = await calculateBankPayments({ id: 'admin', role: 'admin' }, { month: '2026-09', search: 'ucba', page: '1', limit: '10' });
+    assert.deepEqual(searched.rows.map((row) => row.employeeName), ['Nehpal Singh']);
+    assert.deepEqual(searched.pagination, { page: 1, limit: 10, total: 1, totalPages: 1 });
+  } finally {
+    Employee.find = originals.employeeFind;
+    Attendance.find = originals.attendanceFind;
+    User.find = originals.userFind;
+    User.findOne = originals.userFindOne;
+    Location.find = originals.locationFind;
+    Location.findOne = originals.locationFindOne;
     DocumentSettings.findOne = originals.settingsFindOne;
   }
 });

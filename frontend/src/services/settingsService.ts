@@ -37,10 +37,29 @@ export type WageRegisterSettings = {
 	signatureImage: string;
 };
 
+export type BankLetterSettings = {
+	companyName: string;
+	address: string;
+	phone: string;
+	email: string;
+	refPrefix: string;
+	recipient: string;
+	accountNumber: string;
+	subject: string;
+	requestLine: string;
+	closing: string;
+	signatoryName: string;
+	signatoryCompany: string;
+	signatoryTitle: string;
+	signatoryPhone: string;
+	signatureImage: string;
+};
+
 export type DocumentSettingsMap = {
 	'salary-slip': SalarySlipSettings;
 	'appointment-letter': AppointmentLetterSettings;
 	'wage-register': WageRegisterSettings;
+	'bank-letter': BankLetterSettings;
 };
 
 export type DocumentType = keyof DocumentSettingsMap;
@@ -86,10 +105,29 @@ export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {
 	signatureImage: '',
 };
 
+export const BANK_LETTER_DEFAULTS: BankLetterSettings = {
+	companyName: 'M/s. SHREEJI CARETAKER COMPANY',
+	address: 'Address:-N-33 , GOVIND NAGAR , R.H.B. COLONY, KANKROLI ,\nDISTT. RAJSAMAND ( RAJ. ) Pin:-313342',
+	phone: '9784785808',
+	email: 'shreejicaretaker2007@gmail.com',
+	refPrefix: 'SCC/PNB-NEFT',
+	recipient: 'The Branch Manager\nPanjab National Bank\nJ.K. Made , Kankroli\nDistt-Rajsamand ( Raj )',
+	accountNumber: '409100C100000077',
+	subject: 'Request for making Payment to our Employees by debiting to our Current Account No. {account} at Your Branch',
+	requestLine: 'You are Requested to make a Payment an earliest please',
+	closing: 'Thanking You ,',
+	signatoryName: 'Prahlad Singh Solanki',
+	signatoryCompany: 'M/S. Shreeji Caretaker Co.',
+	signatoryTitle: 'Proprietor',
+	signatoryPhone: '9784785808',
+	signatureImage: '',
+};
+
 export const DOCUMENT_DEFAULTS: DocumentSettingsMap = {
 	'salary-slip': SALARY_SLIP_DEFAULTS,
 	'appointment-letter': APPOINTMENT_LETTER_DEFAULTS,
 	'wage-register': WAGE_REGISTER_DEFAULTS,
+	'bank-letter': BANK_LETTER_DEFAULTS,
 };
 
 type Saved<T extends DocumentType> = DocumentSettingsMap[T] & { updatedAt: string | null };

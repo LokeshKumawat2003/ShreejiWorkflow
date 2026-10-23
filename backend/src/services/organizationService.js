@@ -68,7 +68,7 @@ async function listOrganizations(options = {}) {
   const requestedPage = Number(options.page);
   const pageNumber = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const requestedLimit = Number(options.limit);
-  const limit = Math.min(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 10, 10);
+  const limit = Math.min(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 10, 100);
   const filter = { role: 'organization' };
 
   if (status !== 'all') filter.status = status;

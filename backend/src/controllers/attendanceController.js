@@ -7,7 +7,7 @@ const {
   parseAttendanceMonth,
   parseAttendanceSheet,
 } = require('../services/attendanceService');
-const { calculatePayroll, calculateWageRegister } = require('../services/payrollService');
+const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../services/payrollService');
 
 async function list(req, res) {
   return res.json(await listAttendance(req.user, req.query));
@@ -28,6 +28,10 @@ async function payroll(req, res) {
 
 async function wageRegister(req, res) {
   return res.json(await calculateWageRegister(req.user, req.query));
+}
+
+async function bankPayments(req, res) {
+  return res.json(await calculateBankPayments(req.user, req.query));
 }
 
 async function parse(req, res) {
@@ -52,4 +56,4 @@ async function register(req, res) {
   return res.json(await getAttendanceRegister(req.user, req.query));
 }
 
-module.exports = { bulk, history, list, mark, parse, parseMonth, payroll, register, wageRegister };
+module.exports = { bankPayments, bulk, history, list, mark, parse, parseMonth, payroll, register, wageRegister };

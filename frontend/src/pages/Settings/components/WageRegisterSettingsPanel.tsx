@@ -1,11 +1,8 @@
-import { Box, Button, Flex, FormControl, FormHelperText, FormLabel, HStack, Image, SimpleGrid, Text } from '@chakra-ui/react';
-import { useRef, useState, type ChangeEvent } from 'react';
+import { Box, Image, SimpleGrid, Text } from '@chakra-ui/react';
 import { FormInput, FormTextarea } from '../../../components/ui';
-import { ApiError } from '../../../services/api';
-import { uploadSignatureImage } from '../../../services/settingsService';
 import useDocumentSettings from '../hooks/useDocumentSettings';
-import { prepareSignatureImage } from '../utils/signatureImage';
 import DocumentSettingsLayout, { FormSection, PaperPreview } from './DocumentSettingsLayout';
+import SignatureUploadField from './SignatureUploadField';
 
 const previewHeadings = ['S.no.', 'Name', 'Post', 'Days', 'Wages', 'Wages', 'Bonus', 'Total', 'EPF', 'ESI', 'Gross'];
 const previewRow = ['1', 'PRALAD CHETTRI', 'Skilled', '26', '781', '20306', '1691.49', '21997.49', '1800', '152', '20045'];
@@ -13,25 +10,6 @@ const previewRow = ['1', 'PRALAD CHETTRI', 'Skilled', '26', '781', '20306', '169
 function WageRegisterSettingsPanel() {
 	const settings = useDocumentSettings('wage-register', 'Wage register settings saved');
 	const { values, setField } = settings;
-	const fileInput = useRef<HTMLInputElement>(null);
-	const [imageError, setImageError] = useState('');
-	const [isUploading, setIsUploading] = useState(false);
-
-	async function handleSignatureFile(event: ChangeEvent<HTMLInputElement>) {
-		const file = event.target.files?.[0];
-		event.target.value = '';
-		if (!file) return;
-		setImageError('');
-		setIsUploading(true);
-		try {
-			const image = await uploadSignatureImage(await prepareSignatureImage(file), 'signature.png');
-			setField('signatureImage', image.url);
-		} catch (error) {
-			setImageError(error instanceof ApiError || error instanceof Error ? error.message : 'Unable to upload this image.');
-		} finally {
-			setIsUploading(false);
-		}
-	}
 
 	return (
 		<DocumentSettingsLayout
@@ -98,28 +76,7 @@ function WageRegisterSettingsPanel() {
 			<FormSection title="Signature">
 				<FormInput label="Company line" maxLength={120} value={values.signatoryCompany} helperText="Printed under the signature, e.g. FOR:-SHREEJI CARETAKER COMPANY" onChange={(event) => setField('signatoryCompany', event.target.value)} />
 				<FormInput label="Signatory title" maxLength={60} value={values.signatoryTitle} onChange={(event) => setField('signatoryTitle', event.target.value)} />
-				<FormControl isInvalid={Boolean(imageError)}>
-					<FormLabel fontSize="sm" fontWeight="600" color="slate.700">E-sign image</FormLabel>
-					<Flex align="center" gap={4} wrap="wrap">
-						<Flex align="center" justify="center" w="180px" h="72px" borderWidth="1px" borderStyle="dashed" borderColor="slate.300" borderRadius="lg" bg="white" overflow="hidden">
-							{values.signatureImage
-								? <Image src={values.signatureImage} alt="Signature" maxH="64px" maxW="170px" objectFit="contain" />
-								: <Text fontSize="xs" color="slate.400">No signature</Text>}
-						</Flex>
-						<HStack spacing={2}>
-							<Button size="sm" variant="outline" isLoading={isUploading} loadingText="Uploading" onClick={() => fileInput.current?.click()}>
-								{values.signatureImage ? 'Replace' : 'Upload'}
-							</Button>
-							{values.signatureImage && !isUploading ? (
-								<Button size="sm" variant="ghost" colorScheme="red" onClick={() => setField('signatureImage', '')}>Remove</Button>
-							) : null}
-						</HStack>
-					</Flex>
-					<input ref={fileInput} type="file" accept="image/png,image/jpeg" hidden onChange={(event) => void handleSignatureFile(event)} />
-					{imageError
-						? <Text mt={2} fontSize="sm" color="red.500">{imageError}</Text>
-						: <FormHelperText>Uploaded to Cloudinary, then click Save. PNG with a transparent or white background works best. Leave empty to sign by hand after printing.</FormHelperText>}
-				</FormControl>
+				<SignatureUploadField value={values.signatureImage} onChange={(url) => setField('signatureImage', url)} />
 			</FormSection>
 		</DocumentSettingsLayout>
 	);

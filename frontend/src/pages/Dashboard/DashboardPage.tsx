@@ -17,6 +17,7 @@ import { getDashboardPath } from '../../app/authorization';
 import DashboardNavbar from '../../components/layout/DashboardNavbar';
 import DashboardSidebar from '../../components/layout/DashboardSidebar';
 import AttendanceWorkspacePage from '../Attendance/AttendanceWorkspacePage';
+import BankInvoicePage from '../BankInvoice/BankInvoicePage';
 import OrganizationsPage from '../Organizations/OrganizationsPage';
 import AdminPayrollPage from '../Payroll/AdminPayrollPage';
 import api, { clearAccessToken } from '../../services/api';
@@ -117,6 +118,8 @@ function DashboardPage({ role }: DashboardPageProps) {
               <OrganizationsPage />
             ) : role === 'admin' && activeTab === 'Payroll' ? (
               <AdminPayrollPage />
+            ) : role === 'admin' && activeTab === 'Bank invoice' ? (
+              <BankInvoicePage />
             ) : role === 'admin' && activeTab === 'Settings' ? (
               <SettingsPage />
             ) : (

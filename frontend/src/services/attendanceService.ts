@@ -1,4 +1,5 @@
 import api from './api';
+import type { BankLetterSettings } from './settingsService';
 
 export type AttendanceStatus = 'present' | 'absent';
 
@@ -179,6 +180,52 @@ export async function getWageRegister(
   signal?: AbortSignal,
 ) {
   const { data } = await api.get<WageRegisterResponse>('/attendance/wage-register', { params, signal });
+  return data;
+}
+
+export type BankPaymentRow = {
+  serial: number;
+  employeeId: string;
+  employeeName: string;
+  organizationName: string;
+  locationName: string;
+  designation: string;
+  workingDays: number;
+  accountHolder: string;
+  accountNumber: string;
+  ifsc: string;
+  bankName: string;
+  bankBranch: string;
+  amount: number;
+  missingBankDetails: boolean;
+};
+
+export type BankPaymentsResponse = {
+  month: string;
+  fromDate: string;
+  toDate: string;
+  periodLabel: string;
+  referencePrefix: string;
+  letter: BankLetterSettings;
+  rows: BankPaymentRow[];
+  summary: { employees: number; total: number; missingBankDetails: number; banks: number };
+  pagination?: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export type BankPaymentsParams = {
+  month: string;
+  organizationId?: string;
+  locationId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+};
+
+export async function getBankPayments(params: BankPaymentsParams, signal?: AbortSignal) {
+  const { data } = await api.get<BankPaymentsResponse>('/attendance/bank-payments', {
+    params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')),
+    signal,
+  });
   return data;
 }
 

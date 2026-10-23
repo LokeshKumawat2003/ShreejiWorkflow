@@ -36,12 +36,19 @@ const DashboardIcon = createIcon({
   path: <path fill="currentColor" d="M4 4h7v7H4V4Zm9 0h7v4h-7V4ZM4 13h7v7H4v-7Zm9-3h7v10h-7V10Z" />,
 });
 
+const BankIcon = createIcon({
+  displayName: 'BankIcon',
+  viewBox: '0 0 24 24',
+  path: <path fill="currentColor" d="M12 2 2 7v2h20V7L12 2Zm-7 9v7h3v-7H5Zm5.5 0v7h3v-7h-3ZM16 11v7h3v-7h-3ZM2 20v2h20v-2H2Z" />,
+});
+
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', icon: DashboardIcon, section: 'Workspace' },
   { label: 'Organizations', icon: BuildingIcon, roles: ['admin'], section: 'Workspace' },
   { label: 'Employees', icon: PeopleIcon, section: 'Workspace' },
   { label: 'Attendance', icon: CalendarIcon, roles: ['organization'], section: 'Workspace' },
   { label: 'Payroll', icon: WalletIcon, roles: ['admin'], section: 'Administration' },
+  { label: 'Bank invoice', icon: BankIcon, roles: ['admin'], section: 'Administration' },
   { label: 'Settings', icon: SettingsIcon, roles: ['admin'], section: 'Administration' },
 ];
 

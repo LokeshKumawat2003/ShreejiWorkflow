@@ -4,6 +4,7 @@ import { PageHeader } from '../../components/ui';
 import { MASTER_DATA_LABELS } from '../../services/masterDataService';
 import type { MasterDataType } from '../../types';
 import AppointmentLetterSettingsPanel from './components/AppointmentLetterSettingsPanel';
+import BankLetterSettingsPanel from './components/BankLetterSettingsPanel';
 import MasterDataPanel from './components/MasterDataPanel';
 import SalarySlipSettingsPanel from './components/SalarySlipSettingsPanel';
 import WageRegisterSettingsPanel from './components/WageRegisterSettingsPanel';
@@ -52,6 +53,7 @@ function SettingsPage() {
 						<SectionTab icon="₹">Salary slip</SectionTab>
 						<SectionTab icon="✉">Appointment letter</SectionTab>
 						<SectionTab icon="▦">Wage register</SectionTab>
+						<SectionTab icon="🏦">Bank letter</SectionTab>
 						<SectionTab icon="≡">Master data</SectionTab>
 					</TabList>
 				</Box>
@@ -65,6 +67,9 @@ function SettingsPage() {
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<WageRegisterSettingsPanel />
+					</TabPanel>
+					<TabPanel px={0} pt={5}>
+						<BankLetterSettingsPanel />
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<Tabs colorScheme="brand" variant="soft-rounded" isLazy>

@@ -48,9 +48,45 @@ const DOCUMENT_FIELDS = {
 		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Proprietor / Manager' },
 		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
 	},
+	bankLetter: {
+		companyName: { label: 'Company name', max: 120, required: true, default: 'M/s. SHREEJI CARETAKER COMPANY' },
+		address: {
+			label: 'Address',
+			max: 300,
+			default: 'Address:-N-33 , GOVIND NAGAR , R.H.B. COLONY, KANKROLI ,\nDISTT. RAJSAMAND ( RAJ. ) Pin:-313342',
+		},
+		phone: { label: 'Mobile', max: 30, default: '9784785808' },
+		email: { label: 'Email', max: 254, email: true, default: 'shreejicaretaker2007@gmail.com' },
+		refPrefix: { label: 'Reference prefix', max: 60, required: true, default: 'SCC/PNB-NEFT' },
+		recipient: {
+			label: 'Bank address',
+			max: 400,
+			required: true,
+			default: 'The Branch Manager\nPanjab National Bank\nJ.K. Made , Kankroli\nDistt-Rajsamand ( Raj )',
+		},
+		accountNumber: { label: 'Current account number', max: 34, required: true, default: '409100C100000077' },
+		subject: {
+			label: 'Subject',
+			max: 300,
+			required: true,
+			default: 'Request for making Payment to our Employees by debiting to our Current Account No. {account} at Your Branch',
+		},
+		requestLine: { label: 'Request line', max: 200, default: 'You are Requested to make a Payment an earliest please' },
+		closing: { label: 'Closing', max: 60, default: 'Thanking You ,' },
+		signatoryName: { label: 'Signatory name', max: 100, default: 'Prahlad Singh Solanki' },
+		signatoryCompany: { label: 'Signatory company', max: 120, default: 'M/S. Shreeji Caretaker Co.' },
+		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Proprietor' },
+		signatoryPhone: { label: 'Signatory mobile', max: 30, default: '9784785808' },
+		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
+	},
 };
 
-const ROUTE_TYPES = { 'salary-slip': 'salarySlip', 'appointment-letter': 'appointmentLetter', 'wage-register': 'wageRegister' };
+const ROUTE_TYPES = {
+	'salary-slip': 'salarySlip',
+	'appointment-letter': 'appointmentLetter',
+	'wage-register': 'wageRegister',
+	'bank-letter': 'bankLetter',
+};
 
 function resolveType(type) {
 	const key = ROUTE_TYPES[type] || (DOCUMENT_FIELDS[type] ? type : null);
@@ -107,10 +143,14 @@ async function updateDocumentSettings(user, type, input = {}) {
 		{ new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
 	).lean();
 
-	await Promise.all(imageFields
+	const replaced = imageFields
 		.map((field) => previous?.values?.[field])
-		.filter((url, index) => url && url !== values[imageFields[index]])
-		.map(deleteSignatureImage));
+		.filter((url, index) => url && url !== values[imageFields[index]]);
+	if (replaced.length) {
+		const others = await DocumentSettings.find({ key: { $ne: key } }).lean();
+		const stillUsed = new Set(others.flatMap((other) => Object.values(other.values || {})));
+		await Promise.all(replaced.filter((url) => !stillUsed.has(url)).map(deleteSignatureImage));
+	}
 	return publicSettings(key, document);
 }
 

@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const documentSettingsSchema = new mongoose.Schema(
 	{
-		key: { type: String, required: true, unique: true, enum: ['salarySlip', 'appointmentLetter'] },
+		key: { type: String, required: true, unique: true, enum: ['salarySlip', 'appointmentLetter', 'wageRegister'] },
 		values: { type: mongoose.Schema.Types.Mixed, default: {} },
 	},
 	{ timestamps: true, minimize: false },

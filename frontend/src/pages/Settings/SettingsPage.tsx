@@ -6,6 +6,7 @@ import type { MasterDataType } from '../../types';
 import AppointmentLetterSettingsPanel from './components/AppointmentLetterSettingsPanel';
 import MasterDataPanel from './components/MasterDataPanel';
 import SalarySlipSettingsPanel from './components/SalarySlipSettingsPanel';
+import WageRegisterSettingsPanel from './components/WageRegisterSettingsPanel';
 
 const MASTER_DATA_TYPES: MasterDataType[] = ['designation', 'employmentType', 'skillCategory'];
 
@@ -50,6 +51,7 @@ function SettingsPage() {
 					<TabList gap={1}>
 						<SectionTab icon="₹">Salary slip</SectionTab>
 						<SectionTab icon="✉">Appointment letter</SectionTab>
+						<SectionTab icon="▦">Wage register</SectionTab>
 						<SectionTab icon="≡">Master data</SectionTab>
 					</TabList>
 				</Box>
@@ -60,6 +62,9 @@ function SettingsPage() {
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<AppointmentLetterSettingsPanel />
+					</TabPanel>
+					<TabPanel px={0} pt={5}>
+						<WageRegisterSettingsPanel />
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<Tabs colorScheme="brand" variant="soft-rounded" isLazy>

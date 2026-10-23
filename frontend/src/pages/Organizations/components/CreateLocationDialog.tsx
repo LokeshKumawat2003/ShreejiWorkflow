@@ -40,6 +40,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 	const [workName, setWorkName] = useState('');
 	const [opNumber, setOpNumber] = useState('');
 	const [address, setAddress] = useState('');
+	const [loaReference, setLoaReference] = useState('');
 	const [designation, setDesignation] = useState('');
 	const [status, setStatus] = useState<OrganizationLocation['status']>('active');
 	const [formError, setFormError] = useState('');
@@ -52,6 +53,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 		setWorkName(location?.workName || '');
 		setOpNumber(location?.opNumber || '');
 		setAddress(location?.address || location?.name || '');
+		setLoaReference(location?.loaReference || '');
 		setDesignation(location?.designation || '');
 		setStatus(location?.status || 'active');
 		setFormError('');
@@ -77,6 +79,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 			opNumber: opNumber.trim(),
 			name: address.trim(),
 			address: address.trim(),
+			loaReference: loaReference.trim(),
 			designation,
 			status,
 		})) onClose();
@@ -110,6 +113,14 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 										<FormInput label="OP number" maxLength={50} value={opNumber} onChange={(event) => setOpNumber(event.target.value)} placeholder="OP-001" />
 									</SimpleGrid>
 									<FormTextarea label="Address" isRequired rows={3} resize="vertical" maxLength={500} value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street, city, district, postal code" />
+									<FormInput
+										label="LOA / work order reference"
+										maxLength={200}
+										value={loaReference}
+										onChange={(event) => setLoaReference(event.target.value)}
+										placeholder="LOA- GEMC-511687787412439 Dtd. 16-09-2025 ( PGCIL SAP PO-5200076637 )"
+										helperText="Printed on the wage register (FORM XVII) for this location."
+									/>
 								</Stack>
 							</FormSection>
 

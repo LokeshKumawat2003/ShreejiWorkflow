@@ -24,6 +24,7 @@ export type OrganizationLocation = {
   opNumber: string;
   name: string;
   address: string;
+  loaReference?: string;
   designation: string;
   status: 'active' | 'disabled';
   createdAt: string;

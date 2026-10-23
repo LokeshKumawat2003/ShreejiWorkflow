@@ -132,6 +132,56 @@ export async function getPayroll({ employeeIds, ...params }: PayrollParams, sign
   return data;
 }
 
+export type WageRegisterRow = {
+  serial: number;
+  employeeId: string;
+  employeeName: string;
+  parentName: string;
+  showParentName: boolean;
+  post: string;
+  workingDays: number;
+  dailyWage: number;
+  wages: number;
+  bonus: number;
+  totalWages: number;
+  epf: number;
+  esi: number;
+  grossPayment: number;
+};
+
+export type WageRegisterResponse = {
+  month: string;
+  fromDate: string;
+  toDate: string;
+  periodLabel: string;
+  header: {
+    title: string;
+    formTitle: string;
+    contractorName: string;
+    note: string;
+    signatoryCompany: string;
+    signatoryTitle: string;
+    signatureImage: string;
+    organizationName: string;
+    workName: string;
+    address: string;
+    loaReference: string;
+    opNumber: string;
+  };
+  rates: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number };
+  rows: WageRegisterRow[];
+  totals: Omit<WageRegisterRow, 'serial' | 'employeeId' | 'employeeName' | 'parentName' | 'showParentName' | 'post' | 'dailyWage'> & { employees: number };
+  pagination: { page: number; limit: number; total: number; totalPages: number };
+};
+
+export async function getWageRegister(
+  params: { organizationId: string; locationId: string; month: string; page?: number; limit?: number },
+  signal?: AbortSignal,
+) {
+  const { data } = await api.get<WageRegisterResponse>('/attendance/wage-register', { params, signal });
+  return data;
+}
+
 export type AttendanceRegisterMark = 'P' | 'A' | '';
 
 export type AttendanceRegisterRow = {

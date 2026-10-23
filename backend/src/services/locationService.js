@@ -15,6 +15,7 @@ function publicLocation(location) {
 		opNumber: value.opNumber || '',
 		name: value.name,
 		address: value.address || '',
+		loaReference: value.loaReference || '',
 		designation: value.designation || '',
 		status: value.status,
 		createdAt: value.createdAt,
@@ -42,6 +43,7 @@ function validateLocationInput(input = {}, { partial = false } = {}) {
 	const opNumber = typeof input.opNumber === 'string' ? input.opNumber.trim() : '';
 	const name = typeof input.name === 'string' ? input.name.trim() : '';
 	const address = typeof input.address === 'string' ? input.address.trim() : '';
+	const loaReference = typeof input.loaReference === 'string' ? input.loaReference.trim() : '';
 	const designation = typeof input.designation === 'string' ? input.designation : '';
 	const status = input.status === undefined && !partial ? 'active' : input.status;
 
@@ -50,6 +52,7 @@ function validateLocationInput(input = {}, { partial = false } = {}) {
 		['opNumber', opNumber, 50, 'OP number'],
 		['name', name, 500, 'Location'],
 		['address', address, 500, 'Address'],
+		['loaReference', loaReference, 200, 'LOA / work order reference'],
 	]) {
 		if (partial && input[key] === undefined) continue;
 		if (value.length > maxLength) throw httpError(400, `${label} must be ${maxLength} characters or fewer.`);

@@ -6,7 +6,7 @@ import type { OrganizationLocation, User } from '../../../types';
 import AttendanceRegisterGrid from '../../Attendance/components/AttendanceRegisterGrid';
 import AttendanceHistory from '../../Attendance/components/AttendanceHistory';
 import OrganizationEmployeesPage from './OrganizationEmployeesPage';
-import OrganizationPayrollPage from '../../Payroll/components/OrganizationPayrollPage';
+import LocationPayrollPage from '../../Payroll/components/LocationPayrollPage';
 
 type LocationWorkspacePageProps = {
 	organization: User;
@@ -122,7 +122,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 						{organizationId ? <AttendanceHistory organizationId={organizationId} locationId={location.id} canEdit /> : missingId}
 					</TabPanel>
 					<TabPanel p={0}>
-						{organizationId ? <OrganizationPayrollPage organizationId={organizationId} locationId={location.id} /> : missingId}
+						{organizationId ? <LocationPayrollPage organizationId={organizationId} locationId={location.id} /> : missingId}
 					</TabPanel>
 				</TabPanels>
 			</Stack>

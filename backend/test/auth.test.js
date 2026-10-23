@@ -25,7 +25,7 @@ const {
   parseAttendanceSheet,
 } = require('../src/services/attendanceService');
 const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
-const { calculatePayroll } = require('../src/services/payrollService');
+const { calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 const MasterData = require('../src/models/MasterData');
@@ -1166,6 +1166,8 @@ test('document settings fall back to separate defaults until saved', async () =>
 
 test('document settings can only be updated by administrators and are validated per document', async () => {
   const originalUpdate = DocumentSettings.findOneAndUpdate;
+  const originalFindOne = DocumentSettings.findOne;
+  const originalCloudName = process.env.CLOUDINARY_CLOUD_NAME;
   let filter;
   let update;
   DocumentSettings.findOneAndUpdate = (query, change) => {
@@ -1208,8 +1210,111 @@ test('document settings can only be updated by administrators and are validated 
     assert.equal(letter.email, 'office@shreeji.in');
     assert.equal(letter.terms, 'One\nTwo');
     assert.equal(letter.workingHours, '');
+
+    process.env.CLOUDINARY_CLOUD_NAME = 'shreeji-demo';
+    DocumentSettings.findOne = () => ({ lean: async () => null });
+    const register = { title: 'Register of wages', contractorName: 'Shreeji', bonusRate: '8.33', epfRate: '12', esiRate: '0.75' };
+    for (const signatureImage of [
+      'data:image/png;base64,iVBORw0KGgo=',
+      'https://example.com/sign.png',
+      'https://res.cloudinary.com/other-account/image/upload/v1/shreeji-workflow/signatures/abc.png',
+    ]) {
+      await assert.rejects(
+        updateDocumentSettings({ id: '507f1f77bcf86cd799439099', role: 'admin' }, 'wage-register', { ...register, signatureImage }),
+        (error) => error.statusCode === 400 && error.message === 'Signature image must be uploaded through the signature upload.',
+      );
+    }
+    const signatureUrl = 'https://res.cloudinary.com/shreeji-demo/image/upload/v1761200000/shreeji-workflow/signatures/sign_ab12.png';
+    const saved = await updateDocumentSettings(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      'wage-register',
+      { ...register, signatoryCompany: ' FOR:-SHREEJI CARETAKER COMPANY ', signatoryTitle: 'Proprietor / Manager', signatureImage: signatureUrl },
+    );
+    assert.equal(saved.signatoryCompany, 'FOR:-SHREEJI CARETAKER COMPANY');
+    assert.equal(saved.signatureImage, signatureUrl);
   } finally {
     DocumentSettings.findOneAndUpdate = originalUpdate;
+    DocumentSettings.findOne = originalFindOne;
+    if (originalCloudName === undefined) delete process.env.CLOUDINARY_CLOUD_NAME;
+    else process.env.CLOUDINARY_CLOUD_NAME = originalCloudName;
+  }
+});
+
+test('wage register reproduces the FORM XVII paper figures', async () => {
+  const originals = {
+    locationFindOne: Location.findOne,
+    employeeFind: Employee.find,
+    attendanceFind: Attendance.find,
+    userFindOne: User.findOne,
+    settingsFindOne: DocumentSettings.findOne,
+  };
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439099';
+  const paper = [
+    ['A Pralad Chettri', 'Skilled', 26, 781, 20045],
+    ['B Gobinda Chettri', 'Semi-Skilled', 25, 650, 15682],
+    ['C Ram Bahadur Chettri', 'Un-skilled', 24, 556, 12754],
+    ['D Mani Kumar Chettri', 'Un-skilled', 26, 556, 13817],
+    ['E Om Kumari Rai', 'Un-skilled', 26, 556, 13817],
+    ['F Ram Bahadur', 'Un-skilled', 26, 556, 13817],
+    ['G Aita Rai Subba', 'Un-skilled', 25, 556, 13286],
+    ['H Anil Chettri', 'Un-skilled', 26, 556, 13817],
+  ];
+  const employees = paper.map(([name, skillCategory, , dailySalary], index) => ({
+    _id: `507f1f77bcf86cd7994390${String(index + 10)}`,
+    name,
+    email: `e${index}@example.com`,
+    skillCategory,
+    dailySalary,
+    currency: 'INR',
+    epfoApplicable: true,
+    esicApplicable: true,
+  }));
+  const attendance = employees.flatMap((employee, index) => (
+    Array.from({ length: paper[index][2] }, () => ({ employeeId: employee._id, status: 'present' }))
+  ));
+  const location = { _id: locationId, organizationId, workName: 'AMC CONTRACT FOR HORTICULTURE WORK', address: '400/220 KV, RANGPO S/S', designation: 'mali' };
+
+  Location.findOne = () => ({ then: (resolve) => resolve(location), lean: async () => location });
+  Employee.find = () => ({ distinct: async () => employees.map(({ _id }) => _id), lean: async () => employees });
+  Attendance.find = () => ({ lean: async () => attendance });
+  User.findOne = () => ({ select: () => ({ lean: async () => ({ organizationName: 'Powergrid' }) }) });
+  DocumentSettings.findOne = () => ({ lean: async () => null });
+
+  try {
+    const register = await calculateWageRegister(
+      { id: organizationId, role: 'organization' },
+      { organizationId, locationId, month: '2026-08' },
+    );
+    assert.equal(register.periodLabel, 'AUGUST-2026');
+    assert.deepEqual(register.rows.map((row) => row.grossPayment), paper.map((row) => row[4]));
+    assert.equal(register.rows[0].bonus, 1691.49);
+    assert.equal(register.rows[0].totalWages, 21997.49);
+    assert.equal(register.rows[0].epf, 1800);
+    assert.equal(register.rows[0].esi, 152);
+    assert.deepEqual(register.totals, {
+      employees: 8,
+      workingDays: 204,
+      wages: 121624,
+      bonus: 10131,
+      totalWages: 131755,
+      epf: 13808,
+      esi: 912,
+      grossPayment: 117035,
+    });
+
+    const paged = await calculateWageRegister(
+      { id: organizationId, role: 'organization' },
+      { organizationId, locationId, month: '2026-08', page: '2', limit: '5' },
+    );
+    assert.deepEqual(paged.rows.map((row) => row.serial), [6, 7, 8]);
+    assert.equal(paged.totals.grossPayment, 117035);
+  } finally {
+    Location.findOne = originals.locationFindOne;
+    Employee.find = originals.employeeFind;
+    Attendance.find = originals.attendanceFind;
+    User.findOne = originals.userFindOne;
+    DocumentSettings.findOne = originals.settingsFindOne;
   }
 });
 
@@ -1334,6 +1439,7 @@ test('admins create a location only for an existing organization', async () => {
       workName: 'Kitchen work',
       opNumber: 'OP-42',
       name: 'Main office',
+      loaReference: '',
       address: '1 Main Street',
       designation: 'cook',
       status: 'active',

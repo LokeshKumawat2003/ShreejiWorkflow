@@ -5,6 +5,7 @@ const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
+const { getDocumentSettings } = require('./documentSettingsService');
 
 const PAYROLL_PAGE_SIZE = 10;
 const MAX_PAYROLL_PAGE_SIZE = 100;
@@ -113,6 +114,12 @@ async function calculatePayroll(user, options = {}) {
       organizationAddress: organization.address || '',
       organizationWebsite: organization.website || '',
       designation: employee.designation || '',
+      skillCategory: employee.skillCategory || '',
+      parentName: employee.parentName || '',
+      basicPay: Number(employee.basicPay) || 0,
+      dearnessAllowance: Number(employee.dearnessAllowance) || 0,
+      epfoApplicable: Boolean(employee.epfoApplicable),
+      esicApplicable: Boolean(employee.esicApplicable),
       department: employee.department || '',
       jobTitle: employee.jobTitle || '',
       currency,
@@ -164,4 +171,134 @@ async function calculatePayroll(user, options = {}) {
   };
 }
 
-module.exports = { calculatePayroll };
+const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+
+function round2(value) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function rate(settings, field) {
+  const value = Number(settings[field]);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+/** Builds one FORM XVII row; deductions stay unrounded so the net matches the paper register. */
+function wageRegisterRow(line, rates) {
+  const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2(line.basicPay + line.dearnessAllowance);
+  const workingDays = line.presentDays;
+  const wages = round2(dailyWage * workingDays);
+  const bonus = wages * (rates.bonusRate / 100);
+  const totalWages = wages + bonus;
+  const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
+  const epf = line.epfoApplicable ? epfBase * (rates.epfRate / 100) : 0;
+  const esi = line.esicApplicable ? wages * (rates.esiRate / 100) : 0;
+  return {
+    employeeId: line.employeeId,
+    employeeName: line.employeeName,
+    parentName: line.parentName,
+    post: line.skillCategory || line.designation,
+    workingDays,
+    dailyWage,
+    wages,
+    bonus: round2(bonus),
+    totalWages: round2(totalWages),
+    epf: Math.round(epf),
+    esi: Math.round(esi),
+    grossPayment: Math.round(totalWages - epf - esi),
+    raw: { bonus, totalWages, epf, esi },
+  };
+}
+
+async function calculateWageRegister(user, options = {}) {
+  const month = typeof options.month === 'string' ? options.month : '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw httpError(400, 'Select a valid month.');
+  if (!options.locationId) throw httpError(400, 'Select a location for the wage register.');
+  const organizationId = await resolveOrganizationId(user, options.organizationId);
+  if (!organizationId) throw httpError(400, 'A valid organization id is required for location payroll.');
+  if (!mongoose.isValidObjectId(options.locationId)) throw httpError(400, 'Invalid location id.');
+
+  const [year, monthNumber] = month.split('-').map(Number);
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const fromDate = `${month}-01`;
+  const toDate = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+  const [payroll, location, organization, settings] = await Promise.all([
+    calculatePayroll(user, { organizationId, locationId: options.locationId, fromDate, toDate }),
+    Location.findOne({ _id: options.locationId, organizationId }).lean(),
+    User.findOne({ _id: organizationId, role: 'organization' }).select('organizationName').lean(),
+    getDocumentSettings('wageRegister'),
+  ]);
+  if (!location) throw httpError(404, 'Location not found for this organization.');
+
+  const rates = {
+    bonusRate: rate(settings, 'bonusRate'),
+    epfRate: rate(settings, 'epfRate'),
+    epfWageCeiling: rate(settings, 'epfWageCeiling'),
+    esiRate: rate(settings, 'esiRate'),
+  };
+  const nameCounts = new Map();
+  for (const line of payroll.lines) {
+    const key = line.employeeName.trim().toLowerCase();
+    nameCounts.set(key, (nameCounts.get(key) || 0) + 1);
+  }
+  const rows = payroll.lines.map((line, index) => {
+    const { raw, ...row } = wageRegisterRow(line, rates);
+    return {
+      ...row,
+      serial: index + 1,
+      showParentName: Boolean(row.parentName) && nameCounts.get(line.employeeName.trim().toLowerCase()) > 1,
+      _raw: raw,
+    };
+  });
+
+  const totals = rows.reduce((sum, row) => ({
+    workingDays: sum.workingDays + row.workingDays,
+    wages: sum.wages + row.wages,
+    bonus: sum.bonus + row._raw.bonus,
+    totalWages: sum.totalWages + row._raw.totalWages,
+    epf: sum.epf + row._raw.epf,
+    esi: sum.esi + row._raw.esi,
+    grossPayment: sum.grossPayment + row.grossPayment,
+  }), { workingDays: 0, wages: 0, bonus: 0, totalWages: 0, epf: 0, esi: 0, grossPayment: 0 });
+  const publicRows = rows.map(({ _raw, ...row }) => row);
+
+  const limit = Math.min(positiveInteger(options.limit, publicRows.length || 1), MAX_PAYROLL_PAGE_SIZE);
+  const totalPages = options.page === undefined ? 1 : Math.max(1, Math.ceil(publicRows.length / limit));
+  const page = options.page === undefined ? 1 : Math.min(positiveInteger(options.page, 1), totalPages);
+
+  return {
+    month,
+    fromDate,
+    toDate,
+    periodLabel: `${MONTH_NAMES[monthNumber - 1]}-${year}`,
+    header: {
+      title: settings.title,
+      formTitle: settings.formTitle,
+      contractorName: settings.contractorName,
+      note: settings.note,
+      signatoryCompany: settings.signatoryCompany,
+      signatoryTitle: settings.signatoryTitle,
+      signatureImage: settings.signatureImage,
+      organizationName: organization?.organizationName || '',
+      workName: location.workName || '',
+      address: location.address || location.name || '',
+      loaReference: location.loaReference || '',
+      opNumber: location.opNumber || '',
+    },
+    rates,
+    rows: options.page === undefined ? publicRows : publicRows.slice((page - 1) * limit, page * limit),
+    totals: {
+      employees: rows.length,
+      workingDays: totals.workingDays,
+      wages: round2(totals.wages),
+      bonus: Math.round(totals.bonus),
+      totalWages: Math.round(totals.totalWages),
+      epf: Math.round(totals.epf),
+      esi: Math.round(totals.esi),
+      grossPayment: totals.grossPayment,
+    },
+    pagination: { page, limit: options.page === undefined ? publicRows.length : limit, total: publicRows.length, totalPages },
+  };
+}
+
+module.exports = { calculatePayroll, calculateWageRegister, wageRegisterRow };

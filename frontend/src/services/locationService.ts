@@ -1,7 +1,7 @@
 import api from './api';
 import type { OrganizationLocation } from '../types';
 
-export type CreateLocationInput = Pick<OrganizationLocation, 'workName' | 'opNumber' | 'name' | 'address' | 'designation' | 'status'>;
+export type CreateLocationInput = Pick<OrganizationLocation, 'workName' | 'opNumber' | 'name' | 'address' | 'loaReference' | 'designation' | 'status'>;
 
 export type LocationListParams = {
 	search?: string;

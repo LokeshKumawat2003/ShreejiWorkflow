@@ -7,6 +7,7 @@ const locationSchema = new mongoose.Schema(
     opNumber: { type: String, trim: true, maxlength: 50, default: '' },
     name: { type: String, required: true, trim: true, maxlength: 500 },
     address: { type: String, trim: true, maxlength: 500, default: '' },
+    loaReference: { type: String, trim: true, maxlength: 200, default: '' },
     designation: { type: String, required: true, trim: true, lowercase: true, maxlength: 100 },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
   },

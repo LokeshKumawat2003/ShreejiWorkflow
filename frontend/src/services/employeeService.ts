@@ -106,6 +106,11 @@ export async function emailOrganizationAppointmentLetters(locationId: string, pd
   await api.post('/employees/appointment-letters/organization', formData);
 }
 
+export async function transferEmployees(employeeIds: string[], organizationId: string, locationId: string) {
+  const { data } = await api.post<{ employees: Employee[] }>('/employees/transfer', { employeeIds, organizationId, locationId });
+  return data.employees;
+}
+
 export async function assignEmployeesToOrganization(employeeIds: string[], organizationId: string, locationId?: string) {
   const { data } = await api.post<{ employees: Employee[] }>('/employees/assign', {
     employeeIds,

@@ -59,7 +59,7 @@ function validateLocationInput(input = {}, { partial = false } = {}) {
 		fields[key] = value;
 	}
 	if (!partial || input.designation !== undefined) {
-		const normalizedDesignation = designation.trim().toLowerCase();
+		const normalizedDesignation = designation.trim().replace(/\s+/g, ' ');
 		if (!normalizedDesignation || normalizedDesignation.length > 100) {
 			throw httpError(400, 'Select a valid designation.');
 		}
@@ -94,13 +94,13 @@ async function listLocations(user, organizationId, options = {}) {
 	const resolvedOrganizationId = await resolveOrganizationId(user, organizationId);
 	const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
 	const status = ['active', 'disabled'].includes(options.status) ? options.status : 'all';
-	const designation = typeof options.designation === 'string' ? options.designation.trim().toLowerCase().slice(0, 100) : '';
+	const designation = typeof options.designation === 'string' ? options.designation.trim().slice(0, 100) : '';
 	const limit = Math.min(positiveInteger(options.limit, LOCATION_PAGE_SIZE), MAX_LOCATION_PAGE_SIZE);
 	const scope = { organizationId: resolvedOrganizationId };
 	const filter = { ...scope };
 
 	if (status !== 'all') filter.status = status;
-	if (designation && designation !== 'all') filter.designation = designation;
+	if (designation && designation.toLowerCase() !== 'all') filter.designation = new RegExp(`^${escapeRegex(designation)}$`, 'i');
 	if (search) {
 		const pattern = new RegExp(escapeRegex(search), 'i');
 		filter.$or = [{ workName: pattern }, { opNumber: pattern }, { name: pattern }, { address: pattern }, { designation: pattern }];
@@ -130,7 +130,7 @@ async function listLocations(user, organizationId, options = {}) {
 async function createLocation(user, organizationId, input) {
 	const resolvedOrganizationId = await resolveOrganizationId(user, organizationId);
 	const fields = validateLocationInput(input);
-	fields.designation = await resolveMasterValue('designation', fields.designation, { store: 'code' });
+	fields.designation = await resolveMasterValue('designation', fields.designation);
 	const location = await Location.create({ ...fields, organizationId: resolvedOrganizationId });
 	return publicLocation(location);
 }
@@ -138,8 +138,10 @@ async function createLocation(user, organizationId, input) {
 async function updateLocation(user, organizationId, locationId, input) {
 	const { location } = await resolveLocation(user, organizationId, locationId);
 	const fields = validateLocationInput(input, { partial: true });
-	if (fields.designation !== undefined && fields.designation !== location.designation) {
-		fields.designation = await resolveMasterValue('designation', fields.designation, { store: 'code' });
+	if (fields.designation !== undefined) {
+		fields.designation = fields.designation.toLowerCase() === String(location.designation || '').toLowerCase()
+			? location.designation
+			: await resolveMasterValue('designation', fields.designation);
 	}
 	Object.assign(location, fields);
 	await location.save();

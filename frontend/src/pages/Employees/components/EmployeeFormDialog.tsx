@@ -27,7 +27,7 @@ import FormInput from '../../../components/ui/FormInput';
 import FormSection from '../../../components/ui/FormSection';
 import MasterDataSelect from '../../../components/ui/MasterDataSelect';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
-import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
+import useMasterDataOptions, { findMasterItem } from '../../../hooks/useMasterDataOptions';
 import type { EmployeeInput } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';
 import { isValidPhone } from '../../../utils/formValidation';
@@ -209,6 +209,10 @@ function EmployeeFormDialog({
     }
     if (hasBankDetails && bankValues.some((value) => !value.trim())) {
       showError('Complete every bank field, or leave the bank section blank.');
+      return;
+    }
+    if (designation && !isLoadingMasterData && !findMasterItem(masterOptions.designation, designation)) {
+      showError('Choose a designation from the list. Designations are managed in Settings → Master data.');
       return;
     }
     setFormError('');

@@ -19,7 +19,7 @@ import {
 import { useEffect, useState, type FormEvent } from 'react';
 import { ActionButton, FormInput, FormSection, FormSelect, FormTextarea, MasterDataSelect } from '../../../components/ui';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
-import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
+import useMasterDataOptions, { findMasterItem } from '../../../hooks/useMasterDataOptions';
 import type { CreateLocationInput } from '../../../services/locationService';
 import type { OrganizationLocation } from '../../../types';
 
@@ -71,6 +71,10 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 		}
 		if (!designation) {
 			setFormError('Select the designation employees at this location will have.');
+			return;
+		}
+		if (!isLoadingMasterData && !findMasterItem(masterOptions.designation, designation)) {
+			setFormError('Choose a designation from the list. Designations are managed in Settings → Master data.');
 			return;
 		}
 		setFormError('');
@@ -132,7 +136,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 											h="44px"
 											{...fieldStyles}
 											items={masterOptions.designation}
-											valueKey="code"
+											valueKey="name"
 											placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
 											value={designation}
 											onChange={setDesignation}

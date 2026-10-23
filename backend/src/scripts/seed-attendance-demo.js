@@ -6,6 +6,7 @@ const XLSX = require('xlsx');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
+const MasterData = require('../models/MasterData');
 const User = require('../models/User');
 
 const DEMO_ORG_EMAIL = 'rangpo-demo@shreeji.local';
@@ -112,6 +113,13 @@ async function seedAttendanceDemo() {
     await organization.save();
   }
 
+  const designation = await MasterData.findOneAndUpdate(
+    { type: 'designation', code: 'event' },
+    { $setOnInsert: { type: 'designation', code: 'event', name: 'Event', status: 'active' } },
+    { returnDocument: 'after', upsert: true },
+  ).lean();
+  if (designation.status !== 'active') throw new Error('Enable the "Event" designation in Settings → Master data first.');
+
   const location = await Location.findOneAndUpdate(
     { organizationId: organization.id, opNumber: 'DEMO-RANGPO-16' },
     {
@@ -119,7 +127,7 @@ async function seedAttendanceDemo() {
         workName: 'AMC Horticulture Work',
         name: 'Rangpo SIS Powergrid',
         address: 'Rangpo, Sikkim',
-        designation: 'event',
+        designation: designation.name,
         status: 'active',
       },
       $setOnInsert: { organizationId: organization.id, opNumber: 'DEMO-RANGPO-16' },
@@ -136,7 +144,7 @@ async function seedAttendanceDemo() {
           name: employee.name,
           parentName: employee.parentName,
           skillCategory: employee.skillCategory,
-          designation: 'event',
+          designation: designation.name,
           department: 'Horticulture',
           jobTitle: employee.skillCategory,
           locationId: location.id,

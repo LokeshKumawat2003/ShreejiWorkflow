@@ -4,6 +4,7 @@ const {
   deleteEmployee,
   getEmployee,
   listEmployees,
+  transferEmployees,
   unassignEmployees,
   updateEmployee,
 } = require('../services/employeeService');
@@ -30,6 +31,11 @@ async function update(req, res) {
 
 async function assign(req, res) {
   const employees = await assignEmployees(req.user, req.body || {});
+  return res.json({ employees });
+}
+
+async function transfer(req, res) {
+  const employees = await transferEmployees(req.user, req.body || {});
   return res.json({ employees });
 }
 
@@ -60,4 +66,4 @@ async function sendOrganizationAppointmentLetters(req, res) {
   return res.json(result);
 }
 
-module.exports = { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, unassign, update };
+module.exports = { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update };

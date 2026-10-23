@@ -18,7 +18,7 @@ function MasterDataSelect({ items, value, valueKey, placeholder, onChange, ...se
 	return (
 		<Select {...selectProps} value={selectedValue} onChange={(event) => onChange(event.target.value)}>
 			{placeholder !== undefined ? <option value="">{placeholder}</option> : null}
-			{hasLegacyValue ? <option value={value}>{value}</option> : null}
+			{hasLegacyValue ? <option value={value} disabled>{`${value} (not in Settings → Master data)`}</option> : null}
 			{items.map((item) => (
 				<option key={item.id} value={item[valueKey]}>{item.name}</option>
 			))}

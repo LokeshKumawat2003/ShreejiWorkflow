@@ -92,7 +92,7 @@ async function validateEmployeeLocationDesignation(locationId, designation) {
 	if (!locationId) return;
 	const location = await Location.findById(locationId).select('designation');
 	if (!location) throw httpError(404, 'Location not found.');
-	if (String(designation || '').trim().toLowerCase() !== location.designation) {
+	if (String(designation || '').trim().toLowerCase() !== String(location.designation || '').toLowerCase()) {
 		throw httpError(400, `Employee designation must match this location (${location.designation}).`);
 	}
 }
@@ -450,6 +450,48 @@ async function assignEmployees(user, input = {}) {
 	return assigned.map((employee) => publicEmployee(employee, user.role));
 }
 
+async function transferEmployees(user, input = {}) {
+	if (user.role !== 'admin') throw httpError(403, 'Only administrators can move employees.');
+	const organizationId = typeof input.organizationId === 'string' ? input.organizationId : '';
+	if (!mongoose.isValidObjectId(organizationId)) throw httpError(400, 'Invalid organization id.');
+	if (!input.locationId) throw httpError(400, 'Select the location to move the employees to.');
+	const employeeIds = Array.isArray(input.employeeIds) ? [...new Set(input.employeeIds)] : [];
+	if (employeeIds.length === 0 || employeeIds.length > 100 || employeeIds.some((id) => !mongoose.isValidObjectId(id))) {
+		throw httpError(400, 'Select between 1 and 100 valid employees.');
+	}
+
+	const organization = await User.findOne({ _id: organizationId, role: 'organization' });
+	if (!organization) throw httpError(404, 'Organization not found.');
+	const locationId = await resolveLocationId(input.locationId, organizationId);
+	const location = await Location.findById(locationId).select('designation status');
+	if (location.status !== 'active') throw httpError(400, 'Employees can only be moved to an active location.');
+
+	const employees = await Employee.find({ _id: { $in: employeeIds } });
+	if (employees.length !== employeeIds.length) throw httpError(404, 'One or more employees were not found.');
+	const alreadyThere = employees.find((employee) => String(employee.locationId) === String(locationId));
+	if (alreadyThere) throw httpError(409, `${alreadyThere.name} is already at this location.`);
+	const required = String(location.designation || '').toLowerCase();
+	const mismatch = employees.find((employee) => String(employee.designation || '').trim().toLowerCase() !== required);
+	if (mismatch) {
+		throw httpError(400, `${mismatch.name} cannot move here: the location needs designation ${location.designation}.`);
+	}
+
+	const movingIn = employees.filter((employee) => String(employee.organizationId) !== String(organizationId));
+	if (movingIn.length > 0) {
+		const emails = movingIn.map(({ email }) => email);
+		if (new Set(emails).size !== emails.length) throw httpError(409, 'Selected employees contain duplicate email addresses.');
+		const conflict = await Employee.findOne({ organizationId, email: { $in: emails }, _id: { $nin: employeeIds } }).select('email');
+		if (conflict) throw httpError(409, `An employee with the email ${conflict.email} already belongs to ${organization.organizationName || 'this organization'}.`);
+	}
+
+	await Employee.updateMany(
+		{ _id: { $in: employeeIds } },
+		{ $set: { organizationId, locationId, locationAssignedAt: new Date() } },
+	);
+	const moved = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName');
+	return moved.map((employee) => publicEmployee(employee, user.role));
+}
+
 async function unassignEmployees(user, input = {}) {
 	let organizationId;
 	if (user.role === 'admin') {
@@ -494,6 +536,7 @@ module.exports = {
 	deleteEmployee,
 	getEmployee,
 	listEmployees,
+	transferEmployees,
 	unassignEmployees,
 	updateEmployee,
 };

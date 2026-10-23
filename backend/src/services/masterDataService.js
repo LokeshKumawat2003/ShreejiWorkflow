@@ -69,7 +69,7 @@ async function countUsage(item) {
 	if (item.type === 'designation') {
 		const [employees, locations] = await Promise.all([
 			Employee.countDocuments({ designation: namePattern }),
-			Location.countDocuments({ designation: item.code }),
+			Location.countDocuments({ designation: namePattern }),
 		]);
 		return employees + locations;
 	}
@@ -148,6 +148,7 @@ async function updateMasterData(user, id, input = {}) {
 	requireAdmin(user);
 	const item = await findItem(id);
 	const usageCount = await countUsage(item);
+	const previousName = item.name;
 
 	if (input.name !== undefined) {
 		const name = validateName(input.name);
@@ -165,6 +166,13 @@ async function updateMasterData(user, id, input = {}) {
 	}
 	if (input.status !== undefined) item.status = validateStatus(input.status);
 	await item.save();
+	if (usageCount > 0 && item.name !== previousName && item.type !== 'employmentType') {
+		const previousPattern = new RegExp(`^${escapeRegex(previousName)}$`, 'i');
+		await Employee.updateMany({ [item.type]: previousPattern }, { $set: { [item.type]: item.name } });
+		if (item.type === 'designation') {
+			await Location.updateMany({ designation: previousPattern }, { $set: { designation: item.name } });
+		}
+	}
 	return publicMasterData(item, usageCount);
 }
 
@@ -186,7 +194,8 @@ async function deleteMasterData(user, id) {
 async function resolveMasterValue(type, value, { store = 'name' } = {}) {
 	const code = codeFor(type, normalizeName(value));
 	const item = await MasterData.findOne({ type, code }).lean();
-	if (!item) throw httpError(400, `Select a valid ${TYPE_LABELS[type]}.`);
+	if (!item) throw httpError(400, `Select a valid ${TYPE_LABELS[type]} from Settings → Master data.`);
+	if (item.status === 'disabled') throw httpError(400, `The ${TYPE_LABELS[type]} "${item.name}" is disabled in Settings → Master data.`);
 	return store === 'code' ? item.code : item.name;
 }
 

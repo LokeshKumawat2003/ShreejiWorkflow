@@ -7,6 +7,7 @@ import {
   getEmployee,
   listEmployees,
   removeEmployeesFromOrganization,
+  transferEmployees,
   updateEmployee,
   type EmployeeListParams,
   type EmployeeInput,
@@ -119,6 +120,12 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     return assignedEmployees;
   }
 
+  async function transferMany(ids: string[], targetOrganizationId: string, targetLocationId: string) {
+    const movedEmployees = await transferEmployees(ids, targetOrganizationId, targetLocationId);
+    setRefreshVersion((current) => current + 1);
+    return movedEmployees;
+  }
+
   async function unassignMany(ids: string[], targetOrganizationId?: string, targetLocationId?: string) {
     const unassignedEmployees = await removeEmployeesFromOrganization(ids, targetOrganizationId, targetLocationId);
     setRefreshVersion((current) => current + 1);
@@ -151,6 +158,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     getDetails,
     update,
     assignMany,
+    transferMany,
     unassignMany,
     remove,
   };

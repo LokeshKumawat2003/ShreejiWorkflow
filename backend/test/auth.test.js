@@ -12,6 +12,7 @@ const {
   createEmployee,
   deleteEmployee,
   listEmployees,
+  transferEmployees,
   unassignEmployees,
   updateEmployee,
 } = require('../src/services/employeeService');
@@ -442,6 +443,78 @@ test('employee batch assignment requires at least one employee', async () => {
     ),
     (error) => error.statusCode === 400 && error.message === 'Select between 1 and 100 valid employees.',
   );
+});
+
+test('moving employees to another location only allows a matching designation', async () => {
+  const originals = {
+    userFindOne: User.findOne,
+    locationFindOne: Location.findOne,
+    locationFindById: Location.findById,
+    employeeFind: Employee.find,
+    employeeFindOne: Employee.findOne,
+    employeeUpdateMany: Employee.updateMany,
+  };
+  const targetOrganizationId = '507f1f77bcf86cd799439021';
+  const targetLocationId = '507f1f77bcf86cd799439022';
+  const employeeId = '507f1f77bcf86cd799439023';
+  let designation = 'Mali';
+  let update;
+
+  User.findOne = async () => ({ id: targetOrganizationId, organizationName: 'Target Org' });
+  Location.findOne = async () => ({ id: targetLocationId });
+  Location.findById = () => ({ select: async () => ({ designation: 'mali', status: 'active' }) });
+  Employee.find = (filter) => {
+    const rows = [{
+      _id: employeeId,
+      name: 'Pawan Joshi',
+      email: 'pawan@example.com',
+      designation,
+      organizationId: '507f1f77bcf86cd799439011',
+      locationId: '507f1f77bcf86cd799439012',
+      status: 'active',
+    }];
+    assert.deepEqual(filter, { _id: { $in: [employeeId] } });
+    const result = Promise.resolve(rows);
+    result.populate = async () => rows.map((row) => ({ ...row, organizationId: targetOrganizationId, locationId: targetLocationId }));
+    return result;
+  };
+  Employee.findOne = () => ({ select: async () => null });
+  Employee.updateMany = async (filter, change) => {
+    update = { filter, change };
+    return { modifiedCount: 1 };
+  };
+
+  try {
+    const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
+    const input = { organizationId: targetOrganizationId, locationId: targetLocationId, employeeIds: [employeeId] };
+    const [moved] = await transferEmployees(admin, input);
+    assert.equal(moved.organizationId, targetOrganizationId);
+    assert.equal(moved.locationId, targetLocationId);
+    assert.deepEqual(update.filter, { _id: { $in: [employeeId] } });
+    assert.equal(update.change.$set.organizationId, targetOrganizationId);
+    assert.equal(update.change.$set.locationId, targetLocationId);
+    assert.ok(update.change.$set.locationAssignedAt instanceof Date);
+
+    designation = 'Security Guard';
+    update = undefined;
+    await assert.rejects(
+      transferEmployees(admin, input),
+      (error) => error.statusCode === 400 && /designation mali/.test(error.message),
+    );
+    assert.equal(update, undefined);
+
+    await assert.rejects(
+      transferEmployees({ id: targetOrganizationId, role: 'organization' }, input),
+      (error) => error.statusCode === 403,
+    );
+  } finally {
+    User.findOne = originals.userFindOne;
+    Location.findOne = originals.locationFindOne;
+    Location.findById = originals.locationFindById;
+    Employee.find = originals.employeeFind;
+    Employee.findOne = originals.employeeFindOne;
+    Employee.updateMany = originals.employeeUpdateMany;
+  }
 });
 
 test('removing an employee from an organization keeps the employee and attendance records', async () => {
@@ -1056,19 +1129,26 @@ test('location creation rejects a designation missing from master data', async (
   const originalUserFindOne = User.findOne;
   const originalMasterFindOne = MasterData.findOne;
   User.findOne = async () => ({ id: '507f1f77bcf86cd799439011' });
+  let stored = null;
   MasterData.findOne = (filter) => {
     assert.deepEqual(filter, { type: 'designation', code: 'electrician' });
-    return { lean: async () => null };
+    return { lean: async () => stored };
   };
 
   try {
+    const create = () => createLocation(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      '507f1f77bcf86cd799439011',
+      { workName: 'Kitchen', name: 'Main office', designation: 'Electrician' },
+    );
     await assert.rejects(
-      createLocation(
-        { id: '507f1f77bcf86cd799439099', role: 'admin' },
-        '507f1f77bcf86cd799439011',
-        { workName: 'Kitchen', name: 'Main office', designation: 'Electrician' },
-      ),
-      (error) => error.statusCode === 400 && error.message === 'Select a valid designation.',
+      create(),
+      (error) => error.statusCode === 400 && error.message === 'Select a valid designation from Settings → Master data.',
+    );
+    stored = { type: 'designation', name: 'Electrician', code: 'electrician', status: 'disabled' };
+    await assert.rejects(
+      create(),
+      (error) => error.statusCode === 400 && error.message === 'The designation "Electrician" is disabled in Settings → Master data.',
     );
   } finally {
     User.findOne = originalUserFindOne;
@@ -1415,7 +1495,7 @@ test('location lists filter, paginate and summarize on the server', async () => 
       { search: 'si', status: 'active', designation: 'Cook', page: '2', limit: '5' },
     );
     assert.equal(listFilter.status, 'active');
-    assert.equal(listFilter.designation, 'cook');
+    assert.deepEqual(listFilter.designation, /^Cook$/i);
     assert.equal(listFilter.$or.length, 5);
     assert.equal(skipped, 5);
     assert.equal(limited, 5);
@@ -1504,7 +1584,7 @@ test('admins create a location only for an existing organization', async () => {
       name: 'Main office',
       loaReference: '',
       address: '1 Main Street',
-      designation: 'cook',
+      designation: 'Cook',
       status: 'active',
       organizationId,
     });
@@ -1552,7 +1632,7 @@ test('admins can update location details within the owning organization', async 
     assert.equal(updated.workName, 'New work');
     assert.equal(updated.opNumber, 'OP-9');
     assert.equal(updated.name, 'New site');
-    assert.equal(updated.designation, 'plumber');
+    assert.equal(updated.designation, 'Plumber');
   } finally {
     User.findOne = originalFindOne;
     Location.findOne = originalLocationFindOne;

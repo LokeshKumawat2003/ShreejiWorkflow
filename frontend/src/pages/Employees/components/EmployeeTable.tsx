@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, RepeatIcon } from '@chakra-ui/icons';
 import { HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import {
@@ -45,6 +45,7 @@ type EmployeeTableProps = {
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
   onDownloadLetter?: (employee: Employee) => void;
+  onMove?: (employee: Employee) => void;
   deleteLabel: string;
   title?: string;
   actions?: ReactNode;
@@ -86,6 +87,7 @@ function EmployeeTable({
   onEdit,
   onDelete,
   onDownloadLetter,
+  onMove,
   deleteLabel,
   title = 'Employee directory',
   actions,
@@ -127,6 +129,9 @@ function EmployeeTable({
           )}
           {onDownloadLetter && (
             <IconAction label={`Appointment letter: ${employee.name}`} icon={<DownloadIcon />} tone="primary" onClick={() => onDownloadLetter(employee)} />
+          )}
+          {onMove && (
+            <IconAction label={`Move ${employee.name} to another location`} icon={<RepeatIcon />} onClick={() => onMove(employee)} />
           )}
           <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
         </HStack>

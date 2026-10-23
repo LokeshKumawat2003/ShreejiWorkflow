@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, unassign, update } = require('../controllers/employeeController');
+const { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update } = require('../controllers/employeeController');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { httpError } = require('../utils/httpError');
 
@@ -30,6 +30,7 @@ router.get('/', list);
 router.post('/', create);
 router.post('/assign', assign);
 router.post('/unassign', unassign);
+router.post('/transfer', requireRole('admin'), transfer);
 router.post('/appointment-letters/organization', parseAppointmentLetter, sendOrganizationAppointmentLetters);
 router.post('/:id/appointment-letter', parseAppointmentLetter, sendAppointmentLetter);
 router.get('/:id', get);

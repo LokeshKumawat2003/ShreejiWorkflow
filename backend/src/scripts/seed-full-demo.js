@@ -344,7 +344,7 @@ async function seed() {
 						name: site.name,
 						address: site.address,
 						loaReference: site.loa,
-						designation: site.designation.toLowerCase(),
+						designation: site.designation,
 						status: 'active',
 					},
 					$setOnInsert: { organizationId: organization._id, opNumber: site.opNumber },

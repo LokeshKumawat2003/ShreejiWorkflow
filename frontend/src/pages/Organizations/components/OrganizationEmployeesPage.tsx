@@ -12,6 +12,7 @@ import AssignEmployeeDialog from '../../Employees/components/AssignEmployeeDialo
 import EmployeeDetailsPage from '../../Employees/components/EmployeeDetailsPage';
 import EmployeeFormDialog from '../../Employees/components/EmployeeFormDialog';
 import { useEmployees } from '../../Employees/hooks/useEmployees';
+import MoveEmployeeDialog from './MoveEmployeeDialog';
 import RemoveOrganizationEmployeeDialog from './RemoveOrganizationEmployeeDialog';
 import OrganizationEmployeeTable from './OrganizationEmployeeTable';
 
@@ -49,6 +50,8 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
   const [isSaving, setIsSaving] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [movingEmployee, setMovingEmployee] = useState<Employee | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
 
   function openCreateDialog() {
     setFormEmployee(null);
@@ -114,35 +117,43 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
     }
   }
 
+  async function deliverAppointmentLetters(letterEmployees: Employee[], letterLocation: OrganizationLocation, generateFailure: string) {
+    try {
+      await downloadAppointmentLetters(letterEmployees, letterLocation);
+    } catch (error) {
+      toast({ title: getErrorMessage(error, generateFailure), status: 'error', position: 'top' });
+    }
+    const emailResults = await sendAppointmentLetters(letterEmployees, letterLocation);
+    let organizationEmailError: unknown;
+    try {
+      await sendOrganizationAppointmentLetters(letterEmployees, letterLocation);
+    } catch (error) {
+      organizationEmailError = error;
+    }
+    const failedEmails = emailResults.filter((result) => result.status === 'rejected');
+    if (failedEmails.length === 0 && !organizationEmailError) {
+      toast({
+        title: letterEmployees.length === 1 ? 'Appointment letter emailed to employee and organization' : 'Appointment letters emailed to employees and organization',
+        status: 'success',
+        position: 'top',
+      });
+      return;
+    }
+    if (failedEmails.length > 0) {
+      const message = getErrorMessage(failedEmails[0].reason, 'Appointment letters could not be emailed.');
+      toast({ title: failedEmails.length === letterEmployees.length ? message : `${failedEmails.length} appointment letter${failedEmails.length === 1 ? '' : 's'} could not be emailed: ${message}`, status: 'error', position: 'top' });
+    }
+    if (organizationEmailError) {
+      toast({ title: getErrorMessage(organizationEmailError, 'Appointment letters could not be emailed to the organization.'), status: 'error', position: 'top' });
+    }
+  }
+
   async function handleAssign(employeeIds: string[]): Promise<boolean> {
     setIsAssigning(true);
     try {
       const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
-      try {
-        await downloadAppointmentLetters(assignedEmployees, location);
-      } catch (error) {
-        toast({ title: getErrorMessage(error, 'Employees were assigned, but appointment letters could not be generated.'), status: 'error', position: 'top' });
-      }
-      const emailResults = await sendAppointmentLetters(assignedEmployees, location);
-      let organizationEmailError: unknown;
-      try {
-        await sendOrganizationAppointmentLetters(assignedEmployees, location);
-      } catch (error) {
-        organizationEmailError = error;
-      }
-      const failedEmails = emailResults.filter((result) => result.status === 'rejected');
-      if (failedEmails.length === 0 && !organizationEmailError) {
-        toast({ title: 'Appointment letters emailed to employees and organization', status: 'success', position: 'top' });
-      } else {
-        if (failedEmails.length > 0) {
-          const message = getErrorMessage(failedEmails[0].reason, 'Appointment letters could not be emailed.');
-          toast({ title: failedEmails.length === assignedEmployees.length ? message : `${failedEmails.length} appointment letter${failedEmails.length === 1 ? '' : 's'} could not be emailed: ${message}`, status: 'error', position: 'top' });
-        }
-        if (organizationEmailError) {
-          toast({ title: getErrorMessage(organizationEmailError, 'Combined appointment letters could not be emailed to the organization.'), status: 'error', position: 'top' });
-        }
-      }
+      await deliverAppointmentLetters(assignedEmployees, location, 'Employees were assigned, but appointment letters could not be generated.');
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to assign employees.'), status: 'error', position: 'top' });
@@ -157,6 +168,22 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
       await downloadAppointmentLetters([employee], location);
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to generate the appointment letter.'), status: 'error', position: 'top' });
+    }
+  }
+
+  async function handleMove(targetOrganizationId: string, targetLocation: OrganizationLocation, targetOrganizationName: string) {
+    if (!movingEmployee) return;
+    setIsMoving(true);
+    try {
+      const movedEmployees = await employees.transferMany([movingEmployee.id], targetOrganizationId, targetLocation.id);
+      const place = [targetOrganizationId !== organizationId ? targetOrganizationName : '', targetLocation.workName || targetLocation.name].filter(Boolean).join(' · ');
+      toast({ title: `${movingEmployee.name} moved to ${place}`, description: 'Preparing the new appointment letter…', status: 'success', position: 'top' });
+      setMovingEmployee(null);
+      await deliverAppointmentLetters(movedEmployees, targetLocation, 'Employee was moved, but the new appointment letter could not be generated.');
+    } catch (error) {
+      toast({ title: getErrorMessage(error, 'Unable to move the employee.'), status: 'error', position: 'top' });
+    } finally {
+      setIsMoving(false);
     }
   }
 
@@ -217,6 +244,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
             onView={(employee) => void handleView(employee)}
             onEdit={openEditDialog}
             onDownloadLetter={(employee) => void handleDownloadLetter(employee)}
+            onMove={setMovingEmployee}
             onRemove={(employee) => {
               setRemovingEmployee(employee);
               removeDialog.onOpen();
@@ -244,6 +272,17 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
         locationDesignation={location.designation}
         onClose={assignmentDialog.onClose}
         onAssign={handleAssign}
+      />
+      <MoveEmployeeDialog
+        isOpen={Boolean(movingEmployee)}
+        employee={movingEmployee}
+        currentOrganizationId={organizationId}
+        currentLocation={location}
+        isSaving={isMoving}
+        onClose={() => {
+          if (!isMoving) setMovingEmployee(null);
+        }}
+        onMove={(targetOrganizationId, targetLocation, targetOrganizationName) => void handleMove(targetOrganizationId, targetLocation, targetOrganizationName)}
       />
       <RemoveOrganizationEmployeeDialog
         isOpen={removeDialog.isOpen}

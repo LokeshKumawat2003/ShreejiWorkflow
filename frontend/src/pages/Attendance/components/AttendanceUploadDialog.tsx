@@ -8,7 +8,6 @@ import {
   Input,
   InputGroup,
   InputLeftElement,
-  Link,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -32,6 +31,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
 import Pagination from '../../../components/ui/Pagination';
 import AttendanceMonthUpload from './AttendanceMonthUpload';
+import { downloadDayUploadSheet } from '../utils/attendanceUploadSheet';
 import { ApiError } from '../../../services/api';
 import {
   bulkMarkAttendance,
@@ -122,6 +122,7 @@ function AttendanceUploadDialog({
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
   const [warning, setWarning] = useState('');
   const [sheetPeriodLabel, setSheetPeriodLabel] = useState('');
@@ -238,6 +239,18 @@ function AttendanceUploadDialog({
     if (file) void readSheet(file, nextDate);
   }
 
+  async function downloadSheet() {
+    setIsDownloading(true);
+    setError('');
+    try {
+      await downloadDayUploadSheet({ organizationId, locationId }, markDate);
+    } catch (caught) {
+      setError(errorMessage(caught, 'Unable to download the attendance sheet for this location.'));
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   function updateRow(key: number, patch: Partial<PreviewRow>) {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   }
@@ -344,15 +357,17 @@ function AttendanceUploadDialog({
           </HStack>
           <HStack mb={2} justify="space-between" flexWrap="wrap" gap={2}>
             <Text fontSize="xs" color="slate.500">PDF, Excel, CSV, or image</Text>
-            <Link
-              href="/examples/sample-attendance.xlsx"
-              download="sample-attendance.xlsx"
-              fontSize="sm"
-              fontWeight="600"
-              color="brand.600"
+            <Button
+              variant="link"
+              size="sm"
+              colorScheme="brand"
+              isLoading={isDownloading}
+              loadingText="Preparing..."
+              isDisabled={isParsing || isSaving}
+              onClick={() => void downloadSheet()}
             >
-              Download sample Excel
-            </Link>
+              Download this location's Excel
+            </Button>
           </HStack>
           <Input
             ref={fileInputRef}

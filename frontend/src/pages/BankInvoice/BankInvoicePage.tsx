@@ -1,5 +1,5 @@
 import { CheckCircleIcon, DownloadIcon, InfoOutlineIcon, WarningTwoIcon } from '@chakra-ui/icons';
-import { Alert, AlertIcon, Box, FormControl, FormLabel, HStack, SimpleGrid, Stack, Switch, Text, useToast } from '@chakra-ui/react';
+import { Alert, AlertIcon, Box, Flex, FormControl, FormLabel, HStack, SimpleGrid, Stack, Switch, Text, useToast } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import {
 	ActionButton,
@@ -25,7 +25,8 @@ import { listOrganizationLocations } from '../../services/locationService';
 import { listOrganizations } from '../../services/organizationService';
 import type { OrganizationLocation, User } from '../../types';
 import { formatAmount } from '../Payroll/components/PayrollShared';
-import { exportBankLetterExcel, exportBankLetterPdf } from './utils/bankLetterExport';
+import { fieldLabelStyles } from '../../components/ui/fieldStyles';
+import { exportBankLetterExcel, exportBankLetterPdf, formatLetterDate } from './utils/bankLetterExport';
 
 const PAGE_SIZE = 10;
 
@@ -210,21 +211,46 @@ function BankInvoicePage() {
 			/>
 
 			<ContentCard title="Letter details" subtitle="Printed on the letter. The bank, account and signatory are in Settings → Bank letter.">
-				<SimpleGrid columns={{ base: 1, md: 4 }} spacing={4} alignItems="end">
+				<SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4} alignItems="start">
 					<FormInput label="Letter date" type="date" isRequired value={letterDate} onChange={(event) => setLetterDate(event.target.value)} />
-					<FormInput
-						label="Reference number"
-						maxLength={10}
-						value={referenceNumber}
-						helperText={reference ? `Ref:- ${reference}` : undefined}
-						onChange={(event) => setReferenceNumber(event.target.value)}
-					/>
+					<FormInput label="Reference number" maxLength={10} value={referenceNumber} placeholder="01" onChange={(event) => setReferenceNumber(event.target.value)} />
 					<FormInput label="Cheque number" maxLength={30} inputMode="numeric" value={chequeNumber} placeholder="e.g. 628374" onChange={(event) => setChequeNumber(event.target.value)} />
-					<FormControl display="flex" alignItems="center" gap={3} pb={{ md: 7 }}>
-						<Switch id="skip-missing" colorScheme="brand" isChecked={skipMissing} onChange={(event) => setSkipMissing(event.target.checked)} />
-						<FormLabel htmlFor="skip-missing" mb={0} fontSize="sm" color="slate.700">Leave out employees without bank details</FormLabel>
+					<FormControl>
+						<FormLabel htmlFor="skip-missing" {...fieldLabelStyles}>Missing bank details</FormLabel>
+						<Flex
+							h="44px"
+							px={3}
+							align="center"
+							justify="space-between"
+							gap={3}
+							border="1px solid"
+							borderColor="slate.200"
+							borderRadius="md"
+							bg="white"
+						>
+							<Text fontSize="sm" color="slate.700" noOfLines={1}>Leave them off the letter</Text>
+							<Switch id="skip-missing" colorScheme="brand" isChecked={skipMissing} onChange={(event) => setSkipMissing(event.target.checked)} />
+						</Flex>
 					</FormControl>
 				</SimpleGrid>
+				<HStack
+					mt={4}
+					px={4}
+					py={2.5}
+					spacing={{ base: 3, md: 6 }}
+					flexWrap="wrap"
+					bg="slate.50"
+					border="1px solid"
+					borderColor="slate.100"
+					borderRadius="md"
+					fontSize="sm"
+					color="slate.600"
+				>
+					<Text fontWeight="600" color="slate.500" fontSize="xs" textTransform="uppercase" letterSpacing="wide">On the letter</Text>
+					<Text>Ref:- <Text as="span" fontWeight="600" color="slate.800">{reference || '—'}</Text></Text>
+					<Text>Date:- <Text as="span" fontWeight="600" color="slate.800">{letterDate ? formatLetterDate(letterDate) : '—'}</Text></Text>
+					<Text>CH. NO:- <Text as="span" fontWeight="600" color="slate.800">{chequeNumber.trim() || '—'}</Text></Text>
+				</HStack>
 			</ContentCard>
 
 			<ContentCard

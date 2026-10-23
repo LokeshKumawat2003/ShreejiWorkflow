@@ -355,7 +355,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
             <Text fontSize="sm" color="slate.500">Try a different search or filter.</Text>
           </Box>
         ) : (
-          <Box position="relative" overflowX="auto" maxH="70vh" overflowY="auto" opacity={isLoading ? 0.6 : 1} transition="opacity 0.15s">
+          <Box position="relative" overflowX="auto" opacity={isLoading ? 0.6 : 1} transition="opacity 0.15s">
             {isLoading ? <Spinner position="absolute" top="40%" left="50%" color="brand.500" zIndex={5} /> : null}
             <Box as="table" w="max-content" minW="100%" fontSize="sm" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <Box as="thead">

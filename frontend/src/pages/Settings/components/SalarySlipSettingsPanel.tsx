@@ -1,7 +1,8 @@
-import { Box, HStack, SimpleGrid, Text } from '@chakra-ui/react';
+import { Box, HStack, Image, SimpleGrid, Text } from '@chakra-ui/react';
 import { FormInput, FormTextarea } from '../../../components/ui';
 import useDocumentSettings from '../hooks/useDocumentSettings';
 import DocumentSettingsLayout, { FormSection, PaperPreview } from './DocumentSettingsLayout';
+import SignatureUploadField from './SignatureUploadField';
 
 const previewRows = [
 	['Basic & DA', '20306.00', 'Provident Fund@12%', '2437.00'],
@@ -37,11 +38,17 @@ function SalarySlipSettingsPanel() {
 							<Text mt={1} textAlign="center" fontSize="10px" noOfLines={2}>{values.address.replace(/\s*\n\s*/g, ' ')}</Text>
 						) : null}
 						<Text mt={1} textAlign="center" fontWeight="700" fontSize="sm">{values.title || 'Salary Slip'}</Text>
-						<Box mt={3} fontSize="10px" lineHeight="1.7">
-							<Text>Employee Name:- SH. PRALAD CHETTRI</Text>
-							<Text>Designation:- MALI</Text>
-							<Text>Month &amp; Year:- SEPTEMBER-2026</Text>
-						</Box>
+						<HStack mt={3} fontSize="10px" lineHeight="1.7" justify="space-between" align="flex-start">
+							<Box>
+								<Text>Employee Name:- SH. PRALAD CHETTRI</Text>
+								<Text>Designation:- MALI</Text>
+							</Box>
+							<Box>
+								{values.formNumber.trim() ? <Text>{values.formNumber}</Text> : null}
+								{values.ruleReference.trim() ? <Text>{values.ruleReference}</Text> : null}
+							</Box>
+						</HStack>
+						<Text mt={1} textAlign="center" fontSize="10px">Month &amp; Year:- SEPTEMBER-2026</Text>
 						<Box mt={2} border="1px solid" borderColor="#1a1a1a" fontSize="9.5px">
 							<SimpleGrid columns={4} fontWeight="700" borderBottom="1px solid" borderColor="#1a1a1a">
 								{['Earnings', 'Amount', 'Deductions', 'Amount'].map((head, index) => (
@@ -56,9 +63,11 @@ function SalarySlipSettingsPanel() {
 								</SimpleGrid>
 							))}
 						</Box>
-						<HStack mt={6} justify="flex-end" spacing={1} fontSize="10px">
+						<HStack mt={values.signatureImage ? 2 : 6} justify="flex-end" align="flex-end" spacing={1} fontSize="10px">
 							{values.signatoryLabel.trim() ? <Text>{values.signatoryLabel}</Text> : null}
-							<Box w="90px" borderBottom="1px solid" borderColor="#1a1a1a" />
+							<Box w="90px" borderBottom="1px solid" borderColor="#1a1a1a" display="flex" justifyContent="center">
+								{values.signatureImage ? <Image src={values.signatureImage} alt="Signature" maxH="30px" maxW="90px" objectFit="contain" /> : null}
+							</Box>
 						</HStack>
 					</Box>
 				</PaperPreview>
@@ -87,6 +96,22 @@ function SalarySlipSettingsPanel() {
 					value={values.title}
 					onChange={(event) => setField('title', event.target.value)}
 				/>
+				<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+					<FormInput
+						label="Form number"
+						maxLength={40}
+						value={values.formNumber}
+						helperText="Printed at the top right, e.g. FORM - VIII-C"
+						onChange={(event) => setField('formNumber', event.target.value)}
+					/>
+					<FormInput
+						label="Rule reference"
+						maxLength={60}
+						value={values.ruleReference}
+						helperText="Printed under the form number, e.g. (See rule 156)"
+						onChange={(event) => setField('ruleReference', event.target.value)}
+					/>
+				</SimpleGrid>
 			</FormSection>
 			<FormSection title="Signature">
 				<FormInput
@@ -96,6 +121,7 @@ function SalarySlipSettingsPanel() {
 					helperText="Shown before the signature line, e.g. Proprietor/Manager:"
 					onChange={(event) => setField('signatoryLabel', event.target.value)}
 				/>
+				<SignatureUploadField value={values.signatureImage} onChange={(url) => setField('signatureImage', url)} />
 			</FormSection>
 		</DocumentSettingsLayout>
 	);

@@ -28,6 +28,7 @@ const {
 const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
 const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
+const { register } = require('../src/services/authService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 const MasterData = require('../src/models/MasterData');
 const { createMasterData, deleteMasterData, updateMasterData } = require('../src/services/masterDataService');
@@ -100,6 +101,68 @@ test('organization creation saves and returns optional profile details', async (
   } finally {
     User.create = originalCreate;
   }
+});
+
+test('organization signup creates an active organization and signs it in', async () => {
+  const originalCreate = User.create;
+  const originalSecret = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  let createdInput;
+  User.create = async (input) => {
+    createdInput = input;
+    return { id: '507f1f77bcf86cd799439011', ...input, createdAt: new Date() };
+  };
+
+  try {
+    const result = await register({
+      role: 'organization',
+      name: 'Owner',
+      organizationName: 'Example Org',
+      email: 'Owner@Example.com',
+      password: 'StrongPass123',
+      status: 'disabled',
+    });
+
+    assert.equal(createdInput.role, 'organization');
+    assert.equal(createdInput.status, 'active');
+    assert.equal(result.user.email, 'owner@example.com');
+    assert.equal(result.user.role, 'organization');
+    assert.equal(typeof result.token, 'string');
+  } finally {
+    User.create = originalCreate;
+    process.env.JWT_SECRET = originalSecret;
+  }
+});
+
+test('admin signup requires the configured admin signup code', async () => {
+  const originalCreate = User.create;
+  const originalSecret = process.env.JWT_SECRET;
+  const originalCode = process.env.ADMIN_SIGNUP_CODE;
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  User.create = async (input) => ({ id: '507f1f77bcf86cd799439012', ...input, createdAt: new Date() });
+  const adminInput = { role: 'admin', name: 'Admin', email: 'admin@example.com', password: 'StrongPass123' };
+
+  try {
+    delete process.env.ADMIN_SIGNUP_CODE;
+    await assert.rejects(register({ ...adminInput, adminCode: 'anything' }), { statusCode: 403 });
+
+    process.env.ADMIN_SIGNUP_CODE = 'correct-code';
+    await assert.rejects(register({ ...adminInput, adminCode: 'wrong-code' }), { statusCode: 403 });
+    await assert.rejects(register(adminInput), { statusCode: 403 });
+
+    const result = await register({ ...adminInput, adminCode: 'correct-code' });
+    assert.equal(result.user.role, 'admin');
+    assert.equal(typeof result.token, 'string');
+  } finally {
+    User.create = originalCreate;
+    process.env.JWT_SECRET = originalSecret;
+    if (originalCode === undefined) delete process.env.ADMIN_SIGNUP_CODE;
+    else process.env.ADMIN_SIGNUP_CODE = originalCode;
+  }
+});
+
+test('signup rejects unknown roles', async () => {
+  await assert.rejects(register({ role: 'superuser', name: 'X', email: 'x@example.com', password: 'StrongPass123' }), { statusCode: 400 });
 });
 
 test('organization updates preserve optional profile details when omitted', async () => {
@@ -1255,6 +1318,7 @@ test('document settings can only be updated by administrators and are validated 
     update = change;
     return { lean: async () => ({ key: query.key, values: change.$set.values, updatedAt: new Date('2026-10-22T00:00:00Z') }) };
   };
+  DocumentSettings.findOne = () => ({ lean: async () => null });
 
   try {
     await assert.rejects(
@@ -1278,7 +1342,7 @@ test('document settings can only be updated by administrators and are validated 
       { companyName: '  Shreeji Services  ', address: ' Kankroli ', title: 'Pay Slip', signatoryLabel: 'Manager:', phone: '123' },
     );
     assert.deepEqual(filter, { key: 'salarySlip' });
-    assert.deepEqual(update, { $set: { values: { companyName: 'Shreeji Services', address: 'Kankroli', title: 'Pay Slip', signatoryLabel: 'Manager:' } } });
+    assert.deepEqual(update, { $set: { values: { companyName: 'Shreeji Services', address: 'Kankroli', title: 'Pay Slip', formNumber: '', ruleReference: '', signatoryLabel: 'Manager:', signatureImage: '' } } });
     assert.equal(slip.title, 'Pay Slip');
 
     const letter = await updateDocumentSettings(

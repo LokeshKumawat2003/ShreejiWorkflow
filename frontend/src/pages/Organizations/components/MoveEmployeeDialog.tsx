@@ -118,7 +118,7 @@ function MoveEmployeeDialog({
             Move <Text as="span" fontWeight="700" color="slate.800">{employee?.name}</Text> from{' '}
             <Text as="span" fontWeight="600" color="slate.700">{currentLocation.workName || currentLocation.name}</Text>.
             Only active locations with the designation{' '}
-            <Text as="span" fontWeight="700" color="slate.800" textTransform="capitalize">{designation || '—'}</Text> are shown.
+            <Text as="span" fontWeight="700" color="slate.800" textTransform="capitalize">{designation || 'â€”'}</Text> are shown.
           </Text>
 
           <Stack spacing={5}>
@@ -191,7 +191,7 @@ function MoveEmployeeDialog({
                           <Box minW={0}>
                             <Text fontSize="sm" fontWeight="600" color="slate.900" noOfLines={1}>{location.workName || location.name}</Text>
                             <Text fontSize="xs" color="slate.500" noOfLines={1}>
-                              {[location.name !== location.workName ? location.name : '', location.opNumber ? `OP ${location.opNumber}` : ''].filter(Boolean).join(' · ') || location.address || '—'}
+                              {[location.name !== location.workName ? location.name : '', location.opNumber ? `OP ${location.opNumber}` : ''].filter(Boolean).join(' Â· ') || location.address || 'â€”'}
                             </Text>
                           </Box>
                         </HStack>

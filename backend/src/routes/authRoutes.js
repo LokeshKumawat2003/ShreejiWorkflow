@@ -1,5 +1,5 @@
 const express = require('express');
-const { currentUser, signIn } = require('../controllers/authController');
+const { currentUser, signIn, signUp } = require('../controllers/authController');
 const { requireAuth } = require('../middleware/auth');
 const { httpError } = require('../utils/httpError');
 const mongoose = require('mongoose');
@@ -14,6 +14,7 @@ function requireDatabase(req, res, next) {
 }
 
 router.post('/login', requireDatabase, signIn);
+router.post('/register', requireDatabase, signUp);
 router.get('/me', requireAuth, currentUser);
 
 module.exports = router;

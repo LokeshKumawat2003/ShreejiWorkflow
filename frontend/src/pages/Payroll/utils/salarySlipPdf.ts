@@ -1,5 +1,6 @@
 import type { PayrollLine } from '../../../services/attendanceService';
 import { loadDocumentSettings } from '../../../services/settingsService';
+import { fitInto, loadSignatureImage } from './wageRegisterExport';
 
 export const SALARY_SLIP_RATES = {
   bonus: 0.0833,
@@ -123,6 +124,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     import('jspdf-autotable'),
     loadDocumentSettings('salary-slip'),
   ]);
+  const signature = await loadSignatureImage(company.signatureImage);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
   const monthYear = salaryMonthYear(fromDate, toDate);
   const money = (value: number) => value.toFixed(2);
@@ -167,10 +169,15 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     pdf.setFont('helvetica', 'normal');
     pdf.text(`Employee Name:- SH. ${slip.employeeName.toUpperCase()}`, LEFT + 2, top + 39 + shift);
     pdf.text(`Designation:- ${slip.designation.toUpperCase()}`, LEFT + 2, top + 45 + shift);
-    pdf.text(`Month & Year:- ${slip.monthYear}`, LEFT + 2, top + 51 + shift);
+    const formLines = [company.formNumber, company.ruleReference].map((text) => text.trim());
+    const formWidth = Math.max(...formLines.map((text) => pdf.getTextWidth(text)));
+    formLines.forEach((text, lineIndex) => {
+      if (text) pdf.text(text, PAGE_WIDTH - LEFT - 2 - formWidth, top + 39 + shift + lineIndex * 6);
+    });
+    pdf.text(`Month & Year:- ${slip.monthYear}`, PAGE_WIDTH / 2, top + 52 + shift, { align: 'center' });
 
     autoTable(pdf, {
-      startY: top + 53 + shift,
+      startY: top + 55 + shift,
       margin: { left: LEFT, right: LEFT },
       tableWidth: TABLE_WIDTH,
       theme: 'grid',
@@ -218,8 +225,14 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     const signY = top + SLIP_HEIGHT - 14;
     const signatoryWidth = company.signatoryLabel ? pdf.getTextWidth(company.signatoryLabel) + 2 : 0;
     if (company.signatoryLabel) pdf.text(company.signatoryLabel, PAGE_WIDTH / 2 + 10, signY);
+    const lineStart = PAGE_WIDTH / 2 + 10 + signatoryWidth;
+    if (signature) {
+      const fitted = fitInto(signature, Math.min(40, PAGE_WIDTH - LEFT - lineStart), 14);
+      const imageX = (lineStart + PAGE_WIDTH - LEFT) / 2 - fitted.width / 2;
+      pdf.addImage(signature.dataUrl, signature.format.toUpperCase(), imageX, signY - fitted.height, fitted.width, fitted.height);
+    }
     pdf.setLineWidth(0.2);
-    pdf.line(PAGE_WIDTH / 2 + 10 + signatoryWidth, signY + 0.5, PAGE_WIDTH - LEFT, signY + 0.5);
+    pdf.line(lineStart, signY + 0.5, PAGE_WIDTH - LEFT, signY + 0.5);
 
     if (slot === 0 && index < lines.length - 1) {
       pdf.setLineDashPattern([1.5, 1.5], 0);

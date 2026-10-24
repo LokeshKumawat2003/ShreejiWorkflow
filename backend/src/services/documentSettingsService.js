@@ -8,9 +8,12 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DOCUMENT_FIELDS = {
 	salarySlip: {
 		companyName: { label: 'Company name', max: 120, required: true, default: 'M/S. SHREEJI CARETAKER COMPANY' },
-		address: { label: 'Address', max: 250, default: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)' },
+		address: { label: 'Address', max: 250, default: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)]' },
 		title: { label: 'Slip title', max: 60, required: true, default: 'Salary Slip' },
+		formNumber: { label: 'Form number', max: 40, default: 'FORM - VIII-C' },
+		ruleReference: { label: 'Rule reference', max: 60, default: '(See rule 156)' },
 		signatoryLabel: { label: 'Signatory label', max: 60, default: 'Propritior/Manager:' },
+		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
 	},
 	appointmentLetter: {
 		companyName: { label: 'Company name', max: 120, required: true, default: 'M/s. SHREEJI CARETAKER COMPANY' },
@@ -34,6 +37,7 @@ const DOCUMENT_FIELDS = {
 		},
 		closing: { label: 'Closing line', max: 60, default: 'With best Wishes,' },
 		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Authorized signatory' },
+		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
 	},
 	wageRegister: {
 		title: { label: 'Register title', max: 80, required: true, default: 'Register of wages' },

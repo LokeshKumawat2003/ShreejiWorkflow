@@ -4,7 +4,10 @@ export type SalarySlipSettings = {
 	companyName: string;
 	address: string;
 	title: string;
+	formNumber: string;
+	ruleReference: string;
 	signatoryLabel: string;
+	signatureImage: string;
 };
 
 export type AppointmentLetterSettings = {
@@ -21,6 +24,7 @@ export type AppointmentLetterSettings = {
 	terms: string;
 	closing: string;
 	signatoryTitle: string;
+	signatureImage: string;
 };
 
 export type WageRegisterSettings = {
@@ -66,9 +70,12 @@ export type DocumentType = keyof DocumentSettingsMap;
 
 export const SALARY_SLIP_DEFAULTS: SalarySlipSettings = {
 	companyName: 'M/S. SHREEJI CARETAKER COMPANY',
-	address: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)',
+	address: '[Ragistt. Add.- N-33 , Govind Nager , R.H.B. Colony , Kankroli , Distt-Rajsamand ( Raj.)]',
 	title: 'Salary Slip',
+	formNumber: 'FORM - VIII-C',
+	ruleReference: '(See rule 156)',
 	signatoryLabel: 'Propritior/Manager:',
+	signatureImage: '',
 };
 
 export const APPOINTMENT_LETTER_DEFAULTS: AppointmentLetterSettings = {
@@ -89,6 +96,7 @@ export const APPOINTMENT_LETTER_DEFAULTS: AppointmentLetterSettings = {
 	].join('\n'),
 	closing: 'With best Wishes,',
 	signatoryTitle: 'Authorized signatory',
+	signatureImage: '',
 };
 
 export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {

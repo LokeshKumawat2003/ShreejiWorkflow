@@ -1,4 +1,5 @@
 import type { Employee, OrganizationLocation } from '../types';
+import { fitInto, loadSignatureImage } from '../pages/Payroll/utils/wageRegisterExport';
 import { loadDocumentSettings, type AppointmentLetterSettings } from './settingsService';
 
 type PdfDocument = InstanceType<typeof import('jspdf').jsPDF>;
@@ -86,6 +87,7 @@ function writeDetail(pdf: PdfDocument, label: string, value: Segment[], y: numbe
 function addAppointmentLetter(
   pdf: PdfDocument,
   settings: AppointmentLetterSettings,
+  signature: Awaited<ReturnType<typeof loadSignatureImage>>,
   employee: Employee,
   location: OrganizationLocation,
   index: number,
@@ -204,14 +206,19 @@ function addAppointmentLetter(
   const signatureY = Math.max(y + 18, 222);
   if (settings.closing.trim()) pdf.text(settings.closing.trim(), MARGIN, signatureY);
   if (shortName) pdf.text(`For:- ${shortName}`, MARGIN, signatureY + 10);
+  if (signature) {
+    const fitted = fitInto(signature, 45, 13);
+    pdf.addImage(signature.dataUrl, signature.format.toUpperCase(), MARGIN, signatureY + 24 - fitted.height, fitted.width, fitted.height);
+  }
   if (settings.signatoryTitle.trim()) pdf.text(settings.signatoryTitle.trim(), MARGIN, signatureY + 28);
 }
 
 export async function createAppointmentLettersPdf(employees: Employee[], location: OrganizationLocation) {
   if (employees.length === 0) return null;
   const [{ jsPDF }, settings] = await Promise.all([import('jspdf'), loadDocumentSettings('appointment-letter')]);
+  const signature = await loadSignatureImage(settings.signatureImage);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
-  employees.forEach((employee, index) => addAppointmentLetter(pdf, settings, employee, location, index));
+  employees.forEach((employee, index) => addAppointmentLetter(pdf, settings, signature, employee, location, index));
   return pdf;
 }
 

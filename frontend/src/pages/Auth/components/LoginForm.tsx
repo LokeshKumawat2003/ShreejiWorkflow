@@ -171,9 +171,9 @@ function LoginForm() {
             color="brand.500"
             size="sm"
             type="button"
-            onClick={() => showSetupNotice('Please contact your HR administrator to create an account.')}
+            onClick={() => navigate('/signup')}
           >
-            Contact your administrator
+            Create an account
           </Button>
         </HStack>
       </Stack>

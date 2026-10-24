@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { theme } from '../theme';
 import DashboardPage from '../pages/Dashboard/DashboardPage';
 import LoginPage from '../pages/Auth/LoginPage';
+import SignupPage from '../pages/Auth/SignupPage';
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
           <Route path="/organization/dashboard" element={<DashboardPage role="organization" />} />
           <Route path="/admin/dashboard" element={<DashboardPage role="admin" />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

@@ -1,7 +1,8 @@
-import { Box, SimpleGrid, Text } from '@chakra-ui/react';
+import { Box, Image, SimpleGrid, Text } from '@chakra-ui/react';
 import { FormInput, FormTextarea } from '../../../components/ui';
 import useDocumentSettings from '../hooks/useDocumentSettings';
 import DocumentSettingsLayout, { FormSection, PaperPreview } from './DocumentSettingsLayout';
+import SignatureUploadField from './SignatureUploadField';
 
 const LetterIcon = (
 	<Box as="svg" viewBox="0 0 24 24" w={5} h={5} fill="currentColor" aria-hidden="true">
@@ -92,7 +93,8 @@ function AppointmentLetterSettingsPanel() {
 					<Box mt={4}>
 						{values.closing.trim() ? <Text>{values.closing}</Text> : null}
 						{shortName ? <Text mt={1}>For:- {shortName}</Text> : null}
-						{values.signatoryTitle.trim() ? <Text mt={5}>{values.signatoryTitle}</Text> : null}
+						{values.signatureImage ? <Image mt={1} src={values.signatureImage} alt="Signature" maxH="34px" maxW="110px" objectFit="contain" /> : null}
+						{values.signatoryTitle.trim() ? <Text mt={values.signatureImage ? 0 : 5}>{values.signatoryTitle}</Text> : null}
 					</Box>
 				</PaperPreview>
 			)}
@@ -167,6 +169,7 @@ function AppointmentLetterSettingsPanel() {
 					<FormInput label="Closing line" maxLength={60} value={values.closing} onChange={(event) => setField('closing', event.target.value)} />
 					<FormInput label="Signatory title" maxLength={60} value={values.signatoryTitle} onChange={(event) => setField('signatoryTitle', event.target.value)} />
 				</SimpleGrid>
+				<SignatureUploadField value={values.signatureImage} onChange={(url) => setField('signatureImage', url)} />
 			</FormSection>
 		</DocumentSettingsLayout>
 	);

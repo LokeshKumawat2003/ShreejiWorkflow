@@ -1,5 +1,5 @@
 import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, RepeatIcon } from '@chakra-ui/icons';
-import { HStack, Stack, Text } from '@chakra-ui/react';
+import { Box, HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import {
   ContentCard,
@@ -119,7 +119,14 @@ function EmployeeTable({
     {
       key: 'status',
       header: 'Status',
-      render: (employee) => <StatusBadge status={employee.status} />,
+      render: (employee) => (
+        <Box>
+          <StatusBadge status={employee.status} />
+          {employee.status === 'disabled' && employee.disabledOn ? (
+            <Text mt={1} fontSize="xs" color="slate.500">{`Blocked from ${employee.disabledOn}`}</Text>
+          ) : null}
+        </Box>
+      ),
     },
     {
       key: 'actions',

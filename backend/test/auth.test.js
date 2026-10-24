@@ -1123,36 +1123,46 @@ test('attendance marking updates the employee/date record and returns the saved 
   }
 });
 
-test('admins can correct attendance for an inactive employee', async () => {
+test('admins can correct attendance before a blocked employee was blocked, but not from the block date', async () => {
   const originalOrganizationFind = User.findOne;
   const originalEmployeeFind = Employee.findOne;
   const originalAttendanceUpdate = Attendance.findOneAndUpdate;
   const organizationId = '507f1f77bcf86cd799439011';
   const employeeId = '507f1f77bcf86cd799439012';
   const adminId = '507f1f77bcf86cd799439013';
-  const today = new Date().toISOString().slice(0, 10);
+  const admin = { id: adminId, role: 'admin' };
   let employeeFilter;
+  let employee = { _id: employeeId, name: 'Ramesh', status: 'disabled', disabledOn: '2026-10-15' };
+  let saved = 0;
 
   User.findOne = async () => ({ id: organizationId });
   Employee.findOne = async (filter) => {
     employeeFilter = filter;
-    return { _id: employeeId, status: 'disabled' };
+    return employee;
   };
-  Attendance.findOneAndUpdate = async (filter, update) => ({
-    employeeId,
-    date: today,
-    status: update.$set.status,
-    updatedAt: new Date(),
-  });
+  Attendance.findOneAndUpdate = async (filter, update) => {
+    saved += 1;
+    return { employeeId, date: filter.date, status: update.$set.status, updatedAt: new Date() };
+  };
 
   try {
-    const result = await markAttendance(
-      { id: adminId, role: 'admin' },
-      { organizationId, employeeId, date: today, status: 'absent' },
-    );
-
+    const result = await markAttendance(admin, { organizationId, employeeId, date: '2026-10-14', status: 'absent' });
     assert.deepEqual(employeeFilter, { _id: employeeId, organizationId });
     assert.equal(result.status, 'absent');
+
+    for (const date of ['2026-10-15', '2026-10-20']) {
+      await assert.rejects(
+        markAttendance(admin, { organizationId, employeeId, date, status: 'present' }),
+        (error) => error.statusCode === 400 && /blocked on 2026-10-15/.test(error.message),
+      );
+    }
+
+    employee = { _id: employeeId, name: 'Ramesh', status: 'disabled' };
+    await assert.rejects(
+      markAttendance(admin, { organizationId, employeeId, date: '2026-01-01', status: 'present' }),
+      (error) => error.statusCode === 400 && /is blocked/.test(error.message),
+    );
+    assert.equal(saved, 1);
   } finally {
     User.findOne = originalOrganizationFind;
     Employee.findOne = originalEmployeeFind;
@@ -2050,7 +2060,7 @@ test('bulk attendance upload skips existing employee and date records', async ()
         ],
       },
     );
-    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 1 });
+    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 1, skippedBlocked: 0 });
     assert.equal(inserted.length, 1);
     assert.equal(String(inserted[0].employeeId), absentId);
     assert.equal(inserted[0].status, 'absent');
@@ -2190,7 +2200,7 @@ test('bulk attendance accepts a date on each entry', async () => {
         ],
       },
     );
-    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 2 });
+    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 1, skippedInvalid: 2, skippedBlocked: 0 });
     assert.equal(inserted[0].date, '2026-10-01');
 
     let writes = [];
@@ -2206,7 +2216,7 @@ test('bulk attendance accepts a date on each entry', async () => {
         entries: [{ employeeId, status: 'present', date: '2026-10-02', replace: true }],
       },
     );
-    assert.deepEqual(replaced, { saved: 0, updated: 1, skippedDuplicates: 0, skippedInvalid: 0 });
+    assert.deepEqual(replaced, { saved: 0, updated: 1, skippedDuplicates: 0, skippedInvalid: 0, skippedBlocked: 0 });
     assert.equal(writes[0].updateOne.filter.date, '2026-10-02');
     assert.equal(writes[0].updateOne.update.$set.status, 'present');
     await assert.rejects(
@@ -2313,6 +2323,167 @@ test('attendance register builds the monthly Form XVI grid', async () => {
     assert.equal(register.rows.find((row) => row.employeeId === omId).days[14], 'P');
     assert.equal(register.totalMandays, 3);
     assert.deepEqual(register.rows.map((row) => row.serial), [1, 2]);
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+  }
+});
+
+test('blocking an employee records the block date and unblocking clears it', async () => {
+  const originalFindById = Employee.findById;
+  const originalFindOneAndUpdate = Employee.findOneAndUpdate;
+  const employeeId = '507f1f77bcf86cd799439012';
+  const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
+  let currentStatus = 'active';
+  let change;
+
+  Employee.findById = () => ({ select: async () => ({ status: currentStatus }) });
+  Employee.findOneAndUpdate = (filter, update) => {
+    change = update.$set;
+    return { populate: async () => ({ _id: employeeId, name: 'Ramesh', email: 'r@example.com', status: change.status, disabledOn: change.disabledOn }) };
+  };
+
+  try {
+    const blocked = await updateEmployee(admin, employeeId, { status: 'disabled', timeZone: 'Asia/Kolkata' });
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    assert.equal(change.disabledOn, today);
+    assert.equal(blocked.disabledOn, today);
+
+    currentStatus = 'disabled';
+    await updateEmployee(admin, employeeId, { status: 'disabled', name: 'Ramesh K' });
+    assert.equal('disabledOn' in change, false);
+
+    await updateEmployee(admin, employeeId, { status: 'active' });
+    assert.equal(change.disabledOn, '');
+  } finally {
+    Employee.findById = originalFindById;
+    Employee.findOneAndUpdate = originalFindOneAndUpdate;
+  }
+});
+
+test('payroll keeps work done before the block date and drops blocked employees with no work', async () => {
+  const originalAttendanceFind = Attendance.find;
+  const originalEmployeeFind = Employee.find;
+  const ids = ['507f1f77bcf86cd799439031', '507f1f77bcf86cd799439032', '507f1f77bcf86cd799439033'];
+  Attendance.find = () => ({
+    lean: async () => [
+      { employeeId: ids[1], status: 'present', date: '2026-10-01' },
+      { employeeId: ids[1], status: 'present', date: '2026-10-14' },
+      { employeeId: ids[1], status: 'present', date: '2026-10-15' },
+    ],
+  });
+  Employee.find = () => ({
+    lean: async () => [
+      { _id: ids[0], name: 'Active', email: 'a@example.com', dailySalary: 100, status: 'active' },
+      { _id: ids[1], name: 'Blocked mid month', email: 'b@example.com', dailySalary: 100, status: 'disabled', disabledOn: '2026-10-15' },
+      { _id: ids[2], name: 'Blocked idle', email: 'c@example.com', dailySalary: 100, status: 'disabled', disabledOn: '2026-10-02' },
+    ],
+  });
+
+  try {
+    const payroll = await calculatePayroll(
+      { id: '507f1f77bcf86cd799439011', role: 'organization' },
+      { fromDate: '2026-10-01', toDate: '2026-10-31' },
+    );
+    assert.deepEqual(payroll.lines.map(({ employeeId, presentDays, grossPay }) => ({ employeeId, presentDays, grossPay })), [
+      { employeeId: ids[0], presentDays: 0, grossPay: 0 },
+      { employeeId: ids[1], presentDays: 2, grossPay: 200 },
+    ]);
+  } finally {
+    Attendance.find = originalAttendanceFind;
+    Employee.find = originalEmployeeFind;
+  }
+});
+
+test('bulk attendance skips days on or after an employee was blocked', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const originalInsertMany = Attendance.insertMany;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const employeeId = '507f1f77bcf86cd799439021';
+  let inserted = [];
+
+  User.findOne = async () => ({ id: organizationId });
+  Location.findOne = async () => ({ _id: locationId, organizationId, designation: 'cook' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => [employeeId] };
+    return { sort: () => ({ lean: async () => [{ _id: employeeId, name: 'Prakash', status: 'disabled', disabledOn: '2026-10-15' }] }) };
+  };
+  Attendance.find = () => ({ select() { return this; }, lean: async () => [] });
+  Attendance.insertMany = async (docs) => {
+    inserted = docs;
+    return docs;
+  };
+
+  try {
+    const result = await bulkMarkAttendance(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      {
+        organizationId,
+        locationId,
+        entries: [
+          { employeeId, status: 'present', date: '2026-10-14' },
+          { employeeId, status: 'present', date: '2026-10-15' },
+          { employeeId, status: 'present', date: '2026-10-16' },
+        ],
+      },
+    );
+    assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 0, skippedInvalid: 0, skippedBlocked: 2 });
+    assert.deepEqual(inserted.map(({ date }) => date), ['2026-10-14']);
+  } finally {
+    User.findOne = originalUserFind;
+    Location.findOne = originalLocationFind;
+    Employee.find = originalEmployeeFind;
+    Attendance.find = originalAttendanceFind;
+    Attendance.insertMany = originalInsertMany;
+  }
+});
+
+test('attendance register only expects attendance until the block date', async () => {
+  const originalUserFind = User.findOne;
+  const originalLocationFind = Location.findOne;
+  const originalEmployeeFind = Employee.find;
+  const originalAttendanceFind = Attendance.find;
+  const organizationId = '507f1f77bcf86cd799439011';
+  const locationId = '507f1f77bcf86cd799439012';
+  const activeId = '507f1f77bcf86cd799439021';
+  const midMonthId = '507f1f77bcf86cd799439022';
+  const earlierId = '507f1f77bcf86cd799439023';
+  const employees = [
+    { _id: activeId, name: 'Active', status: 'active' },
+    { _id: midMonthId, name: 'Blocked mid month', status: 'disabled', disabledOn: '2026-09-11' },
+    { _id: earlierId, name: 'Blocked earlier', status: 'disabled', disabledOn: '2026-08-01' },
+  ];
+
+  User.findOne = () => queryResult({ id: organizationId, _id: organizationId, organizationName: 'Powergrid' });
+  Location.findOne = () => queryResult({ _id: locationId, organizationId, designation: 'event' });
+  Employee.find = (filter) => {
+    if (filter.locationId) return { distinct: async () => employees.map(({ _id }) => _id) };
+    return { sort: () => ({ lean: async () => employees }) };
+  };
+  Attendance.find = () => ({
+    lean: async () => [
+      { employeeId: midMonthId, date: '2026-09-01', status: 'present' },
+      { employeeId: midMonthId, date: '2026-09-12', status: 'present' },
+    ],
+  });
+
+  try {
+    const register = await getAttendanceRegister(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      { organizationId, locationId, month: '2026-09' },
+    );
+    assert.deepEqual(register.rows.map((row) => row.employeeId), [activeId, midMonthId]);
+    const blocked = register.rows.find((row) => row.employeeId === midMonthId);
+    assert.equal(blocked.totalPresent, 1);
+    assert.equal(blocked.days[11], '');
+    assert.equal(blocked.disabledOn, '2026-09-11');
+    assert.deepEqual(register.summary, { employees: 2, present: 1, absent: 0, unmarked: 30 + 9 });
   } finally {
     User.findOne = originalUserFind;
     Location.findOne = originalLocationFind;

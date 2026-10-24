@@ -72,8 +72,10 @@ export async function listEmployees(params: EmployeeListParams, signal?: AbortSi
   return data;
 }
 
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 export async function createEmployee(input: EmployeeInput) {
-  const { data } = await api.post<EmployeeResponse>('/employees', input);
+  const { data } = await api.post<EmployeeResponse>('/employees', { ...input, timeZone: timeZone() });
   return data.employee;
 }
 
@@ -83,7 +85,7 @@ export async function getEmployee(id: string) {
 }
 
 export async function updateEmployee(id: string, input: EmployeeInput) {
-  const { data } = await api.patch<EmployeeResponse>(`/employees/${id}`, input);
+  const { data } = await api.patch<EmployeeResponse>(`/employees/${id}`, { ...input, timeZone: timeZone() });
   return data.employee;
 }
 

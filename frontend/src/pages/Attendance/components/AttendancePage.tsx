@@ -242,7 +242,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
                   <Td>{entry.department || '—'}</Td>
                   <Td>{entry.jobTitle || '—'}</Td>
                   <Td>
-                    {canMarkAttendance && (role === 'admin' || entry.employeeStatus === 'active') ? (
+                    {canMarkAttendance && entry.canMark ? (
                       <HStack spacing={2} flexWrap="wrap">
                         <Button
                           aria-pressed={entry.status === 'present'}
@@ -316,6 +316,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
               updated ? `${updated} saved record${updated === 1 ? '' : 's'} updated` : '',
               result.skippedDuplicates ? `${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped` : '',
               result.skippedInvalid ? `${result.skippedInvalid} invalid` : '',
+              result.skippedBlocked ? `${result.skippedBlocked} skipped for blocked employees` : '',
             ].filter(Boolean);
             toast({
               title: `${result.saved} attendance record${result.saved === 1 ? '' : 's'} saved`,

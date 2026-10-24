@@ -414,13 +414,20 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                       <Box as="td" {...stickyCell(STICKY_SERIAL_WIDTH, STICKY_NAME_WIDTH)} px={3} py={1.5} borderBottom="1px solid" borderRight="1px solid" borderColor="slate.100">
                         <Text fontWeight="700" color="slate.900" fontSize="xs" textTransform="uppercase" noOfLines={1} title={row.name}>{row.name}</Text>
                         {row.parentName ? <Text fontSize="10px" color="slate.400" noOfLines={1}>S/o {row.parentName}</Text> : null}
+                        {row.employeeStatus === 'disabled' ? (
+                          <Text fontSize="10px" color="red.500" noOfLines={1}>
+                            {row.disabledOn ? `Blocked from ${row.disabledOn}` : 'Blocked'}
+                          </Text>
+                        ) : null}
                       </Box>
                       <Box as="td" px={3} py={1.5} fontSize="xs" color="slate.500" borderBottom="1px solid" borderColor="slate.100" whiteSpace="nowrap">
                         {row.skillCategory || '—'}
                       </Box>
                       {row.days.map((mark, dayIndex) => {
                         const isElapsed = dayIndex < lastEditableDay;
-                        const isEditable = isEditing && isElapsed;
+                        const isBlocked = row.employeeStatus === 'disabled'
+                          && (!row.disabledOn || dayDate(month, dayIndex + 1) >= row.disabledOn);
+                        const isEditable = isEditing && isElapsed && !isBlocked;
                         const isSaving = savingCells.has(`${row.employeeId}|${dayIndex}`);
                         const style = markStyles[mark];
                         return (
@@ -428,7 +435,9 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                             <Tooltip
                               label={!isElapsed
                                 ? 'Future date'
-                                : isEditing
+                                : isBlocked
+                                  ? `${row.name} is blocked`
+                                  : isEditing
                                   ? `${row.name} · ${dayDate(month, dayIndex + 1)} · click to mark ${mark === 'P' ? 'absent' : 'present'}`
                                   : `${row.name} · ${dayDate(month, dayIndex + 1)}`}
                               openDelay={400}
@@ -529,7 +538,10 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
           setRefreshToken((current) => current + 1);
           toast({
             title: `${result.saved} attendance record${result.saved === 1 ? '' : 's'} saved`,
-            description: result.updated ? `${result.updated} updated.` : undefined,
+            description: [
+              result.updated ? `${result.updated} updated.` : '',
+              result.skippedBlocked ? `${result.skippedBlocked} skipped for blocked employees.` : '',
+            ].filter(Boolean).join(' ') || undefined,
             status: 'success',
             position: 'top',
           });

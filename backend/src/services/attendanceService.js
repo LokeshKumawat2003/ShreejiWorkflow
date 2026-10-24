@@ -3,6 +3,7 @@ const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
+const { canMarkAttendanceOn, countsAttendanceOn } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 const {
@@ -88,7 +89,7 @@ async function listAttendance(user, options = {}) {
   ]);
   const recordsByEmployee = new Map(records.map((record) => [String(record.employeeId), record]));
   const visibleEmployees = employees.filter((employee) => (
-    employee.status === 'active' || recordsByEmployee.has(String(employee._id))
+    canMarkAttendanceOn(employee, date) || recordsByEmployee.has(String(employee._id))
   ));
 
   return {
@@ -102,6 +103,7 @@ async function listAttendance(user, options = {}) {
         jobTitle: employee.jobTitle,
         department: employee.department,
         employeeStatus: employee.status,
+        canMark: canMarkAttendanceOn(employee, date),
         status: record ? (record.status === 'present' ? 'present' : 'absent') : null,
         updatedAt: record?.updatedAt || null,
       };
@@ -188,6 +190,12 @@ async function listAttendanceHistory(user, options = {}) {
   };
 }
 
+function blockedMessage(employee) {
+  return employee.disabledOn
+    ? `${employee.name || 'This employee'} was blocked on ${employee.disabledOn}. Attendance cannot be marked from that date.`
+    : `${employee.name || 'This employee'} is blocked. Attendance cannot be marked.`;
+}
+
 async function markAttendance(user, input = {}) {
   const organizationId = await getOrganizationId(user, input.organizationId);
   if (input.locationId) await getLocationEmployeeIds(input.locationId, organizationId);
@@ -204,6 +212,7 @@ async function markAttendance(user, input = {}) {
   if (user.role === 'organization') employeeFilter.status = 'active';
   const employee = await Employee.findOne(employeeFilter);
   if (!employee) throw httpError(404, 'Employee not found for this organization.');
+  if (!canMarkAttendanceOn(employee, date)) throw httpError(400, blockedMessage(employee));
 
   const filter = { employeeId, date };
   const update = { $set: { organizationId, status, markedBy: user.id } };
@@ -289,13 +298,15 @@ async function parseAttendanceSheet(user, input = {}) {
       );
       const employee = matched.employee;
       const existing = employee ? recordsByEmployee.get(String(employee._id)) : null;
+      const blocked = Boolean(employee) && !canMarkAttendanceOn(employee, date);
       return {
         extractedName: row.extractedName,
         extractedParentName: row.extractedParentName || '',
         employeeId: employee ? String(employee._id) : null,
         employeeName: employee?.name || '',
         parentName: employee?.parentName || '',
-        status: row.status,
+        status: blocked ? null : row.status,
+        blocked,
         match: matched.match,
         alreadyMarked: Boolean(existing),
         existingStatus: existing ? (existing.status === 'present' ? 'present' : 'absent') : null,
@@ -374,7 +385,10 @@ async function parseAttendanceMonth(user, input = {}) {
         employees,
       );
       const employee = matched.employee;
-      const marks = Array.from({ length: lastImportableDay }, (_, index) => row.days[index + 1] || null);
+      const marks = Array.from({ length: lastImportableDay }, (_, index) => {
+        const date = `${selected.month}-${String(index + 1).padStart(2, '0')}`;
+        return employee && !canMarkAttendanceOn(employee, date) ? null : row.days[index + 1] || null;
+      });
       const existing = Array.from({ length: lastImportableDay }, (_, index) => (
         employee ? existingByKey.get(`${String(employee._id)}|${index + 1}`) || null : null
       ));
@@ -413,6 +427,7 @@ async function bulkMarkAttendance(user, input = {}) {
   const candidateDates = new Set();
   const accepted = [];
   let skippedInvalid = 0;
+  let skippedBlocked = 0;
 
   for (const entry of entries) {
     const employeeId = String(entry?.employeeId || '');
@@ -421,6 +436,10 @@ async function bulkMarkAttendance(user, input = {}) {
     const key = `${employeeId}|${date}`;
     if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || seen.has(key)) {
       skippedInvalid += 1;
+      continue;
+    }
+    if (!canMarkAttendanceOn(employeesById.get(employeeId), date)) {
+      skippedBlocked += 1;
       continue;
     }
     seen.add(key);
@@ -477,7 +496,7 @@ async function bulkMarkAttendance(user, input = {}) {
     updated = result.matchedCount ?? result.nMatched ?? toUpdate.length;
   }
 
-  return { saved, updated, skippedDuplicates, skippedInvalid };
+  return { saved, updated, skippedDuplicates, skippedInvalid, skippedBlocked };
 }
 
 const REGISTER_CONTRACTOR = {
@@ -510,15 +529,32 @@ async function getAttendanceRegister(user, input = {}) {
     date: { $gte: fromDate, $lte: toDate },
   }).lean();
 
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
   const marksByEmployee = new Map();
   for (const record of records) {
     const key = String(record.employeeId);
+    if (!countsAttendanceOn(employeesById.get(key), record.date)) continue;
     if (!marksByEmployee.has(key)) marksByEmployee.set(key, new Map());
     marksByEmployee.get(key).set(Number(record.date.slice(8, 10)), record.status === 'present' ? 'P' : 'A');
   }
 
+  const today = currentDateInTimeZone(input.timeZone || 'UTC');
+  const elapsedDays = today.slice(0, 7) > input.month
+    ? daysInMonth
+    : today.slice(0, 7) < input.month ? 0 : Number(today.slice(8, 10));
+  const workingDaysFor = (employee) => {
+    if (employee.status !== 'disabled') return elapsedDays;
+    if (!employee.disabledOn || employee.disabledOn < fromDate) return 0;
+    if (employee.disabledOn > toDate) return elapsedDays;
+    return Math.min(elapsedDays, Number(employee.disabledOn.slice(8, 10)) - 1);
+  };
+
   const allRows = employees
-    .filter((employee) => employee.status === 'active' || marksByEmployee.has(String(employee._id)))
+    .filter((employee) => (
+      workingDaysFor(employee) > 0
+      || employee.status === 'active'
+      || marksByEmployee.has(String(employee._id))
+    ))
     .map((employee, index) => {
       const marks = marksByEmployee.get(String(employee._id)) || new Map();
       const days = Array.from({ length: daysInMonth }, (_, day) => marks.get(day + 1) || '');
@@ -528,31 +564,29 @@ async function getAttendanceRegister(user, input = {}) {
         name: employee.name,
         parentName: employee.parentName || '',
         skillCategory: employee.skillCategory || '',
+        employeeStatus: employee.status,
+        disabledOn: employee.status === 'disabled' ? employee.disabledOn || '' : '',
+        workingDays: workingDaysFor(employee),
         days,
         totalPresent: days.filter((mark) => mark === 'P').length,
       };
     });
 
-  const today = currentDateInTimeZone(input.timeZone || 'UTC');
-  const elapsedDays = today.slice(0, 7) > input.month
-    ? daysInMonth
-    : today.slice(0, 7) < input.month ? 0 : Number(today.slice(8, 10));
-
   let present = 0;
   let absent = 0;
-  let marked = 0;
+  let unmarked = 0;
   for (const row of allRows) {
     for (const [index, mark] of row.days.entries()) {
       if (mark === 'P') present += 1;
       else if (mark === 'A') absent += 1;
-      if (mark && index < elapsedDays) marked += 1;
+      else if (index < row.workingDays) unmarked += 1;
     }
   }
   const summary = {
     employees: allRows.length,
     present,
     absent,
-    unmarked: Math.max(allRows.length * elapsedDays - marked, 0),
+    unmarked,
   };
   const categories = [...new Set(allRows.map((row) => row.skillCategory).filter(Boolean))].sort();
 
@@ -561,7 +595,7 @@ async function getAttendanceRegister(user, input = {}) {
   const attendanceFilter = REGISTER_FILTERS.includes(input.filter) ? input.filter : 'all';
   const filteredRows = allRows.filter((row) => {
     if (category && row.skillCategory !== category) return false;
-    const elapsed = row.days.slice(0, elapsedDays);
+    const elapsed = row.days.slice(0, row.workingDays);
     if (attendanceFilter === 'absent' && !row.days.includes('A')) return false;
     if (attendanceFilter === 'full' && (elapsed.length === 0 || elapsed.some((mark) => mark !== 'P'))) return false;
     if (attendanceFilter === 'unmarked' && !elapsed.includes('')) return false;

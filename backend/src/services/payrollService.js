@@ -3,6 +3,7 @@ const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
+const { countsAttendanceOn } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 const { getDocumentSettings } = require('./documentSettingsService');
@@ -79,17 +80,23 @@ async function calculatePayroll(user, options = {}) {
       organizationDetailsById.set(String(organization._id), organization);
     }
   }
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
   const attendanceByEmployee = new Map();
 
   for (const record of attendance) {
     const employeeId = String(record.employeeId);
+    if (!countsAttendanceOn(employeesById.get(employeeId), record.date)) continue;
     const counts = attendanceByEmployee.get(employeeId) || { present: 0, absent: 0 };
     const status = record.status === 'present' ? 'present' : 'absent';
     counts[status] += 1;
     attendanceByEmployee.set(employeeId, counts);
   }
 
-  const lines = employees.map((employee) => {
+  const payableEmployees = employees.filter((employee) => (
+    employee.status !== 'disabled' || attendanceByEmployee.has(String(employee._id))
+  ));
+
+  const lines = payableEmployees.map((employee) => {
     const counts = attendanceByEmployee.get(String(employee._id)) || { present: 0, absent: 0 };
     const paidDays = counts.present;
     const dailySalary = Number(employee.dailySalary) || 0;

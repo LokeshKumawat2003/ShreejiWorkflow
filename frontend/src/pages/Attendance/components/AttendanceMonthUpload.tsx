@@ -49,7 +49,7 @@ type AttendanceMonthUploadProps = {
   locationId: string;
   onClose: () => void;
   onBusyChange: (busy: boolean) => void;
-  onSaved: (result: { saved: number; updated: number; skippedDuplicates: number; skippedInvalid: number }) => void;
+  onSaved: (result: { saved: number; updated: number; skippedDuplicates: number; skippedInvalid: number; skippedBlocked?: number }) => void;
 };
 
 const PAGE_SIZE = 10;

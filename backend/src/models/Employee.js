@@ -38,6 +38,7 @@ const employeeSchema = new mongoose.Schema(
     bankAccountNumber: { type: String, trim: true, maxlength: 34, default: '' },
     bankRoutingCode: { type: String, trim: true, uppercase: true, maxlength: 20, default: '' },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    disabledOn: { type: String, trim: true, match: /^(\d{4}-\d{2}-\d{2})?$/, default: '' },
   },
   { timestamps: true },
 );

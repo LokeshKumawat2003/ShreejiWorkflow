@@ -74,7 +74,7 @@ type AttendanceUploadDialogProps = {
   organizationId: string;
   locationId: string;
   onClose: () => void;
-  onSaved: (result: { date: string; saved: number; updated?: number; skippedDuplicates: number; skippedInvalid: number }) => void;
+  onSaved: (result: { date: string; saved: number; updated?: number; skippedDuplicates: number; skippedInvalid: number; skippedBlocked?: number }) => void;
 };
 
 function todayLocalDate() {
@@ -97,7 +97,8 @@ function describeSelectedDate(date: string) {
   return { day, monthLabel };
 }
 
-function matchLabel(match: PreviewRow['match'], alreadyMarked: boolean) {
+function matchLabel(match: PreviewRow['match'], alreadyMarked: boolean, blocked?: boolean) {
+  if (blocked) return 'Blocked';
   if (alreadyMarked) return 'Already marked';
   if (match === 'exact') return 'Matched';
   if (match === 'fuzzy') return 'Fuzzy match';
@@ -509,7 +510,7 @@ function AttendanceUploadDialog({
                         </Td>
                         <Td>
                           <Badge colorScheme={unmatched ? 'red' : row.alreadyMarked ? 'orange' : row.match === 'fuzzy' || row.match === 'ambiguous' ? 'yellow' : 'green'}>
-                            {matchLabel(row.match, row.alreadyMarked)}
+                            {matchLabel(row.match, row.alreadyMarked, row.blocked)}
                           </Badge>
                         </Td>
                       </Tr>

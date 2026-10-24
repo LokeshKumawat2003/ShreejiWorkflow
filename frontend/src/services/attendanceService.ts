@@ -10,6 +10,7 @@ export type AttendanceEntry = {
   jobTitle: string;
   department: string;
   employeeStatus: 'active' | 'disabled';
+  canMark: boolean;
   status: AttendanceStatus | null;
   updatedAt: string | null;
 };
@@ -242,6 +243,8 @@ export type AttendanceRegisterRow = {
   name: string;
   parentName: string;
   skillCategory: string;
+  employeeStatus?: 'active' | 'disabled';
+  disabledOn?: string;
   days: AttendanceRegisterMark[];
   totalPresent: number;
 };
@@ -298,6 +301,7 @@ export type AttendanceParseRow = {
   employeeName: string;
   parentName: string;
   status: AttendanceStatus | null;
+  blocked?: boolean;
   match: AttendanceMatch;
   alreadyMarked: boolean;
   existingStatus: AttendanceStatus | null;
@@ -324,6 +328,7 @@ export type AttendanceBulkResponse = {
   updated: number;
   skippedDuplicates: number;
   skippedInvalid: number;
+  skippedBlocked?: number;
 };
 
 export async function parseAttendanceSheet(

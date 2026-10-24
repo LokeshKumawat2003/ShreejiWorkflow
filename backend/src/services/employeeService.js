@@ -7,6 +7,7 @@ const { httpError } = require('../utils/httpError');
 const { normalizeEmail } = require('../utils/user');
 const { escapeRegex, validateEmail } = require('../utils/validation');
 const { resolveMasterValue } = require('./masterDataService');
+const { currentDateInTimeZone } = require('./attendanceService');
 
 const PAGE_SIZE = 10;
 const BANK_FIELDS = [
@@ -62,6 +63,7 @@ function publicEmployee(employee, role = 'organization') {
 		bankAccountNumber: value.bankAccountNumber || '',
 		bankRoutingCode: value.bankRoutingCode || '',
 		status: value.status,
+		disabledOn: value.status === 'disabled' ? value.disabledOn || '' : '',
 		createdAt: value.createdAt,
 	};
 }
@@ -255,6 +257,7 @@ async function listEmployees(user, options = {}) {
 		filter.organizationId = { $in: [organizationId, null] };
 		filter.locationId = { $ne: locationId };
 		filter.designation = new RegExp(`^${escapeRegex(location.designation)}$`, 'i');
+		filter.status = 'active';
 	}
 
 	if (!isLocationAssignmentList && user.role === 'admin' && options.organizationId) {
@@ -340,6 +343,7 @@ async function createEmployee(user, input = {}) {
 	await resolveEmployeeMasterFields(fields);
 	const employee = await Employee.create({
 		...fields,
+		...(fields.status === 'disabled' ? { disabledOn: currentDateInTimeZone(input.timeZone || 'UTC') } : {}),
 		organizationId,
 		locationId,
 		locationAssignedAt: locationId ? new Date() : null,
@@ -387,6 +391,12 @@ async function updateEmployee(user, id, input = {}) {
 		const current = await Employee.findById(id).select('designation employmentType skillCategory');
 		if (!current) throw httpError(404, 'Employee not found.');
 		await resolveEmployeeMasterFields(fields, current);
+	}
+	if (fields.status !== undefined) {
+		const current = await Employee.findById(id).select('status');
+		if (!current) throw httpError(404, 'Employee not found.');
+		if (fields.status === 'active') fields.disabledOn = '';
+		else if (current.status !== 'disabled') fields.disabledOn = currentDateInTimeZone(input.timeZone || 'UTC');
 	}
 	const employee = await Employee.findOneAndUpdate(
 		{ _id: id },
@@ -468,6 +478,8 @@ async function transferEmployees(user, input = {}) {
 
 	const employees = await Employee.find({ _id: { $in: employeeIds } });
 	if (employees.length !== employeeIds.length) throw httpError(404, 'One or more employees were not found.');
+	const blocked = employees.find((employee) => employee.status === 'disabled');
+	if (blocked) throw httpError(400, `${blocked.name} is blocked and cannot be moved.`);
 	const alreadyThere = employees.find((employee) => String(employee.locationId) === String(locationId));
 	if (alreadyThere) throw httpError(409, `${alreadyThere.name} is already at this location.`);
 	const required = String(location.designation || '').toLowerCase();

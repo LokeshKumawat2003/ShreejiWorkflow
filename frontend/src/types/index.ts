@@ -84,5 +84,6 @@ export type Employee = {
   bankAccountNumber: string;
   bankRoutingCode: string;
   status: EmployeeStatus;
+  disabledOn?: string;
   createdAt?: string;
 };

@@ -3,7 +3,6 @@ import {
   Button,
   ButtonGroup,
   FormControl,
-  FormHelperText,
   HStack,
   IconButton,
   Input,
@@ -43,7 +42,6 @@ function SignupForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [adminCode, setAdminCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isAdmin = role === 'admin';
@@ -67,7 +65,7 @@ function SignupForm() {
     setIsSubmitting(true);
     try {
       const payload = isAdmin
-        ? { role, name, email, password, adminCode }
+        ? { role, name, email, password }
         : { role, name, organizationName, email, password };
       const { data } = await api.post<SignupResponse>('/auth/register', payload);
       setAccessToken(data.token, true);
@@ -203,25 +201,6 @@ function SignupForm() {
             />
           </InputGroup>
         </FormControl>
-
-        {isAdmin && (
-          <FormControl isRequired>
-            <Input
-              size="lg"
-              autoComplete="off"
-              name="adminCode"
-              type="password"
-              placeholder="Admin signup code"
-              aria-label="Admin signup code"
-              value={adminCode}
-              onChange={(event) => setAdminCode(event.target.value)}
-              {...inputStyles}
-            />
-            <FormHelperText color="slate.500">
-              Ask your system owner for the admin signup code.
-            </FormHelperText>
-          </FormControl>
-        )}
 
         <Button
           type="submit"

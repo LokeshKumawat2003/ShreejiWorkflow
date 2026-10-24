@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getMailTransport } = require('./mailService');
 const { createOrganization } = require('./organizationService');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail, publicUser } = require('../utils/user');
@@ -37,23 +38,7 @@ async function login(input) {
   return { token: createToken(user), user: publicUser(user) };
 }
 
-function isValidAdminSignupCode(code) {
-  const expected = process.env.ADMIN_SIGNUP_CODE;
-  if (!expected) {
-    throw httpError(403, 'Admin registration is disabled on this server.');
-  }
-  if (typeof code !== 'string' || !code) return false;
-
-  const expectedHash = crypto.createHash('sha256').update(expected).digest();
-  const actualHash = crypto.createHash('sha256').update(code).digest();
-  return crypto.timingSafeEqual(expectedHash, actualHash);
-}
-
 async function registerAdmin(input) {
-  if (!isValidAdminSignupCode(input.adminCode)) {
-    throw httpError(403, 'Invalid admin signup code.');
-  }
-
   const name = typeof input.name === 'string' ? input.name.trim() : '';
   const email = normalizeEmail(input.email);
   const password = typeof input.password === 'string' ? input.password : '';
@@ -88,9 +73,95 @@ async function register(input) {
   return { token: createToken(user), user };
 }
 
+const PASSWORD_RESET_TTL_MS = 30 * 60 * 1000;
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+async function requestPasswordReset(input) {
+  const email = normalizeEmail(input.email);
+  if (!email || !validateEmail(email)) {
+    throw httpError(400, 'Enter a valid email address.');
+  }
+
+  const user = await User.findOne({ email, status: 'active' });
+  if (!user) return;
+
+  const token = crypto.randomBytes(32).toString('hex');
+  user.passwordResetTokenHash = hashResetToken(token);
+  user.passwordResetExpires = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+  await user.save();
+
+  const clientUrl = (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, '');
+  const resetUrl = `${clientUrl}/reset-password?token=${token}`;
+  const displayName = user.organizationName || user.name;
+
+  try {
+    await getMailTransport().sendMail({
+      from: process.env.MAIL_FROM,
+      to: user.email,
+      subject: 'Reset your Shreeji workflow password',
+      text: `Hello ${displayName},\n\nWe received a request to reset your password. Open the link below to choose a new password. This link expires in 30 minutes.\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.\n\nShreeji Caretaker Company`,
+      html: `<p>Hello ${escapeHtml(displayName)},</p>
+<p>We received a request to reset your password. Click the button below to choose a new password. This link expires in 30 minutes.</p>
+<p><a href="${resetUrl}" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600">Reset password</a></p>
+<p>Or copy this link into your browser:<br><a href="${resetUrl}">${resetUrl}</a></p>
+<p>If you did not request this, you can ignore this email.</p>
+<p>Shreeji Caretaker Company</p>`,
+    });
+  } catch (error) {
+    user.passwordResetTokenHash = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+    if (error.statusCode) throw error;
+    console.error('Password reset email delivery failed.', {
+      code: error.code,
+      command: error.command,
+      responseCode: error.responseCode,
+    });
+    throw httpError(502, 'Could not send the reset email. Please try again later.');
+  }
+}
+
+async function resetPassword(input) {
+  const token = typeof input.token === 'string' ? input.token.trim() : '';
+  const password = typeof input.password === 'string' ? input.password : '';
+
+  if (!token) {
+    throw httpError(400, 'Reset link is invalid or has expired.');
+  }
+  if (password.length < 8) {
+    throw httpError(400, 'Password must be at least 8 characters long.');
+  }
+
+  const user = await User.findOne({
+    passwordResetTokenHash: hashResetToken(token),
+    passwordResetExpires: { $gt: new Date() },
+    status: 'active',
+  });
+  if (!user) {
+    throw httpError(400, 'Reset link is invalid or has expired.');
+  }
+
+  user.password = password;
+  user.passwordChangedAt = new Date();
+  user.passwordResetTokenHash = undefined;
+  user.passwordResetExpires = undefined;
+  await user.save();
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]);
+}
+
 module.exports = {
   createToken,
   getJwtSecret,
   login,
   register,
+  requestPasswordReset,
+  resetPassword,
 };

@@ -136,30 +136,23 @@ test('organization signup creates an active organization and signs it in', async
   }
 });
 
-test('admin signup requires the configured admin signup code', async () => {
+test('admin signup works with name, email and password', async () => {
   const originalCreate = User.create;
   const originalSecret = process.env.JWT_SECRET;
-  const originalCode = process.env.ADMIN_SIGNUP_CODE;
   process.env.JWT_SECRET = 'x'.repeat(32);
   User.create = async (input) => ({ id: '507f1f77bcf86cd799439012', ...input, createdAt: new Date() });
   const adminInput = { role: 'admin', name: 'Admin', email: 'admin@example.com', password: 'StrongPass123' };
 
   try {
-    delete process.env.ADMIN_SIGNUP_CODE;
-    await assert.rejects(register({ ...adminInput, adminCode: 'anything' }), { statusCode: 403 });
-
-    process.env.ADMIN_SIGNUP_CODE = 'correct-code';
-    await assert.rejects(register({ ...adminInput, adminCode: 'wrong-code' }), { statusCode: 403 });
-    await assert.rejects(register(adminInput), { statusCode: 403 });
-
-    const result = await register({ ...adminInput, adminCode: 'correct-code' });
+    const result = await register(adminInput);
     assert.equal(result.user.role, 'admin');
     assert.equal(typeof result.token, 'string');
+
+    await assert.rejects(register({ ...adminInput, password: 'short' }), { statusCode: 400 });
+    await assert.rejects(register({ ...adminInput, email: 'not-an-email' }), { statusCode: 400 });
   } finally {
     User.create = originalCreate;
     process.env.JWT_SECRET = originalSecret;
-    if (originalCode === undefined) delete process.env.ADMIN_SIGNUP_CODE;
-    else process.env.ADMIN_SIGNUP_CODE = originalCode;
   }
 });
 

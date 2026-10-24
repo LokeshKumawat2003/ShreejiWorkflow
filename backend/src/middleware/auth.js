@@ -18,9 +18,12 @@ async function requireAuth(req, res, next) {
       throw httpError(503, 'The database is not available.');
     }
 
-    const user = await User.findById(payload.sub);
+    const user = await User.findById(payload.sub).select('+passwordChangedAt');
     if (!user || user.status !== 'active') {
       throw httpError(401, 'Your account is unavailable. Please sign in again.');
+    }
+    if (user.passwordChangedAt && payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)) {
+      throw httpError(401, 'Your password was changed. Please sign in again.');
     }
 
     req.user = publicUser(user);

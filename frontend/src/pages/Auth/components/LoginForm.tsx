@@ -67,16 +67,6 @@ function LoginForm() {
     }
   }
 
-  function showSetupNotice(title: string) {
-    toast({
-      title,
-      status: 'info',
-      duration: 4500,
-      isClosable: true,
-      position: 'top',
-    });
-  }
-
   return (
     <form onSubmit={handleSubmit}>
       <Stack spacing={4} mt={9} textAlign="left">
@@ -144,7 +134,7 @@ function LoginForm() {
             color="brand.500"
             size="sm"
             type="button"
-            onClick={() => showSetupNotice('Please contact your HR administrator to reset your password.')}
+            onClick={() => navigate('/forgot-password')}
           >
             Forgot password?
           </Button>

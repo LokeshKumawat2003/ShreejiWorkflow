@@ -33,6 +33,9 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    passwordChangedAt: { type: Date, select: false },
+    passwordResetTokenHash: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
   },
   { timestamps: true },
 );

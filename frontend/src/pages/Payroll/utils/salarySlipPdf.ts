@@ -2,12 +2,23 @@ import type { PayrollLine } from '../../../services/attendanceService';
 import { loadDocumentSettings } from '../../../services/settingsService';
 import { fitInto, loadSignatureImage } from './wageRegisterExport';
 
-export const SALARY_SLIP_RATES = {
-  bonus: 0.0833,
-  washingAllowance: 0.01,
-  providentFund: 0.12,
-  esi: 0.0075,
+/** Percentages, e.g. 8.33 for 8.33%. */
+export type SalarySlipRates = {
+  bonusRate: number;
+  washingAllowanceRate: number;
+  epfRate: number;
+  epfWageCeiling: number;
+  esiRate: number;
 };
+
+function rateOf(value: string | undefined) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function formatRate(value: number) {
+  return String(Number(value.toFixed(2)));
+}
 
 export type SalarySlip = {
   employeeName: string;
@@ -78,14 +89,17 @@ export function salaryMonthYear(fromDate: string, toDate: string) {
   return from === to ? to : `${from} TO ${to}`;
 }
 
-export function buildSalarySlip(line: PayrollLine, monthYear: string): SalarySlip {
-  const basic = round2(line.grossPay);
-  const bonus = round2(basic * SALARY_SLIP_RATES.bonus);
-  const washingAllowance = 0;
+/** Mirrors the wage register (FORM XVII) so a slip and the register show the same figures. */
+export function buildSalarySlip(line: PayrollLine, monthYear: string, rates: SalarySlipRates): SalarySlip {
+  const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2((line.basicPay || 0) + (line.dearnessAllowance || 0));
+  const basic = round2(dailyWage * line.paidDays);
+  const bonus = round2(basic * (rates.bonusRate / 100));
+  const washingAllowance = round2(basic * (rates.washingAllowanceRate / 100));
   const conveyance = 0;
   const totalAddition = round2(basic + bonus + washingAllowance + conveyance);
-  const providentFund = Math.round(basic * SALARY_SLIP_RATES.providentFund);
-  const esi = Math.ceil(round2(basic * SALARY_SLIP_RATES.esi * 100) - 1e-6) / 100;
+  const epfBase = rates.epfWageCeiling > 0 ? Math.min(basic, rates.epfWageCeiling) : basic;
+  const providentFund = line.epfoApplicable ? Math.round(epfBase * (rates.epfRate / 100)) : 0;
+  const esi = line.esicApplicable ? Math.round(basic * (rates.esiRate / 100)) : 0;
   const foodCharge = 0;
   const houseRent = 0;
   const totalDeduction = round2(providentFund + esi + foodCharge + houseRent);
@@ -119,11 +133,19 @@ const LEFT = 20;
 const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
 
 export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: string, toDate: string) {
-  const [{ jsPDF }, { default: autoTable }, company] = await Promise.all([
+  const [{ jsPDF }, { default: autoTable }, company, register] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
     loadDocumentSettings('salary-slip'),
+    loadDocumentSettings('wage-register'),
   ]);
+  const rates: SalarySlipRates = {
+    bonusRate: rateOf(register.bonusRate),
+    washingAllowanceRate: rateOf(company.washingAllowanceRate),
+    epfRate: rateOf(register.epfRate),
+    epfWageCeiling: rateOf(register.epfWageCeiling),
+    esiRate: rateOf(register.esiRate),
+  };
   const signature = await loadSignatureImage(company.signatureImage);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
   const monthYear = salaryMonthYear(fromDate, toDate);
@@ -146,7 +168,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     const slot = index % 2;
     if (index > 0 && slot === 0) pdf.addPage();
     const top = slot * SLIP_HEIGHT;
-    const slip = buildSalarySlip(line, monthYear);
+    const slip = buildSalarySlip(line, monthYear, rates);
 
     pdf.setDrawColor(0);
     pdf.setLineWidth(0.4);
@@ -183,9 +205,9 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
       theme: 'grid',
       head: [['Earnings', 'Amount', 'Deductions', 'Amount']],
       body: [
-        ['Basic & DA', money(slip.basic), 'Provident Fund@12%', money(slip.providentFund)],
-        ['Bonus @8.33%', money(slip.bonus), 'E.S.I.@0.75%', money(slip.esi)],
-        ['Washing allowance@1%', money(slip.washingAllowance), 'Food Charge', String(slip.foodCharge)],
+        ['Basic & DA', money(slip.basic), `Provident Fund@${formatRate(rates.epfRate)}%`, money(slip.providentFund)],
+        [`Bonus @${formatRate(rates.bonusRate)}%`, money(slip.bonus), `E.S.I.@${formatRate(rates.esiRate)}%`, money(slip.esi)],
+        [`Washing allowance@${formatRate(rates.washingAllowanceRate)}%`, money(slip.washingAllowance), 'Food Charge', String(slip.foodCharge)],
         ['Conveyance', money(slip.conveyance), 'House Rent', String(slip.houseRent)],
         ['Total Addition', money(slip.totalAddition), 'Total Deduction', money(slip.totalDeduction)],
         ['', '', 'NET Salary', money(slip.netSalary)],

@@ -113,6 +113,19 @@ function SalarySlipSettingsPanel() {
 					/>
 				</SimpleGrid>
 			</FormSection>
+			<FormSection title="Amounts">
+				<Text fontSize="sm" color="slate.500">
+					Basic &amp; DA is the employee's daily salary (or Basic + DA) × present days. Bonus, Provident Fund and E.S.I. rates come from the wage register settings, so slips match the register.
+				</Text>
+				<FormInput
+					label="Washing allowance rate (%)"
+					inputMode="decimal"
+					maxLength={10}
+					value={values.washingAllowanceRate}
+					helperText="Percentage of Basic & DA. Use 0 for no washing allowance."
+					onChange={(event) => setField('washingAllowanceRate', event.target.value)}
+				/>
+			</FormSection>
 			<FormSection title="Signature">
 				<FormInput
 					label="Signatory label"

@@ -79,8 +79,13 @@ export type PayrollLine = {
   organizationAddress: string;
   organizationWebsite: string;
   designation?: string;
+  skillCategory?: string;
   department: string;
   jobTitle: string;
+  basicPay?: number;
+  dearnessAllowance?: number;
+  epfoApplicable?: boolean;
+  esicApplicable?: boolean;
   currency: string;
   dailySalary: number;
   presentDays: number;

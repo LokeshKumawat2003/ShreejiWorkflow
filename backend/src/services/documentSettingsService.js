@@ -12,6 +12,7 @@ const DOCUMENT_FIELDS = {
 		title: { label: 'Slip title', max: 60, required: true, default: 'Salary Slip' },
 		formNumber: { label: 'Form number', max: 40, default: 'FORM - VIII-C' },
 		ruleReference: { label: 'Rule reference', max: 60, default: '(See rule 156)' },
+		washingAllowanceRate: { label: 'Washing allowance rate (%)', max: 10, number: { min: 0, max: 100 }, default: '0' },
 		signatoryLabel: { label: 'Signatory label', max: 60, default: 'Propritior/Manager:' },
 		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
 	},

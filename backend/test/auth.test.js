@@ -1364,7 +1364,7 @@ test('document settings can only be updated by administrators and are validated 
       { companyName: '  Shreeji Services  ', address: ' Kankroli ', title: 'Pay Slip', signatoryLabel: 'Manager:', phone: '123' },
     );
     assert.deepEqual(filter, { key: 'salarySlip' });
-    assert.deepEqual(update, { $set: { values: { companyName: 'Shreeji Services', address: 'Kankroli', title: 'Pay Slip', formNumber: '', ruleReference: '', signatoryLabel: 'Manager:', signatureImage: '' } } });
+    assert.deepEqual(update, { $set: { values: { companyName: 'Shreeji Services', address: 'Kankroli', title: 'Pay Slip', formNumber: '', ruleReference: '', washingAllowanceRate: '', signatoryLabel: 'Manager:', signatureImage: '' } } });
     assert.equal(slip.title, 'Pay Slip');
 
     const letter = await updateDocumentSettings(

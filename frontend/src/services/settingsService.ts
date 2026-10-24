@@ -6,6 +6,7 @@ export type SalarySlipSettings = {
 	title: string;
 	formNumber: string;
 	ruleReference: string;
+	washingAllowanceRate: string;
 	signatoryLabel: string;
 	signatureImage: string;
 };
@@ -74,6 +75,7 @@ export const SALARY_SLIP_DEFAULTS: SalarySlipSettings = {
 	title: 'Salary Slip',
 	formNumber: 'FORM - VIII-C',
 	ruleReference: '(See rule 156)',
+	washingAllowanceRate: '0',
 	signatoryLabel: 'Propritior/Manager:',
 	signatureImage: '',
 };

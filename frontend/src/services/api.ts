@@ -18,8 +18,36 @@ const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api',
 });
 
+export function getAccessToken() {
+  return localStorage.getItem('accessToken') ?? sessionStorage.getItem('accessToken');
+}
+
+export function getTokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const { exp } = JSON.parse(atob(payload)) as { exp?: number };
+    return typeof exp === 'number' ? exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isAccessTokenExpired() {
+  const token = getAccessToken();
+  if (!token) return true;
+  const expiry = getTokenExpiry(token);
+  return expiry !== null && Date.now() >= expiry;
+}
+
+export function logoutToLogin() {
+  clearAccessToken();
+  if (window.location.pathname !== '/login') {
+    window.location.replace('/login');
+  }
+}
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken') ?? sessionStorage.getItem('accessToken');
+  const token = getAccessToken();
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -31,8 +59,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiErrorResponse>) => {
+    const status = error.response?.status;
+    const isAuthRequest = error.config?.url?.startsWith('/auth/') ?? false;
+    if (status === 401 && !isAuthRequest) {
+      logoutToLogin();
+    }
+
     const message = error.response?.data?.message ?? 'The request could not be completed.';
-    return Promise.reject(new ApiError(message, error.response?.status));
+    return Promise.reject(new ApiError(message, status));
   },
 );
 

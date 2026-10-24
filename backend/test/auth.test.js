@@ -35,6 +35,8 @@ const { createMasterData, deleteMasterData, updateMasterData } = require('../src
 const DocumentSettings = require('../src/models/DocumentSettings');
 const { DOCUMENT_FIELDS, getDocumentSettings, updateDocumentSettings } = require('../src/services/documentSettingsService');
 
+process.env.JWT_EXPIRES_IN = '8h';
+
 test('health endpoint works without MongoDB', async (t) => {
   process.env.NODE_ENV = 'test';
   const server = createApp().listen(0);

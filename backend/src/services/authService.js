@@ -17,7 +17,7 @@ function getJwtSecret() {
 function createToken(user) {
   return jwt.sign({ role: user.role }, getJwtSecret(), {
     subject: user.id,
-    expiresIn: process.env.JWT_EXPIRES_IN || '8h',
+    expiresIn: process.env.JWT_EXPIRES_IN || '5y',
   });
 }
 

@@ -20,7 +20,7 @@ import AttendanceWorkspacePage from '../Attendance/AttendanceWorkspacePage';
 import BankInvoicePage from '../BankInvoice/BankInvoicePage';
 import OrganizationsPage from '../Organizations/OrganizationsPage';
 import AdminPayrollPage from '../Payroll/AdminPayrollPage';
-import api, { clearAccessToken } from '../../services/api';
+import api, { clearAccessToken, isAccessTokenExpired, logoutToLogin } from '../../services/api';
 import type { User, UserRole } from '../../types';
 import EmployeesPage from '../Employees/EmployeesPage';
 import SettingsPage from '../Settings/SettingsPage';
@@ -60,11 +60,31 @@ function DashboardPage({ role }: DashboardPageProps) {
       }
     }
 
+    if (isAccessTokenExpired()) {
+      logoutToLogin();
+      return;
+    }
+
     void loadDashboard();
     return () => {
       isActive = false;
     };
   }, [navigate, role]);
+
+  useEffect(() => {
+    function checkExpiry() {
+      if (isAccessTokenExpired()) logoutToLogin();
+    }
+
+    const intervalId = window.setInterval(checkExpiry, 60_000);
+    window.addEventListener('focus', checkExpiry);
+    document.addEventListener('visibilitychange', checkExpiry);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', checkExpiry);
+      document.removeEventListener('visibilitychange', checkExpiry);
+    };
+  }, []);
 
   if (isLoading || !user) {
     return (

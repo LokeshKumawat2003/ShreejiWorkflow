@@ -100,6 +100,7 @@ function addAppointmentLetter(
   const name = employee.name.trim().toUpperCase();
   const shortName = settings.shortName.trim();
   const reference = location.opNumber?.trim() || String(index + 1).padStart(2, '0');
+  const assignedDate = formatDate(employee.locationAssignedAt);
 
   pdf.setTextColor(20, 20, 20);
   pdf.setDrawColor(40, 40, 40);
@@ -139,7 +140,7 @@ function addAppointmentLetter(
   y += 6;
   setFont(pdf, false, 9.5);
   pdf.text(`Ref: ${settings.refPrefix.trim()}${reference}`, MARGIN, y);
-  pdf.text(`Date: ${formatDate(new Date().toISOString())}`, pageWidth - MARGIN, y, { align: 'right' });
+  pdf.text(`Date: ${assignedDate || formatDate(employee.dateOfJoining) || formatDate(new Date().toISOString())}`, pageWidth - MARGIN, y, { align: 'right' });
 
   y += 9;
   const title = settings.title.trim();
@@ -176,14 +177,14 @@ function addAppointmentLetter(
   ], MARGIN, y, textWidth);
 
   y += 8;
-  const joiningDate = formatDate(employee.dateOfJoining) || formatDate(employee.locationAssignedAt) || 'To be confirmed';
+  const joiningDate = assignedDate || formatDate(employee.dateOfJoining) || 'To be confirmed';
   const optionalRows: [string, string][] = [
     ['Salary', salaryOf(employee, settings)],
     ['Job Location', jobLocationOf(employee, location)],
     ['Working Hours', settings.workingHours.trim()],
     ['Leave Policy', settings.leavePolicy.trim()],
   ];
-  y = writeDetail(pdf, 'Date of Joining', [{ text: joiningDate, underline: true }], y, textWidth);
+  y = writeDetail(pdf, 'Date of Joining', [{ text: joiningDate }], y, textWidth);
   y = writeDetail(pdf, 'Job Title', [{ text: ` ${jobTitleOf(employee, position)}`, bold: true }], y, textWidth);
   optionalRows
     .filter(([, value]) => value)

@@ -1,4 +1,5 @@
 import type { WageRegisterResponse, WageRegisterRow } from '../../../services/attendanceService';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 export function formatRegisterNumber(value: number, decimals: 'auto' | 0 | 2 = 'auto') {
 	if (decimals === 0) return String(Math.round(value));
@@ -122,7 +123,7 @@ function fileName(register: WageRegisterResponse, extension: string) {
 	return `wage-register-${site}-${register.month}.${extension}`;
 }
 
-export async function exportWageRegisterPdf(register: WageRegisterResponse) {
+export async function exportWageRegisterPdf(register: WageRegisterResponse, action: PdfAction = 'download') {
 	const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
 	const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 	const pageWidth = doc.internal.pageSize.getWidth();
@@ -230,7 +231,7 @@ export async function exportWageRegisterPdf(register: WageRegisterResponse) {
 			doc.text(signatoryTitle.trim(), blockCenter, lineY, { align: 'center' });
 		}
 	}
-	doc.save(fileName(register, 'pdf'));
+	finishPdf(doc, fileName(register, 'pdf'), action);
 }
 
 const COLUMN_WIDTHS = [7, 32, 14, 10, 12, 11, 13, 13, 13, 13, 14];

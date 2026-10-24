@@ -1,4 +1,5 @@
 import type { AttendanceRegister, AttendanceRegisterRow } from '../../../services/attendanceService';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 const TITLE = 'Register of Attendance';
 const SUBTITLE = '(rule 78 (1) (a) (i)) FORM XVI';
@@ -41,7 +42,7 @@ function dayNumbers(register: AttendanceRegister) {
   return Array.from({ length: register.daysInMonth }, (_, index) => index + 1);
 }
 
-export async function exportRegisterPdf(register: AttendanceRegister) {
+export async function exportRegisterPdf(register: AttendanceRegister, action: PdfAction = 'download') {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -141,7 +142,7 @@ export async function exportRegisterPdf(register: AttendanceRegister) {
   document.setFontSize(8);
   document.text('MANAGER/PROPRIETOR', margin + 4, footerY + 5);
 
-  document.save(`${fileBaseName(register)}.pdf`);
+  finishPdf(document, `${fileBaseName(register)}.pdf`, action);
 }
 
 export async function exportRegisterExcel(register: AttendanceRegister) {

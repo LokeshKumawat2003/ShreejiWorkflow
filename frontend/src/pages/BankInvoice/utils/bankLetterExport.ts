@@ -1,6 +1,7 @@
 import type { BankPaymentRow } from '../../../services/attendanceService';
 import type { BankLetterSettings } from '../../../services/settingsService';
 import { fitInto, loadSignatureImage } from '../../Payroll/utils/wageRegisterExport';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 export type BankLetterDetails = {
 	letter: BankLetterSettings;
@@ -58,7 +59,7 @@ function signatureLines(letter: BankLetterSettings) {
 	].filter(Boolean);
 }
 
-export async function exportBankLetterPdf(details: BankLetterDetails) {
+export async function exportBankLetterPdf(details: BankLetterDetails, action: PdfAction = 'download') {
 	const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
 	const { letter } = details;
 	const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -167,7 +168,7 @@ export async function exportBankLetterPdf(details: BankLetterDetails) {
 		y += 4.6;
 	});
 
-	doc.save(fileName(details, 'pdf'));
+	finishPdf(doc, fileName(details, 'pdf'), action);
 }
 
 export async function exportBankLetterExcel(details: BankLetterDetails) {

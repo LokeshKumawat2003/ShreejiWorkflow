@@ -1,5 +1,6 @@
 import type { PayrollLine } from '../../../services/attendanceService';
 import { loadDocumentSettings } from '../../../services/settingsService';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { fitInto, loadSignatureImage } from './wageRegisterExport';
 
 /** Percentages, e.g. 8.33 for 8.33%. */
@@ -132,7 +133,7 @@ const FRAME_WIDTH = PAGE_WIDTH - FRAME_X * 2;
 const LEFT = 20;
 const TABLE_WIDTH = PAGE_WIDTH - LEFT * 2;
 
-export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: string, toDate: string) {
+export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: string, toDate: string, action: PdfAction = 'download') {
   const [{ jsPDF }, { default: autoTable }, company, register] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -265,5 +266,5 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     }
   });
 
-  pdf.save(`salary-slips-${fromDate}-to-${toDate}.pdf`);
+  finishPdf(pdf, `salary-slips-${fromDate}-to-${toDate}.pdf`, action);
 }

@@ -11,6 +11,17 @@ export const PeopleIcon = createIcon({
 	),
 });
 
+export const PrintIcon = createIcon({
+	displayName: 'PrintIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M7 3h10v4H7V3Zm-2 5h14a3 3 0 0 1 3 3v6h-4v4H6v-4H2v-6a3 3 0 0 1 3-3Zm3 7v4h8v-4H8Zm10-4.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"
+		/>
+	),
+});
+
 export const MapPinIcon = createIcon({
 	displayName: 'MapPinIcon',
 	viewBox: '0 0 24 24',

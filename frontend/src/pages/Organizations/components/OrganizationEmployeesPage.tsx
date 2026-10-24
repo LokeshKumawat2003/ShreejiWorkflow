@@ -5,6 +5,7 @@ import { ActionButton } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { createAppointmentLetterPdf, createCombinedAppointmentLettersPdf, downloadAppointmentLetters } from '../../../services/appointmentLetterService';
 import { emailAppointmentLetter, emailOrganizationAppointmentLetters } from '../../../services/employeeService';
+import type { PdfAction } from '../../../utils/pdfOutput';
 import type { OrganizationLocation } from '../../../types';
 import type { Employee } from '../../../types';
 import type { EmployeeInput } from '../../../services/employeeService';
@@ -163,9 +164,9 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
     }
   }
 
-  async function handleDownloadLetter(employee: Employee) {
+  async function handleDownloadLetter(employee: Employee, action: PdfAction = 'download') {
     try {
-      await downloadAppointmentLetters([employee], location);
+      await downloadAppointmentLetters([employee], location, action);
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to generate the appointment letter.'), status: 'error', position: 'top' });
     }
@@ -244,6 +245,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
             onView={(employee) => void handleView(employee)}
             onEdit={openEditDialog}
             onDownloadLetter={(employee) => void handleDownloadLetter(employee)}
+            onPrintLetter={(employee) => void handleDownloadLetter(employee, 'print')}
             onMove={setMovingEmployee}
             onRemove={(employee) => {
               setRemovingEmployee(employee);

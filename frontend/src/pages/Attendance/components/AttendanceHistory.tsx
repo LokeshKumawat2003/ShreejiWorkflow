@@ -9,6 +9,7 @@ import {
   FilterField,
   FilterInput,
   FilterSelect,
+  PrintIcon,
   SearchInput,
   TableFooter,
   type DataTableColumn,
@@ -125,18 +126,18 @@ function AttendanceHistory({ organizationId, locationId }: AttendanceHistoryProp
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [registerMonth, setRegisterMonth] = useState(currentMonth);
-  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | 'print' | null>(null);
   const [exportError, setExportError] = useState('');
   const canExportRegister = Boolean(organizationId && locationId);
   const hasFilters = Boolean(search) || status !== 'all' || Boolean(fromDate) || Boolean(toDate);
 
-  async function exportRegister(format: 'pdf' | 'excel') {
+  async function exportRegister(format: 'pdf' | 'excel' | 'print') {
     if (!organizationId || !locationId || !registerMonth) return;
     setExportingFormat(format);
     setExportError('');
     try {
       const register = await getAttendanceRegister({ organizationId, locationId, month: registerMonth });
-      if (format === 'pdf') await exportRegisterPdf(register);
+      if (format === 'pdf' || format === 'print') await exportRegisterPdf(register, format === 'print' ? 'print' : 'download');
       else await exportRegisterExcel(register);
     } catch (error) {
       setExportError(error instanceof ApiError ? error.message : 'Unable to export the attendance register.');
@@ -274,6 +275,15 @@ function AttendanceHistory({ organizationId, locationId }: AttendanceHistoryProp
               onClick={() => void exportRegister('excel')}
             >
               Register Excel
+            </ActionButton>
+            <ActionButton
+              tone="neutral"
+              leftIcon={<PrintIcon boxSize={4} />}
+              isLoading={exportingFormat === 'print'}
+              isDisabled={!registerMonth || exportingFormat !== null}
+              onClick={() => void exportRegister('print')}
+            >
+              Print
             </ActionButton>
           </HStack>
         </HStack>

@@ -13,6 +13,7 @@ import {
 	FormInput,
 	PageHeader,
 	PeopleIcon,
+	PrintIcon,
 	SearchInput,
 	StatStrip,
 	TableFooter,
@@ -116,7 +117,7 @@ function BankInvoicePage() {
 	const [referenceNumber, setReferenceNumber] = useState('01');
 	const [chequeNumber, setChequeNumber] = useState('');
 	const [skipMissing, setSkipMissing] = useState(true);
-	const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
+	const [exporting, setExporting] = useState<'pdf' | 'excel' | 'print' | null>(null);
 
 	useEffect(() => {
 		const controller = new AbortController();
@@ -173,13 +174,13 @@ function BankInvoicePage() {
 	const reference = data ? `${data.referencePrefix} ${referenceNumber.trim() || '01'}` : '';
 	const canExport = Boolean(data) && payable > 0 && !isLoading && !exporting && Boolean(letterDate);
 
-	async function runExport(kind: 'pdf' | 'excel') {
+	async function runExport(kind: 'pdf' | 'excel' | 'print') {
 		setExporting(kind);
 		try {
 			const full = await getBankPayments(query);
 			const rows = skipMissing ? full.rows.filter((row) => !row.missingBankDetails) : full.rows;
 			const details = { letter: full.letter, reference: `${full.referencePrefix} ${referenceNumber.trim() || '01'}`, date: letterDate, chequeNumber, rows, month: full.month };
-			if (kind === 'pdf') await exportBankLetterPdf(details);
+			if (kind === 'pdf' || kind === 'print') await exportBankLetterPdf(details, kind === 'print' ? 'print' : 'download');
 			else await exportBankLetterExcel(details);
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to create the bank letter.'), status: 'error', position: 'top' });
@@ -265,6 +266,9 @@ function BankInvoicePage() {
 						</ActionButton>
 						<ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
 							PDF
+						</ActionButton>
+						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+							Print
 						</ActionButton>
 					</>
 				)}

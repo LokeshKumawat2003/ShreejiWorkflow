@@ -21,6 +21,7 @@ import {
 	FilterField,
 	FilterInput,
 	PeopleIcon,
+	PrintIcon,
 	StatStrip,
 	TableFooter,
 	WalletIcon,
@@ -37,7 +38,7 @@ type LocationPayrollPageProps = {
 	locationId: string;
 };
 
-type ExportKind = 'slips' | 'excel' | 'pdf';
+type ExportKind = 'slips' | 'excel' | 'pdf' | 'print';
 
 const PAGE_SIZE = 25;
 
@@ -142,7 +143,7 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 			} else {
 				const fullRegister = await getWageRegister({ organizationId, locationId, month });
 				if (kind === 'excel') await exportWageRegisterExcel(fullRegister);
-				else await exportWageRegisterPdf(fullRegister);
+				else await exportWageRegisterPdf(fullRegister, kind === 'print' ? 'print' : 'download');
 			}
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to export the wage register.'), status: 'error', position: 'top' });
@@ -195,6 +196,9 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 						</ActionButton>
 						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
 							PDF
+						</ActionButton>
+						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+							Print
 						</ActionButton>
 					</>
 				)}

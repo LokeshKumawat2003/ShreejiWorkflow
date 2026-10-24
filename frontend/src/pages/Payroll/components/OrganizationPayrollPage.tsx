@@ -1,14 +1,15 @@
 import { DownloadIcon } from '@chakra-ui/icons';
 import { Stack, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
-import { ActionButton, ContentCard, FilterBar, WalletIcon } from '../../../components/ui';
+import { ActionButton, ContentCard, FilterBar, PrintIcon, WalletIcon } from '../../../components/ui';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { ApiError } from '../../../services/api';
 import type { PayrollResponse } from '../../../services/attendanceService';
 import { usePayroll } from '../hooks/usePayroll';
 import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
 import { formatAmount, PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './PayrollShared';
 
-type ExportKind = 'slips' | 'pdf' | 'excel';
+type ExportKind = 'slips' | 'pdf' | 'excel' | 'print';
 
 type OrganizationPayrollPageProps = {
   organizationId?: string;
@@ -34,7 +35,7 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     try {
       const fullPayroll = await payrollState.fetchAll();
       if (kind === 'slips') await downloadSalarySlipsPdf(fullPayroll.lines, fromDate, toDate);
-      else if (kind === 'pdf') await exportPdf(fullPayroll);
+      else if (kind === 'pdf' || kind === 'print') await exportPdf(fullPayroll, kind === 'print' ? 'print' : 'download');
       else await exportExcel(fullPayroll);
     } catch (error) {
       toast({ title: error instanceof ApiError ? error.message : 'Unable to export payroll.', status: 'error', position: 'top' });
@@ -43,12 +44,12 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     }
   }
 
-  async function exportPdf(payroll: PayrollResponse) {
+  async function exportPdf(payroll: PayrollResponse, action: PdfAction) {
     const [{ jsPDF }, { default: autoTable }] = await Promise.all([
       import('jspdf'),
       import('jspdf-autotable'),
     ]);
-    const document = new jsPDF({ orientation: 'landscape' });
+    const document = new jsPDF({ orientation: 'landscape', format: 'a4' });
     document.setFontSize(16);
     document.text('Payroll report', 14, 16);
     document.setFontSize(10);
@@ -80,7 +81,7 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
       theme: 'grid',
       tableWidth: 90,
     });
-    document.save(`${getExportFilename(fromDate, toDate)}.pdf`);
+    finishPdf(document, `${getExportFilename(fromDate, toDate)}.pdf`, action);
   }
 
   async function exportExcel(payroll: PayrollResponse) {
@@ -136,6 +137,9 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
             </ActionButton>
             <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
               Excel
+            </ActionButton>
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+              Print
             </ActionButton>
           </>
         )}

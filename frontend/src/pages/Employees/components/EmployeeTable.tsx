@@ -10,6 +10,7 @@ import {
   FilterSelect,
   IconAction,
   PeopleIcon,
+  PrintIcon,
   SearchInput,
   StatStrip,
   StatusBadge,
@@ -45,6 +46,7 @@ type EmployeeTableProps = {
   onEdit: (employee: Employee) => void;
   onDelete: (employee: Employee) => void;
   onDownloadLetter?: (employee: Employee) => void;
+  onPrintLetter?: (employee: Employee) => void;
   onMove?: (employee: Employee) => void;
   deleteLabel: string;
   title?: string;
@@ -87,6 +89,7 @@ function EmployeeTable({
   onEdit,
   onDelete,
   onDownloadLetter,
+  onPrintLetter,
   onMove,
   deleteLabel,
   title = 'Employee directory',
@@ -129,6 +132,9 @@ function EmployeeTable({
           )}
           {onDownloadLetter && (
             <IconAction label={`Appointment letter: ${employee.name}`} icon={<DownloadIcon />} tone="primary" onClick={() => onDownloadLetter(employee)} />
+          )}
+          {onPrintLetter && (
+            <IconAction label={`Print appointment letter: ${employee.name}`} icon={<PrintIcon />} onClick={() => onPrintLetter(employee)} />
           )}
           {onMove && (
             <IconAction label={`Move ${employee.name} to another location`} icon={<RepeatIcon />} onClick={() => onMove(employee)} />

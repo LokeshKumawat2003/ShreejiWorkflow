@@ -15,7 +15,7 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
-import { ActionButton, FilterBar, FilterField, FilterInput, FilterSelect, Pagination, PeopleIcon, SearchInput, StatCard } from '../../../components/ui';
+import { ActionButton, FilterBar, FilterField, FilterInput, FilterSelect, Pagination, PeopleIcon, PrintIcon, SearchInput, StatCard } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
   getAttendanceRegister,
@@ -74,7 +74,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [savingCells, setSavingCells] = useState<Set<string>>(() => new Set());
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | 'print' | null>(null);
   const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
@@ -182,11 +182,11 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
     }
   }
 
-  async function exportRegister(format: 'pdf' | 'excel') {
+  async function exportRegister(format: 'pdf' | 'excel' | 'print') {
     setExportingFormat(format);
     try {
       const fullRegister = await getAttendanceRegister({ organizationId, locationId, month });
-      if (format === 'pdf') await exportRegisterPdf(fullRegister);
+      if (format === 'pdf' || format === 'print') await exportRegisterPdf(fullRegister, format === 'print' ? 'print' : 'download');
       else await exportRegisterExcel(fullRegister);
     } catch (error) {
       toast({ title: errorMessage(error, 'Unable to export the attendance register.'), status: 'error', position: 'top' });
@@ -270,6 +270,16 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
               onClick={() => void exportRegister('excel')}
             >
               Excel
+            </ActionButton>
+            <ActionButton
+              tone="neutral"
+              size="sm"
+              leftIcon={<PrintIcon boxSize={4} />}
+              isLoading={exportingFormat === 'print'}
+              isDisabled={!summary?.employees || Boolean(exportingFormat)}
+              onClick={() => void exportRegister('print')}
+            >
+              Print
             </ActionButton>
           </HStack>
         </Flex>

@@ -17,7 +17,8 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import { ActionButton, FilterInput } from '../../../components/ui';
+import { ActionButton, FilterInput, PrintIcon } from '../../../components/ui';
+import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { ApiError } from '../../../services/api';
 import { listAttendance, markAttendance, type AttendanceEntry, type AttendanceStatus } from '../../../services/attendanceService';
 import type { UserRole } from '../../../types';
@@ -89,12 +90,12 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
     };
   }, [date, locationId, organizationId, refreshToken]);
 
-  async function exportPdf() {
+  async function exportPdf(action: PdfAction = 'download') {
     const [{ jsPDF }, { default: autoTable }] = await Promise.all([
       import('jspdf'),
       import('jspdf-autotable'),
     ]);
-    const document = new jsPDF({ orientation: 'landscape' });
+    const document = new jsPDF({ orientation: 'landscape', format: 'a4' });
     document.setFontSize(16);
     document.text('Attendance report', 14, 16);
     document.setFontSize(10);
@@ -113,7 +114,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
       headStyles: { fillColor: [79, 70, 229] },
       theme: 'grid',
     });
-    document.save(`attendance-${date}.pdf`);
+    finishPdf(document, `attendance-${date}.pdf`, action);
   }
 
   async function exportExcel() {
@@ -185,6 +186,15 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
                 onClick={() => void exportExcel()}
               >
                 Export Excel
+              </ActionButton>
+              <ActionButton
+                tone="neutral"
+                size="sm"
+                leftIcon={<PrintIcon boxSize={4} />}
+                isDisabled={isLoading || Boolean(loadError) || entries.length === 0}
+                onClick={() => void exportPdf('print')}
+              >
+                Print
               </ActionButton>
             </>
           ) : null}

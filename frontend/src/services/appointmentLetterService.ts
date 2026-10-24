@@ -1,5 +1,6 @@
 import type { Employee, OrganizationLocation } from '../types';
 import { fitInto, loadSignatureImage } from '../pages/Payroll/utils/wageRegisterExport';
+import { finishPdf, type PdfAction } from '../utils/pdfOutput';
 import { loadDocumentSettings, type AppointmentLetterSettings } from './settingsService';
 
 type PdfDocument = InstanceType<typeof import('jspdf').jsPDF>;
@@ -233,13 +234,13 @@ function fileSlug(value: string, fallback: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback;
 }
 
-export async function downloadAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
+export async function downloadAppointmentLetters(employees: Employee[], location: OrganizationLocation, action: PdfAction = 'download') {
   const pdf = await createAppointmentLettersPdf(employees, location);
   if (!pdf) return;
   const name = employees.length === 1
     ? `appointment-letter-${fileSlug(employees[0].name, 'employee')}`
     : `appointment-letters-${fileSlug(location.opNumber || location.name || '', 'location')}`;
-  pdf.save(`${name}.pdf`);
+  finishPdf(pdf, `${name}.pdf`, action);
 }
 
 export async function createAppointmentLetterPdf(employee: Employee, location: OrganizationLocation) {

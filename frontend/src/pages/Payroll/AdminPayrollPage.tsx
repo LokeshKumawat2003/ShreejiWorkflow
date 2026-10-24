@@ -9,6 +9,7 @@ import {
   FilterField,
   PageHeader,
   PeopleIcon,
+  PrintIcon,
   SearchInput,
   TableFooter,
   WalletIcon,
@@ -122,7 +123,7 @@ function AdminPayrollPage() {
   const [runQuery, setRunQuery] = useState<PayrollQuery | null>(null);
   const [runCount, setRunCount] = useState(0);
   const [payrollScope, setPayrollScope] = useState<EmployeeScope>('all');
-  const [isExporting, setIsExporting] = useState<'slips' | 'excel' | null>(null);
+  const [isExporting, setIsExporting] = useState<'slips' | 'excel' | 'print' | null>(null);
   const payrollState = usePayroll(runQuery, runCount);
   const { payroll } = payrollState;
   const isGenerating = payrollState.isLoading && !payroll;
@@ -188,11 +189,13 @@ function AdminPayrollPage() {
     setPayrollScope(scope);
   }
 
-  async function runExport(kind: 'slips' | 'excel') {
+  async function runExport(kind: 'slips' | 'excel' | 'print') {
     setIsExporting(kind);
     try {
       const fullPayroll = await payrollState.fetchAll();
-      if (kind === 'slips') await downloadSalarySlipsPdf(fullPayroll.lines, fullPayroll.fromDate, fullPayroll.toDate);
+      if (kind === 'slips' || kind === 'print') {
+        await downloadSalarySlipsPdf(fullPayroll.lines, fullPayroll.fromDate, fullPayroll.toDate, kind === 'print' ? 'print' : 'download');
+      }
       else await exportExcel(fullPayroll);
     } catch (error) {
       toast({ title: errorMessage(error, 'Unable to export payroll.'), status: 'error', position: 'top' });
@@ -388,6 +391,9 @@ function AdminPayrollPage() {
                 </ActionButton>
                 <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'excel'} onClick={() => void runExport('excel')}>
                   Excel
+                </ActionButton>
+                <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'print'} onClick={() => void runExport('print')}>
+                  Print
                 </ActionButton>
               </>
             )}

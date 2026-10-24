@@ -20,7 +20,7 @@ function formatDate(value?: string | null) {
   return `${day}-${month}-${date.getFullYear()}`;
 }
 
-const SKILL_IN_TITLE = /\s*\(?\s*(?:un|semi|highly)?[\s-]*skilled\s*\)?\s*$/i;
+const SKILL_IN_TITLE = /\(?\s*\b(?:un|semi|highly)?[\s-]*skilled\b\s*\)?/gi;
 
 function titleCaseSkill(skill: string) {
   return skill
@@ -30,12 +30,16 @@ function titleCaseSkill(skill: string) {
     .replace(/[a-z]+/gi, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
+function titleOf(employee: Employee, location: OrganizationLocation) {
+  return (employee.jobTitle || employee.designation || location.designation || 'Employee').replace(/\s+/g, ' ').trim();
+}
+
 function positionOf(employee: Employee, location: OrganizationLocation) {
-  const rawTitle = (employee.jobTitle || employee.designation || location.designation || 'Employee').replace(/\s+/g, ' ').trim();
+  const rawTitle = titleOf(employee, location);
   const skill = titleCaseSkill(employee.skillCategory?.trim() || '');
   if (!skill) return rawTitle;
-  const title = rawTitle.replace(SKILL_IN_TITLE, '').trim() || rawTitle;
-  return `${title} ( ${skill})`;
+  const title = rawTitle.replace(SKILL_IN_TITLE, ' ').replace(/\s+/g, ' ').trim();
+  return title ? `${title} ( ${skill})` : rawTitle;
 }
 
 function jobTitleOf(employee: Employee, location: OrganizationLocation) {
@@ -174,7 +178,7 @@ function addAppointmentLetter(
   y += 4;
   y = writeRich(pdf, [
     { text: 'We are pleased to offer you the position of ' },
-    { text: position, bold: true },
+    { text: titleOf(employee, location), bold: true },
     { text: `${shortName ? ` with ${shortName}` : ''} on the following terms and conditions.` },
   ], MARGIN, y, textWidth);
 

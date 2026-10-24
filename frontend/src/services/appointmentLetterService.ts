@@ -20,16 +20,26 @@ function formatDate(value?: string | null) {
   return `${day}-${month}-${date.getFullYear()}`;
 }
 
-function positionOf(employee: Employee, location: OrganizationLocation) {
-  const title = (employee.jobTitle || employee.designation || location.designation || 'Employee').trim();
-  const skill = employee.skillCategory?.trim();
-  return skill && !title.toLowerCase().includes(skill.toLowerCase()) ? `${title} ( ${skill} )` : title;
+const SKILL_IN_TITLE = /\s*\(?\s*(?:un|semi|highly)?[\s-]*skilled\s*\)?\s*$/i;
+
+function titleCaseSkill(skill: string) {
+  return skill
+    .replace(/\s*-\s*/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^(un|semi|highly) (?=skilled)/i, '$1-')
+    .replace(/[a-z]+/gi, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 }
 
-function jobTitleOf(employee: Employee, position: string) {
-  const department = employee.department?.trim();
-  if (!department) return position;
-  return /department/i.test(department) ? `${position} ${department}` : `${position} ${department} Department`;
+function positionOf(employee: Employee, location: OrganizationLocation) {
+  const rawTitle = (employee.jobTitle || employee.designation || location.designation || 'Employee').replace(/\s+/g, ' ').trim();
+  const skill = titleCaseSkill(employee.skillCategory?.trim() || '');
+  if (!skill) return rawTitle;
+  const title = rawTitle.replace(SKILL_IN_TITLE, '').trim() || rawTitle;
+  return `${title} ( ${skill})`;
+}
+
+function jobTitleOf(employee: Employee, location: OrganizationLocation) {
+  return [positionOf(employee, location), employee.department?.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' ');
 }
 
 function jobLocationOf(employee: Employee, location: OrganizationLocation) {
@@ -177,7 +187,7 @@ function addAppointmentLetter(
     ['Leave Policy', settings.leavePolicy.trim()],
   ];
   y = writeDetail(pdf, 'Date of Joining', [{ text: joiningDate }], y, textWidth);
-  y = writeDetail(pdf, 'Job Title', [{ text: ` ${jobTitleOf(employee, position)}`, bold: true }], y, textWidth);
+  y = writeDetail(pdf, 'Job Title', [{ text: ` ${jobTitleOf(employee, location)}`, bold: true }], y, textWidth);
   optionalRows
     .filter(([, value]) => value)
     .forEach(([label, value]) => {

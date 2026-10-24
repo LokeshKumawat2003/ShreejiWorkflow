@@ -10,11 +10,11 @@ const LetterIcon = (
 	</Box>
 );
 
-function PreviewRow({ label, value }: { label: string; value: string }) {
+function PreviewRow({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) {
 	if (!value.trim()) return null;
 	return (
 		<Text>
-			<Text as="span" fontWeight="700">{label}:-</Text> {value}
+			<Text as="span" fontWeight="700">{label}:-</Text> <Text as="span" fontWeight={bold ? 700 : undefined}>{value}</Text>
 		</Text>
 	);
 }
@@ -74,7 +74,7 @@ function AppointmentLetterSettingsPanel() {
 
 					<Box mt={2}>
 						<PreviewRow label="Date of Joining" value="01-08-2026" />
-						<PreviewRow label="Job Title" value="Waiter / Helper ( Un-Skilled )" />
+						<PreviewRow label="Job Title" value="Waiter / Helper ( Un-Skilled) Food Service" bold />
 						<PreviewRow label="Salary" value={values.salaryText} />
 						<PreviewRow label="Job Location" value="Client organization, site address" />
 						<PreviewRow label="Working Hours" value={values.workingHours} />

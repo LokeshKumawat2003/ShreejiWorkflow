@@ -782,6 +782,28 @@ test('payroll pays present days only and treats legacy statuses as absent', asyn
   }
 });
 
+test('payroll can be limited to employees with attendance in the date range', async () => {
+  const originalAttendanceFind = Attendance.find;
+  const originalEmployeeFind = Employee.find;
+  const ids = ['507f1f77bcf86cd799439031', '507f1f77bcf86cd799439032'];
+  Attendance.find = () => ({ lean: async () => [{ employeeId: ids[0], status: 'present' }] });
+  Employee.find = () => ({
+    lean: async () => ids.map((id, index) => ({ _id: id, name: `Employee ${index}`, email: `a${index}@example.com`, dailySalary: 100 })),
+  });
+
+  try {
+    const organization = { id: '507f1f77bcf86cd799439011', role: 'organization' };
+    const options = { fromDate: '2026-10-01', toDate: '2026-10-31' };
+    assert.equal((await calculatePayroll(organization, options)).lines.length, 2);
+    const ranged = await calculatePayroll(organization, { ...options, attendanceOnly: true });
+    assert.deepEqual(ranged.lines.map((line) => line.employeeId), [ids[0]]);
+    assert.equal(ranged.summary.employees, 1);
+  } finally {
+    Attendance.find = originalAttendanceFind;
+    Employee.find = originalEmployeeFind;
+  }
+});
+
 test('payroll filters selected employees and paginates on the server with whole-run totals', async () => {
   const originalAttendanceFind = Attendance.find;
   const originalEmployeeFind = Employee.find;

@@ -31,6 +31,7 @@ export function usePayroll(query: PayrollQuery | null, refreshKey = 0) {
 		setError('');
 		void getPayroll({ ...(JSON.parse(queryKey) as PayrollQuery), page, limit: PAYROLL_PAGE_SIZE }, controller.signal)
 			.then((result) => {
+				if (controller.signal.aborted) return;
 				setPayroll(result);
 				if (result.pagination && result.pagination.page !== page) setPage(result.pagination.page);
 			})

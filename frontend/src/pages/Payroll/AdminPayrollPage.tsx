@@ -127,7 +127,7 @@ function AdminPayrollPage() {
   const { payroll } = payrollState;
   const isGenerating = payrollState.isLoading && !payroll;
   const generationError = payrollState.error;
-  const invalidDateRange = fromDate > toDate;
+  const invalidDateRange = !fromDate || !toDate || fromDate > toDate;
   const canGenerate = !invalidDateRange && !isLoadingEmployees && (scope === 'all' || selectedEmployeeIds.length > 0);
 
   useEffect(() => {
@@ -266,7 +266,8 @@ function AdminPayrollPage() {
               toDate={toDate}
               onChange={(range) => {
                 setRange(range);
-                setRunQuery(null);
+                const isValid = Boolean(range.fromDate && range.toDate) && range.fromDate <= range.toDate;
+                setRunQuery((current) => (current && isValid ? { ...current, ...range } : null));
               }}
             />
             <FilterField label="Employees" flex={{ base: '1 1 100%', md: '0 0 280px' }}>
@@ -295,7 +296,7 @@ function AdminPayrollPage() {
         )}
       >
         {invalidDateRange ? (
-          <Box p={4}><Alert status="error" borderRadius="md">The start date must be on or before the end date.</Alert></Box>
+          <Box p={4}><Alert status="error" borderRadius="md">{fromDate && toDate ? 'The start date must be on or before the end date.' : 'Choose both a start and an end date.'}</Alert></Box>
         ) : scope === 'all' ? (
           <HStack spacing={4} px={{ base: 4, md: 5 }} py={5}>
             <Box display="grid" placeItems="center" flexShrink={0} w="44px" h="44px" borderRadius="12px" bg="brand.50" color="brand.600">

@@ -23,7 +23,7 @@ async function history(req, res) {
 }
 
 async function payroll(req, res) {
-  return res.json(await calculatePayroll(req.user, req.query));
+  return res.json(await calculatePayroll(req.user, { ...req.query, attendanceOnly: true }));
 }
 
 async function wageRegister(req, res) {

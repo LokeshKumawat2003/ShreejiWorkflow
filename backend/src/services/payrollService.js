@@ -135,7 +135,8 @@ async function calculatePayroll(user, options = {}) {
   const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
   const pattern = search ? new RegExp(escapeRegex(search), 'i') : null;
   const matchingLines = lines.filter((line) => (
-    (!selectedIds || selectedIds.has(line.employeeId))
+    (!options.attendanceOnly || attendanceByEmployee.has(line.employeeId))
+    && (!selectedIds || selectedIds.has(line.employeeId))
     && (!pattern || [line.employeeName, line.employeeEmail, line.designation, line.organizationName].some((value) => pattern.test(value || '')))
   ));
 

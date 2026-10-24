@@ -147,7 +147,7 @@ function AppointmentLetterSettingsPanel() {
 					label="Salary text"
 					maxLength={200}
 					value={values.salaryText}
-					helperText="Used when the employee has no daily salary set."
+					helperText="Printed as the Salary line on every appointment letter."
 					onChange={(event) => setField('salaryText', event.target.value)}
 				/>
 				<SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>

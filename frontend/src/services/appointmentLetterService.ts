@@ -40,14 +40,6 @@ function jobLocationOf(employee: Employee, location: OrganizationLocation) {
   return `${organization}${/[.,]$/.test(organization) ? ' ' : ', '}${site}`;
 }
 
-function salaryOf(employee: Employee, settings: AppointmentLetterSettings) {
-  if (employee.dailySalary > 0) {
-    const amount = employee.dailySalary.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-    return `Rs. ${amount} per day`;
-  }
-  return settings.salaryText.trim();
-}
-
 function setFont(pdf: PdfDocument, bold = false, size = BODY_SIZE) {
   pdf.setFont('times', bold ? 'bold' : 'normal');
   pdf.setFontSize(size);
@@ -179,7 +171,7 @@ function addAppointmentLetter(
   y += 8;
   const joiningDate = assignedDate || formatDate(employee.dateOfJoining) || 'To be confirmed';
   const optionalRows: [string, string][] = [
-    ['Salary', salaryOf(employee, settings)],
+    ['Salary', settings.salaryText.trim()],
     ['Job Location', jobLocationOf(employee, location)],
     ['Working Hours', settings.workingHours.trim()],
     ['Leave Policy', settings.leavePolicy.trim()],

@@ -48,6 +48,67 @@ test('health endpoint works without MongoDB', async (t) => {
   assert.deepEqual(await response.json(), { status: 'ok', database: 'disconnected' });
 });
 
+test('login is rate limited per email and per IP', async (t) => {
+  const { resetAuthRateLimits } = require('../src/middleware/rateLimit');
+  process.env.NODE_ENV = 'test';
+  resetAuthRateLimits();
+  const server = createApp().listen(0);
+  await once(server, 'listening');
+  t.after(() => {
+    resetAuthRateLimits();
+    return new Promise((resolve) => server.close(resolve));
+  });
+
+  const login = (email) => fetch(`http://127.0.0.1:${server.address().port}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: 'wrong-password' }),
+  });
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal((await login('Victim@Example.com')).status, 503);
+  }
+  const blocked = await login('victim@example.com');
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get('retry-after')) > 0);
+  assert.deepEqual(await blocked.json(), { message: 'Too many sign-in attempts. Please try again later.' });
+
+  assert.equal((await login('other@example.com')).status, 503);
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await login(`user${attempt}@example.com`);
+  }
+  assert.equal((await login('fresh@example.com')).status, 429);
+});
+
+test('password reset requests are rate limited', async (t) => {
+  const { resetAuthRateLimits } = require('../src/middleware/rateLimit');
+  process.env.NODE_ENV = 'test';
+  resetAuthRateLimits();
+  const server = createApp().listen(0);
+  await once(server, 'listening');
+  t.after(() => {
+    resetAuthRateLimits();
+    return new Promise((resolve) => server.close(resolve));
+  });
+
+  const base = `http://127.0.0.1:${server.address().port}/api/auth`;
+  const post = (path, body) => fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal((await post('/forgot-password', { email: 'owner@example.com' })).status, 503);
+  }
+  assert.equal((await post('/forgot-password', { email: 'owner@example.com' })).status, 429);
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    assert.equal((await post('/reset-password', { token: 'x', password: 'StrongPass123' })).status, 503);
+  }
+  assert.equal((await post('/reset-password', { token: 'x', password: 'StrongPass123' })).status, 429);
+});
+
 test('organization creation requires authentication', async (t) => {
   process.env.NODE_ENV = 'test';
   const server = createApp().listen(0);

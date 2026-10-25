@@ -7,6 +7,7 @@ const {
   signUp,
 } = require('../controllers/authController');
 const { requireAuth } = require('../middleware/auth');
+const { forgotPasswordLimiters, loginLimiters, resetPasswordLimiters } = require('../middleware/rateLimit');
 const { httpError } = require('../utils/httpError');
 const mongoose = require('mongoose');
 
@@ -19,10 +20,10 @@ function requireDatabase(req, res, next) {
   return next();
 }
 
-router.post('/login', requireDatabase, signIn);
+router.post('/login', ...loginLimiters, requireDatabase, signIn);
 router.post('/register', requireDatabase, signUp);
-router.post('/forgot-password', requireDatabase, forgotPassword);
-router.post('/reset-password', requireDatabase, resetPasswordWithToken);
+router.post('/forgot-password', ...forgotPasswordLimiters, requireDatabase, forgotPassword);
+router.post('/reset-password', ...resetPasswordLimiters, requireDatabase, resetPasswordWithToken);
 router.get('/me', requireAuth, currentUser);
 
 module.exports = router;

@@ -28,7 +28,7 @@ const {
 const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
 const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
-const { register } = require('../src/services/authService');
+const { createToken, register, verifyToken } = require('../src/services/authService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
 const MasterData = require('../src/models/MasterData');
 const { createMasterData, deleteMasterData, updateMasterData } = require('../src/services/masterDataService');
@@ -231,6 +231,27 @@ test('admin signup works with name, email and password', async () => {
   } finally {
     User.create = originalCreate;
     process.env.JWT_SECRET = originalSecret;
+  }
+});
+
+test('login tokens expire after 7 days by default and expired tokens are rejected', () => {
+  const originalSecret = process.env.JWT_SECRET;
+  const originalExpiry = process.env.JWT_EXPIRES_IN;
+  process.env.JWT_SECRET = 'x'.repeat(32);
+  const user = { id: '507f1f77bcf86cd799439012', role: 'admin' };
+
+  try {
+    delete process.env.JWT_EXPIRES_IN;
+    const payload = verifyToken(createToken(user));
+    assert.equal(payload.exp - payload.iat, 7 * 24 * 60 * 60);
+    assert.equal(payload.sub, user.id);
+
+    process.env.JWT_EXPIRES_IN = '-1s';
+    assert.throws(() => verifyToken(createToken(user)), { name: 'TokenExpiredError' });
+  } finally {
+    process.env.JWT_SECRET = originalSecret;
+    if (originalExpiry === undefined) delete process.env.JWT_EXPIRES_IN;
+    else process.env.JWT_EXPIRES_IN = originalExpiry;
   }
 });
 

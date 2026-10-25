@@ -2,6 +2,14 @@ require('dotenv').config();
 const { createApp } = require('./app');
 const { connectDatabase } = require('./config/database');
 const { ensureDefaultMasterData } = require('./services/masterDataService');
+const { getJwtSecret } = require('./services/authService');
+
+try {
+  getJwtSecret();
+} catch {
+  console.error('JWT_SECRET is missing, shorter than 32 characters, or still the example value. Set a random secret in .env.');
+  process.exit(1);
+}
 
 const port = Number(process.env.PORT) || 5000;
 const app = createApp();

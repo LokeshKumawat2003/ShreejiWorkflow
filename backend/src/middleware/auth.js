@@ -1,7 +1,6 @@
-const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const { getJwtSecret } = require('../services/authService');
+const { verifyToken } = require('../services/authService');
 const { httpError } = require('../utils/httpError');
 const { publicUser } = require('../utils/user');
 
@@ -13,9 +12,12 @@ async function requireAuth(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, getJwtSecret());
+    const payload = verifyToken(token);
     if (mongooseDisconnected()) {
       throw httpError(503, 'The database is not available.');
+    }
+    if (!mongoose.isValidObjectId(payload.sub)) {
+      throw httpError(401, 'Invalid or expired authentication token.');
     }
 
     const user = await User.findById(payload.sub).select('+passwordChangedAt');

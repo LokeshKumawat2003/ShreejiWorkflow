@@ -7,9 +7,14 @@ const { httpError } = require('../utils/httpError');
 const { normalizeEmail, publicUser } = require('../utils/user');
 const { validateEmail } = require('../utils/validation');
 
+const JWT_ALGORITHM = 'HS256';
+const JWT_ISSUER = 'shreeji-workflow-api';
+const JWT_AUDIENCE = 'shreeji-workflow-app';
+const PLACEHOLDER_SECRETS = new Set(['replace-with-a-random-secret-of-at-least-32-characters']);
+
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) {
+  if (!secret || secret.length < 32 || PLACEHOLDER_SECRETS.has(secret)) {
     throw httpError(503, 'Authentication is not configured on this server.');
   }
   return secret;
@@ -17,8 +22,19 @@ function getJwtSecret() {
 
 function createToken(user) {
   return jwt.sign({ role: user.role }, getJwtSecret(), {
-    subject: user.id,
-    expiresIn: process.env.JWT_EXPIRES_IN || '5y',
+    algorithm: JWT_ALGORITHM,
+    subject: String(user.id),
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  });
+}
+
+function verifyToken(token) {
+  return jwt.verify(token, getJwtSecret(), {
+    algorithms: [JWT_ALGORITHM],
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
   });
 }
 
@@ -164,4 +180,5 @@ module.exports = {
   register,
   requestPasswordReset,
   resetPassword,
+  verifyToken,
 };

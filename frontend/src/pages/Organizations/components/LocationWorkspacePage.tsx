@@ -79,7 +79,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 
 						<SimpleGrid mt={5} columns={{ base: 1, sm: 2, xl: 4 }} spacing={3}>
 							<InfoTile icon={<BuildingIcon boxSize={4} />} color="brand" label="Organization" value={organization.organizationName} />
-							<InfoTile icon={<InfoOutlineIcon boxSize={3.5} />} color="blue" label="OP number" value={location.opNumber} />
+							<InfoTile icon={<InfoOutlineIcon boxSize={3.5} />} color="blue" label="PO number" value={location.opNumber} />
 							<InfoTile icon={<PeopleIcon boxSize={4} />} color="green" label="Designation" value={location.designation} capitalize />
 							<InfoTile icon={<MapPinIcon boxSize={4} />} color="orange" label="Address" value={location.address} />
 						</SimpleGrid>

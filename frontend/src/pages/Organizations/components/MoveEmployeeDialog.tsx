@@ -191,7 +191,7 @@ function MoveEmployeeDialog({
                           <Box minW={0}>
                             <Text fontSize="sm" fontWeight="600" color="slate.900" noOfLines={1}>{location.workName || location.name}</Text>
                             <Text fontSize="xs" color="slate.500" noOfLines={1}>
-                              {[location.name !== location.workName ? location.name : '', location.opNumber ? `OP ${location.opNumber}` : ''].filter(Boolean).join(' · ') || location.address || '—'}
+                              {[location.name !== location.workName ? location.name : '', location.opNumber ? `PO ${location.opNumber}` : ''].filter(Boolean).join(' · ') || location.address || '—'}
                             </Text>
                           </Box>
                         </HStack>

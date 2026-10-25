@@ -14,7 +14,7 @@ function contractorLine(register: AttendanceRegister) {
 }
 
 function loaLine(register: AttendanceRegister) {
-  return `LOA / OP No :- ${register.location.opNumber || '—'}`;
+  return `PO No :- ${register.location.opNumber || '—'}`;
 }
 
 function siteLine(register: AttendanceRegister) {

@@ -290,7 +290,6 @@ async function calculateWageRegister(user, options = {}) {
       organizationName: organization?.organizationName || '',
       workName: location.workName || '',
       address: location.address || location.name || '',
-      loaReference: location.loaReference || '',
       opNumber: location.opNumber || '',
     },
     rates,

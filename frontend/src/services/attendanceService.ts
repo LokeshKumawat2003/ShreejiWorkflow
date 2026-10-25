@@ -172,7 +172,6 @@ export type WageRegisterResponse = {
     organizationName: string;
     workName: string;
     address: string;
-    loaReference: string;
     opNumber: string;
   };
   rates: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number };

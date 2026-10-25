@@ -69,7 +69,7 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
     {
       key: 'work',
       header: 'Work name',
-      render: (location) => <EntityCell name={location.workName || location.name} subtitle={location.opNumber ? `OP ${location.opNumber}` : 'No OP number'} />,
+      render: (location) => <EntityCell name={location.workName || location.name} subtitle={location.opNumber ? `PO ${location.opNumber}` : 'No PO number'} />,
     },
     {
       key: 'designation',
@@ -251,7 +251,7 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
             onClear={locationList.clearFilters}
           >
             <FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 260px' }} maxW={{ md: '420px' }}>
-              <SearchInput value={locationList.search} onChange={locationList.setSearch} placeholder="Work name, OP number or address..." label="Search locations" />
+              <SearchInput value={locationList.search} onChange={locationList.setSearch} placeholder="Work name, PO number or address..." label="Search locations" />
             </FilterField>
             <FilterField label="Designation">
               <FilterSelect

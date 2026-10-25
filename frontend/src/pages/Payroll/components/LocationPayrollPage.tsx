@@ -267,9 +267,9 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 								<Text color="slate.800" fontWeight="600" noOfLines={2}>{registerContractLine(register) || '—'}</Text>
 							</Box>
 							<Box>
-								<Text fontSize="11px" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="0.06em">LOA / work order</Text>
-								<Text color={register.header.loaReference ? 'slate.800' : 'slate.400'} fontWeight={register.header.loaReference ? '600' : '400'}>
-									{register.header.loaReference || 'Not set — add it from Edit location'}
+								<Text fontSize="11px" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="0.06em">PO number</Text>
+								<Text color={register.header.opNumber ? 'slate.800' : 'slate.400'} fontWeight={register.header.opNumber ? '600' : '400'}>
+									{register.header.opNumber || 'Not set — add it from Edit location'}
 								</Text>
 							</Box>
 							<Box>

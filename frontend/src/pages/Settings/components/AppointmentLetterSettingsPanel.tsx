@@ -127,7 +127,7 @@ function AppointmentLetterSettingsPanel() {
 						label="Reference prefix"
 						maxLength={60}
 						value={values.refPrefix}
-						helperText="The location's OP number is added after it."
+						helperText="The location's PO number is added after it."
 						onChange={(event) => setField('refPrefix', event.target.value)}
 					/>
 					<FormInput label="Letter title" isRequired maxLength={60} value={values.title} onChange={(event) => setField('title', event.target.value)} />

@@ -49,7 +49,6 @@ function formatMoney(value?: number) {
 function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoiningLetter, isPreparingLetter = false }: EmployeeDetailsPageProps) {
 	const isAdmin = role === 'admin';
 	const { options: masterOptions } = useMasterDataOptions();
-	const maskedAccount = employee.bankAccountNumber ? `•••• ${employee.bankAccountNumber.slice(-4)}` : '';
 	const monthlyPay = (Number(employee.basicPay) || 0) + (Number(employee.dearnessAllowance) || 0);
 
 	return (
@@ -180,7 +179,7 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 							<Detail label="Bank name" value={employee.bankName} />
 							<Detail label="Branch" value={employee.bankBranch} />
 							<Detail label="Account holder" value={employee.bankAccountHolder} />
-							<Detail label="Account number" value={maskedAccount} mono />
+							<Detail label="Account number" value={employee.bankAccountNumber} mono />
 							<Detail label="Routing / bank code" value={employee.bankRoutingCode} mono />
 						</Section>
 					)}

@@ -38,6 +38,11 @@ export function registerContractLine(register: WageRegisterResponse) {
 	return [workName, address].filter(Boolean).join(' at ');
 }
 
+export function registerPoLine(register: WageRegisterResponse) {
+	const poNumber = register.header.opNumber.trim();
+	return poNumber ? `PO No.- ${poNumber}` : '';
+}
+
 function rowCells(row: WageRegisterRow) {
 	return [
 		String(row.serial),
@@ -160,8 +165,9 @@ export async function exportWageRegisterPdf(register: WageRegisterResponse, acti
 	doc.text(`Name of Contractor :- ${register.header.contractorName}`, margin, y);
 	doc.text(`Period- ${register.periodLabel}`, pageWidth - margin, y, { align: 'right' });
 	y += 5;
-	if (register.header.loaReference) {
-		doc.text(register.header.loaReference, margin, y);
+	const poLine = registerPoLine(register);
+	if (poLine) {
+		doc.text(poLine, margin, y);
 		y += 3;
 	}
 
@@ -283,7 +289,8 @@ export async function exportWageRegisterExcel(register: WageRegisterResponse) {
 		font: font(11, { bold: true }),
 		alignment: { horizontal: 'right', vertical: 'middle' },
 	});
-	if (register.header.loaReference) banner(register.header.loaReference, 11, { align: 'left' });
+	const poLine = registerPoLine(register);
+	if (poLine) banner(poLine, 11, { align: 'left' });
 
 	const headingRow = sheet.addRow(headings.map((heading) => heading.title));
 	headingRow.height = 34;

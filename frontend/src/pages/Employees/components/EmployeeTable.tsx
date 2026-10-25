@@ -48,7 +48,7 @@ type EmployeeTableProps = {
   onDownloadLetter?: (employee: Employee) => void;
   onPrintLetter?: (employee: Employee) => void;
   onMove?: (employee: Employee) => void;
-  deleteLabel: string;
+  deleteLabel?: string;
   title?: string;
   actions?: ReactNode;
 };

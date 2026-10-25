@@ -43,7 +43,7 @@ function formatMoney(value?: number) {
 	return typeof value === 'number' && Number.isFinite(value) ? currency.format(value) : '';
 }
 
-function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit }: EmployeeDetailsPageProps) {
+function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoiningLetter, isPreparingLetter = false }: EmployeeDetailsPageProps) {
 	const isAdmin = role === 'admin';
 	const { options: masterOptions } = useMasterDataOptions();
 	const maskedAccount = employee.bankAccountNumber ? `•••• ${employee.bankAccountNumber.slice(-4)}` : '';

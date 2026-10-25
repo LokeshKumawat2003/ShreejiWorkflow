@@ -73,6 +73,7 @@ function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }
       borderRight="1px solid"
       borderColor="slate.200"
       overflowY="auto"
+      sx={{ scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}
     >
       <HStack h="72px" px={5} spacing={3} flexShrink={0}>
         <Flex

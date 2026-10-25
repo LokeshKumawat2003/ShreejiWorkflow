@@ -126,7 +126,15 @@ function DashboardPage({ role }: DashboardPageProps) {
           role={role}
           onOpenSidebar={sidebar.onOpen}
         />
-        <Box as="main" flex="1" minH={0} overflowY="auto" px={{ base: 2, md: 3 }} py={{ base: 7, md: 8 }}>
+        <Box
+          as="main"
+          flex="1"
+          minH={0}
+          overflowY="auto"
+          px={{ base: 2, md: 3 }}
+          py={{ base: 7, md: 8 }}
+          sx={{ scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}
+        >
           <Stack maxW="1200px" mx="auto" spacing={8}>
             {activeTab === 'Dashboard' ? (
               <DashboardHome user={user} role={role} onNavigate={setActiveTab} />

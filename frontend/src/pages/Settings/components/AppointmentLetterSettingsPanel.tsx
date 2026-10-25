@@ -30,7 +30,7 @@ function AppointmentLetterSettingsPanel() {
 		<DocumentSettingsLayout
 			icon={LetterIcon}
 			title="Appointment letter"
-			subtitle="Letterhead and standard wording. Employee, joining date and job location are filled in automatically."
+			subtitle="Letterhead and standard wording. Employee, joining date and job location (the location's address) are filled in automatically."
 			isLoading={settings.isLoading}
 			isSaving={settings.isSaving}
 			isDirty={settings.isDirty}
@@ -76,7 +76,7 @@ function AppointmentLetterSettingsPanel() {
 						<PreviewRow label="Date of Joining" value="01-08-2026" />
 						<PreviewRow label="Job Title" value="Waiter / Helper ( Un-Skilled) Food Service" bold />
 						<PreviewRow label="Salary" value={values.salaryText} />
-						<PreviewRow label="Job Location" value="Client organization, site address" />
+						<PreviewRow label="Job Location" value="Location address" />
 						<PreviewRow label="Working Hours" value={values.workingHours} />
 						<PreviewRow label="Leave Policy" value={values.leavePolicy} />
 					</Box>

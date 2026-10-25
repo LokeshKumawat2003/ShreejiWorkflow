@@ -15,7 +15,7 @@ function WageRegisterSettingsPanel() {
 		<DocumentSettingsLayout
 			icon={<Text as="span" fontSize="sm" fontWeight="800" lineHeight="1">XVII</Text>}
 			title="Wage register"
-			subtitle="FORM XVII printed from a location's payroll tab. Work name, address and LOA come from the location."
+			subtitle="FORM XVII printed from a location's payroll tab. Work name, address and PO number come from the location."
 			isLoading={settings.isLoading}
 			isSaving={settings.isSaving}
 			isDirty={settings.isDirty}

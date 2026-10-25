@@ -47,12 +47,8 @@ function jobTitleOf(employee: Employee, location: OrganizationLocation) {
   return [positionOf(employee, location), employee.department?.replace(/\s+/g, ' ').trim()].filter(Boolean).join(' ');
 }
 
-function jobLocationOf(employee: Employee, location: OrganizationLocation) {
-  const organization = employee.organizationName?.trim();
-  const site = (location.address || location.name || '').replace(/\s*\n\s*/g, ', ').trim();
-  if (!organization) return site;
-  if (!site) return organization;
-  return `${organization}${/[.,]$/.test(organization) ? ' ' : ', '}${site}`;
+function jobLocationOf(location: OrganizationLocation) {
+  return (location.address || '').replace(/\s*\n\s*/g, ', ').trim();
 }
 
 function setFont(pdf: PdfDocument, bold = false, size = BODY_SIZE) {
@@ -187,7 +183,7 @@ function addAppointmentLetter(
   const joiningDate = assignedDate || formatDate(employee.dateOfJoining) || 'To be confirmed';
   const optionalRows: [string, string][] = [
     ['Salary', settings.salaryText.trim()],
-    ['Job Location', jobLocationOf(employee, location)],
+    ['Job Location', jobLocationOf(location)],
     ['Working Hours', settings.workingHours.trim()],
     ['Leave Policy', settings.leavePolicy.trim()],
   ];

@@ -1,4 +1,5 @@
 import type { WageRegisterResponse, WageRegisterRow } from '../../../services/attendanceService';
+import { createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 export function formatRegisterNumber(value: number, decimals: 'auto' | 0 | 2 = 'auto') {
@@ -245,10 +246,9 @@ const NUMBER_FORMATS = ['0', '@', '@', '0', 'General', 'General', '0.00', '0.00'
 const TOTAL_NUMBER_FORMATS = ['@', '@', '@', '0', '@', 'General', '0', '0', '0', '0', '0'];
 
 export async function exportWageRegisterExcel(register: WageRegisterResponse) {
-	const { default: ExcelJS } = await import('exceljs');
 	const headings = registerHeadings(register);
 	const lastColumn = headings.length;
-	const workbook = new ExcelJS.Workbook();
+	const workbook = await createWorkbook();
 	workbook.creator = register.header.contractorName;
 	const sheet = workbook.addWorksheet('FORM XVII', {
 		pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
@@ -365,13 +365,5 @@ export async function exportWageRegisterExcel(register: WageRegisterResponse) {
 
 	sheet.pageSetup.printTitlesRow = `${headingRow.number}:${letterRow.number}`;
 
-	const buffer = await workbook.xlsx.writeBuffer();
-	const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-	const link = document.createElement('a');
-	link.href = url;
-	link.download = fileName(register, 'xlsx');
-	document.body.appendChild(link);
-	link.click();
-	link.remove();
-	window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+	await downloadWorkbook(workbook, fileName(register, 'xlsx'));
 }

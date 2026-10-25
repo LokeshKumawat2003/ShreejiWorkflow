@@ -1,4 +1,5 @@
 import type { AttendanceRegister, AttendanceRegisterRow } from '../../../services/attendanceService';
+import { addRowsSheet, createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 const TITLE = 'Register of Attendance';
@@ -146,7 +147,7 @@ export async function exportRegisterPdf(register: AttendanceRegister, action: Pd
 }
 
 export async function exportRegisterExcel(register: AttendanceRegister) {
-  const XLSX = await import('xlsx');
+  const workbook = await createWorkbook();
   const days = dayNumbers(register);
   const lastColumn = 3 + days.length;
   const splitColumn = Math.max(4, lastColumn - 12);
@@ -195,30 +196,18 @@ export async function exportRegisterExcel(register: AttendanceRegister) {
     singleRow('MANAGER/PROPRIETOR'),
   ];
 
-  const sheet = XLSX.utils.aoa_to_sheet(aoa);
-  const merge = (row: number, startColumn: number, endColumn: number) => ({
-    s: { r: row, c: startColumn },
-    e: { r: row, c: endColumn },
-  });
-  sheet['!merges'] = [
-    merge(0, 0, lastColumn),
-    merge(1, 0, lastColumn),
-    merge(2, 0, lastColumn),
-    merge(3, 0, splitColumn - 1),
-    merge(3, splitColumn, lastColumn),
-    merge(4, 0, splitColumn - 1),
-    merge(4, splitColumn, lastColumn),
-    merge(totalIndex, 1, lastColumn - 1),
-  ];
-  sheet['!cols'] = [
-    { wch: 5 },
-    { wch: 38 },
-    { wch: 13 },
-    ...days.map(() => ({ wch: 3.5 })),
-    { wch: 9 },
-  ];
+  const sheet = addRowsSheet(workbook, 'Form XVI', aoa, [5, 38, 13, ...days.map(() => 3.5), 9]);
+  const merge = (row: number, startColumn: number, endColumn: number) => {
+    sheet.mergeCells(row + 1, startColumn + 1, row + 1, endColumn + 1);
+  };
+  merge(0, 0, lastColumn);
+  merge(1, 0, lastColumn);
+  merge(2, 0, lastColumn);
+  merge(3, 0, splitColumn - 1);
+  merge(3, splitColumn, lastColumn);
+  merge(4, 0, splitColumn - 1);
+  merge(4, splitColumn, lastColumn);
+  merge(totalIndex, 1, lastColumn - 1);
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Form XVI');
-  XLSX.writeFile(workbook, `${fileBaseName(register)}.xlsx`);
+  await downloadWorkbook(workbook, `${fileBaseName(register)}.xlsx`);
 }

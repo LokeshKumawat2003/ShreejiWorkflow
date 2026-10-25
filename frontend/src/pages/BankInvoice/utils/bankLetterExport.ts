@@ -1,6 +1,7 @@
 import type { BankPaymentRow } from '../../../services/attendanceService';
 import type { BankLetterSettings } from '../../../services/settingsService';
 import { fitInto, loadSignatureImage } from '../../Payroll/utils/wageRegisterExport';
+import { createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 
 export type BankLetterDetails = {
@@ -172,9 +173,8 @@ export async function exportBankLetterPdf(details: BankLetterDetails, action: Pd
 }
 
 export async function exportBankLetterExcel(details: BankLetterDetails) {
-	const { default: ExcelJS } = await import('exceljs');
 	const { letter } = details;
-	const workbook = new ExcelJS.Workbook();
+	const workbook = await createWorkbook();
 	workbook.creator = letter.companyName;
 	const sheet = workbook.addWorksheet('Bank letter', {
 		pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
@@ -245,13 +245,5 @@ export async function exportBankLetterExcel(details: BankLetterDetails) {
 	}
 	signatureLines(letter).forEach((text) => line(text, 10, { bold: true }));
 
-	const buffer = await workbook.xlsx.writeBuffer();
-	const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-	const link = document.createElement('a');
-	link.href = url;
-	link.download = fileName(details, 'xlsx');
-	document.body.appendChild(link);
-	link.click();
-	link.remove();
-	window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+	await downloadWorkbook(workbook, fileName(details, 'xlsx'));
 }

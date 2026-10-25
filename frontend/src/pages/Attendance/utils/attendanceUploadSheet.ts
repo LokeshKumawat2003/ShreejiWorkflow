@@ -1,4 +1,5 @@
 import { getAttendanceRegister, type AttendanceRegister } from '../../../services/attendanceService';
+import { addRowsSheet, createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 
 type SheetScope = { organizationId: string; locationId: string };
 
@@ -25,47 +26,43 @@ function columnName(index: number) {
 }
 
 export async function downloadMonthUploadSheet(scope: SheetScope, month: string) {
-  const [register, XLSX] = await Promise.all([
+  const [register, workbook] = await Promise.all([
     getAttendanceRegister({ ...scope, month }),
-    import('xlsx'),
+    createWorkbook(),
   ]);
   const days = Array.from({ length: register.daysInMonth }, (_, index) => index + 1);
-  const headerIndex = 5;
+  const firstDataRow = 7;
+  const totalColumn = 5 + days.length;
   const firstDay = columnName(4);
   const lastDay = columnName(3 + days.length);
-  const aoa: (string | number)[][] = [
+  const sheet = addRowsSheet(workbook, 'Attendance', [
     ['Register of Attendance (Form XVI)'],
     [`Period: ${register.periodLabel}`],
     [siteLine(register)],
     ['P = Present, A = Absent. Days already saved are filled in; fill the blank days and upload this file.'],
     [],
     ['S.no', 'Name of Employees', "Father's name", 'Category', ...days, 'Total Present'],
-    ...register.rows.map((row) => [row.serial, row.name, row.parentName, row.skillCategory, ...row.days, row.totalPresent]),
-  ];
-  const sheet = XLSX.utils.aoa_to_sheet(aoa);
+    ...register.rows.map((row) => [row.serial, row.name, row.parentName, row.skillCategory, ...row.days]),
+  ], [6, 26, 20, 13, ...days.map(() => 4), 13]);
   register.rows.forEach((row, index) => {
-    const excelRow = headerIndex + 2 + index;
-    sheet[XLSX.utils.encode_cell({ r: headerIndex + 1 + index, c: 4 + days.length })] = {
-      t: 'n',
-      v: row.totalPresent,
-      f: `COUNTIF(${firstDay}${excelRow}:${lastDay}${excelRow},"P")`,
+    const excelRow = firstDataRow + index;
+    sheet.getCell(excelRow, totalColumn).value = {
+      formula: `COUNTIF(${firstDay}${excelRow}:${lastDay}${excelRow},"P")`,
+      result: row.totalPresent,
     };
   });
-  sheet['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 20 }, { wch: 13 }, ...days.map(() => ({ wch: 4 })), { wch: 13 }];
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Attendance');
-  XLSX.writeFile(workbook, `attendance-${fileSlug(register)}-${month}.xlsx`);
+  await downloadWorkbook(workbook, `attendance-${fileSlug(register)}-${month}.xlsx`);
 }
 
 export async function downloadDayUploadSheet(scope: SheetScope, date: string) {
-  const [register, XLSX] = await Promise.all([
+  const [register, workbook] = await Promise.all([
     getAttendanceRegister({ ...scope, month: date.slice(0, 7) }),
-    import('xlsx'),
+    createWorkbook(),
   ]);
   const dayIndex = Number(date.slice(8, 10)) - 1;
   const [year, month, day] = date.split('-');
-  const aoa: (string | number)[][] = [
+  addRowsSheet(workbook, 'Attendance', [
     ['Daily Attendance Sheet'],
     [`Period: ${register.periodLabel}`],
     [`Date: ${day}-${month}-${year}`],
@@ -74,11 +71,7 @@ export async function downloadDayUploadSheet(scope: SheetScope, date: string) {
     [],
     ['S.no', 'Name of Employees', "Father's name", 'Category', 'Status'],
     ...register.rows.map((row) => [row.serial, row.name, row.parentName, row.skillCategory, row.days[dayIndex] || '']),
-  ];
-  const sheet = XLSX.utils.aoa_to_sheet(aoa);
-  sheet['!cols'] = [{ wch: 6 }, { wch: 26 }, { wch: 20 }, { wch: 13 }, { wch: 10 }];
+  ], [6, 26, 20, 13, 10]);
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Attendance');
-  XLSX.writeFile(workbook, `attendance-${fileSlug(register)}-${date}.xlsx`);
+  await downloadWorkbook(workbook, `attendance-${fileSlug(register)}-${date}.xlsx`);
 }

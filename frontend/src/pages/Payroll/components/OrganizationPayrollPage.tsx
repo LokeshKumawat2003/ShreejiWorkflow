@@ -2,6 +2,7 @@ import { DownloadIcon } from '@chakra-ui/icons';
 import { Stack, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
 import { ActionButton, ContentCard, FilterBar, PrintIcon, WalletIcon } from '../../../components/ui';
+import { addRowsSheet, addTableSheet, createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { ApiError } from '../../../services/api';
 import type { PayrollResponse } from '../../../services/attendanceService';
@@ -85,37 +86,28 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
   }
 
   async function exportExcel(payroll: PayrollResponse) {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.utils.book_new();
-    const detailRows = payroll.lines.map((line) => ({
-      Employee: line.employeeName,
-      Email: line.employeeEmail,
-      Department: line.department,
-      'Job title': line.jobTitle,
-      Currency: line.currency,
-      'Daily salary': line.dailySalary,
-      Present: line.presentDays,
-      Absent: line.absentDays,
-      'Paid days': line.paidDays,
-      'Gross pay': line.grossPay,
-    }));
-    const detailsSheet = XLSX.utils.json_to_sheet(detailRows);
-    detailsSheet['!cols'] = [
-      { wch: 24 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 12 }, { wch: 16 },
-      { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 16 },
-    ];
-    XLSX.utils.book_append_sheet(workbook, detailsSheet, 'Payroll');
+    const workbook = await createWorkbook();
+    addTableSheet(workbook, 'Payroll', [
+      { header: 'Employee', width: 24, value: (line) => line.employeeName },
+      { header: 'Email', width: 30, value: (line) => line.employeeEmail },
+      { header: 'Department', width: 20, value: (line) => line.department },
+      { header: 'Job title', width: 20, value: (line) => line.jobTitle },
+      { header: 'Currency', width: 12, value: (line) => line.currency },
+      { header: 'Daily salary', width: 16, value: (line) => line.dailySalary },
+      { header: 'Present', width: 10, value: (line) => line.presentDays },
+      { header: 'Absent', width: 10, value: (line) => line.absentDays },
+      { header: 'Paid days', width: 12, value: (line) => line.paidDays },
+      { header: 'Gross pay', width: 16, value: (line) => line.grossPay },
+    ], payroll.lines);
 
-    const totalsSheet = XLSX.utils.aoa_to_sheet([
+    addRowsSheet(workbook, 'Totals', [
       ['Payroll totals'],
       [`Period: ${fromDate} to ${toDate}`],
       [],
       ['Currency', 'Total payroll'],
       ...payroll.totals.map(({ currency, total }) => [currency, total]),
-    ]);
-    totalsSheet['!cols'] = [{ wch: 18 }, { wch: 20 }];
-    XLSX.utils.book_append_sheet(workbook, totalsSheet, 'Totals');
-    XLSX.writeFile(workbook, `${getExportFilename(fromDate, toDate)}.xlsx`);
+    ], [18, 20]);
+    await downloadWorkbook(workbook, `${getExportFilename(fromDate, toDate)}.xlsx`);
   }
 
   return (

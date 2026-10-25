@@ -18,6 +18,7 @@ import { ApiError } from '../../services/api';
 import type { PayrollResponse } from '../../services/attendanceService';
 import { listEmployees } from '../../services/employeeService';
 import type { Employee } from '../../types';
+import { addRowsSheet, addTableSheet, createWorkbook, downloadWorkbook } from '../../utils/excelOutput';
 import { PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './components/PayrollShared';
 import { usePayroll, type PayrollQuery } from './hooks/usePayroll';
 import { downloadSalarySlipsPdf } from './utils/salarySlipPdf';
@@ -205,44 +206,35 @@ function AdminPayrollPage() {
   }
 
   async function exportExcel(payroll: PayrollResponse) {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.utils.book_new();
-    const detailRows = payroll.lines.map((line) => ({
-      Employee: line.employeeName,
-      Email: line.employeeEmail,
-      Organization: line.organizationName || 'All organizations',
-      Currency: line.currency,
-      'Bank name': line.bankName,
-      Branch: line.bankBranch,
-      'Account holder': line.bankAccountHolder,
-      'Account number': line.bankAccountNumber,
-      'Routing / IFSC': line.bankRoutingCode,
-      'Daily salary': line.dailySalary,
-      Present: line.presentDays,
-      Absent: line.absentDays,
-      'Paid days': line.paidDays,
-      'Gross pay': line.grossPay,
-      'Pay period': `${payroll.fromDate} to ${payroll.toDate}`,
-    }));
-    const detailSheet = XLSX.utils.json_to_sheet(detailRows);
-    detailSheet['!cols'] = [
-      { wch: 24 }, { wch: 30 }, { wch: 24 }, { wch: 12 }, { wch: 20 },
-      { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 18 }, { wch: 16 },
-      { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 26 },
-    ];
-    XLSX.utils.book_append_sheet(workbook, detailSheet, 'Payroll');
+    const workbook = await createWorkbook();
+    const payPeriod = `${payroll.fromDate} to ${payroll.toDate}`;
+    addTableSheet(workbook, 'Payroll', [
+      { header: 'Employee', width: 24, value: (line) => line.employeeName },
+      { header: 'Email', width: 30, value: (line) => line.employeeEmail },
+      { header: 'Organization', width: 24, value: (line) => line.organizationName || 'All organizations' },
+      { header: 'Currency', width: 12, value: (line) => line.currency },
+      { header: 'Bank name', width: 20, value: (line) => line.bankName },
+      { header: 'Branch', width: 18, value: (line) => line.bankBranch },
+      { header: 'Account holder', width: 24, value: (line) => line.bankAccountHolder },
+      { header: 'Account number', width: 20, value: (line) => line.bankAccountNumber },
+      { header: 'Routing / IFSC', width: 18, value: (line) => line.bankRoutingCode },
+      { header: 'Daily salary', width: 16, value: (line) => line.dailySalary },
+      { header: 'Present', width: 10, value: (line) => line.presentDays },
+      { header: 'Absent', width: 10, value: (line) => line.absentDays },
+      { header: 'Paid days', width: 12, value: (line) => line.paidDays },
+      { header: 'Gross pay', width: 16, value: (line) => line.grossPay },
+      { header: 'Pay period', width: 26, value: () => payPeriod },
+    ], payroll.lines);
 
-    const totalsSheet = XLSX.utils.aoa_to_sheet([
+    addRowsSheet(workbook, 'Totals', [
       ['Organization scope', 'All organizations'],
-      ['Pay period', `${payroll.fromDate} to ${payroll.toDate}`],
+      ['Pay period', payPeriod],
       ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected employees`],
       [],
       ['Currency', 'Total payable'],
       ...payroll.totals.map(({ currency, total }) => [currency, total]),
-    ]);
-    totalsSheet['!cols'] = [{ wch: 24 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(workbook, totalsSheet, 'Totals');
-    XLSX.writeFile(workbook, `payroll-${payroll.fromDate}-to-${payroll.toDate}.xlsx`);
+    ], [24, 30]);
+    await downloadWorkbook(workbook, `payroll-${payroll.fromDate}-to-${payroll.toDate}.xlsx`);
   }
 
   const runSummary = scope === 'all'

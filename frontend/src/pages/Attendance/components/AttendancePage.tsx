@@ -18,6 +18,7 @@ import {
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import { ActionButton, FilterInput, PrintIcon } from '../../../components/ui';
+import { addTableSheet, createWorkbook, downloadWorkbook } from '../../../utils/excelOutput';
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { ApiError } from '../../../services/api';
 import { listAttendance, markAttendance, type AttendanceEntry, type AttendanceStatus } from '../../../services/attendanceService';
@@ -118,18 +119,15 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
   }
 
   async function exportExcel() {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.json_to_sheet(entries.map((entry) => ({
-      Employee: entry.name,
-      Email: entry.email,
-      Department: entry.department || '',
-      'Job title': entry.jobTitle || '',
-      Status: entry.status ? entry.status.toUpperCase() : 'NOT MARKED',
-    })));
-    sheet['!cols'] = [{ wch: 24 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(workbook, sheet, 'Attendance');
-    XLSX.writeFile(workbook, `attendance-${date}.xlsx`);
+    const workbook = await createWorkbook();
+    addTableSheet(workbook, 'Attendance', [
+      { header: 'Employee', width: 24, value: (entry) => entry.name },
+      { header: 'Email', width: 30, value: (entry) => entry.email },
+      { header: 'Department', width: 20, value: (entry) => entry.department || '' },
+      { header: 'Job title', width: 20, value: (entry) => entry.jobTitle || '' },
+      { header: 'Status', width: 14, value: (entry) => (entry.status ? entry.status.toUpperCase() : 'NOT MARKED') },
+    ], entries);
+    await downloadWorkbook(workbook, `attendance-${date}.xlsx`);
   }
 
   async function updateAttendance(employeeId: string, status: AttendanceStatus) {

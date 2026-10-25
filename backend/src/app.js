@@ -1,5 +1,6 @@
 const cors = require('cors');
 const express = require('express');
+const helmet = require('helmet');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
 const attendanceRoutes = require('./routes/attendanceRoutes');
@@ -18,6 +19,16 @@ function createApp() {
   if (trustProxyHops > 0) {
     app.set('trust proxy', trustProxyHops);
   }
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+  }));
 
   app.use(cors({
     origin(origin, callback) {

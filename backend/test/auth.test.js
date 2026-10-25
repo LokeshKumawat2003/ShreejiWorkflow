@@ -48,6 +48,23 @@ test('health endpoint works without MongoDB', async (t) => {
   assert.deepEqual(await response.json(), { status: 'ok', database: 'disconnected' });
 });
 
+test('API responses include Helmet security headers', async (t) => {
+  process.env.NODE_ENV = 'test';
+  const server = createApp().listen(0);
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  const response = await fetch(`http://127.0.0.1:${server.address().port}/api/health`, {
+    headers: { origin: 'http://localhost:5173' },
+  });
+  assert.equal(response.headers.get('x-powered-by'), null);
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
+  assert.equal(response.headers.get('content-security-policy'), "default-src 'none';frame-ancestors 'none'");
+  assert.match(response.headers.get('strict-transport-security'), /max-age=\d+/);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'http://localhost:5173');
+});
+
 test('login is rate limited per email and per IP', async (t) => {
   const { resetAuthRateLimits } = require('../src/middleware/rateLimit');
   process.env.NODE_ENV = 'test';

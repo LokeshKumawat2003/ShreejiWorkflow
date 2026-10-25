@@ -1,4 +1,4 @@
-import { CalendarIcon, ChevronLeftIcon, EditIcon, EmailIcon, InfoOutlineIcon, LockIcon, PhoneIcon } from '@chakra-ui/icons';
+import { CalendarIcon, ChevronLeftIcon, DownloadIcon, EditIcon, EmailIcon, InfoOutlineIcon, LockIcon, PhoneIcon } from '@chakra-ui/icons';
 import {
 	Avatar,
 	Box,
@@ -11,9 +11,10 @@ import {
 	Text,
 } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
-import { ActionButton, BuildingIcon, ContentCard, PeopleIcon, StatusBadge } from '../../../components/ui';
+import { ActionButton, BuildingIcon, ContentCard, PeopleIcon, PrintIcon, StatusBadge } from '../../../components/ui';
 import useMasterDataOptions, { masterLabel } from '../../../hooks/useMasterDataOptions';
 import type { Employee, UserRole } from '../../../types';
+import type { PdfAction } from '../../../utils/pdfOutput';
 
 type EmployeeDetailsPageProps = {
 	employee: Employee;
@@ -21,6 +22,8 @@ type EmployeeDetailsPageProps = {
 	role: UserRole;
 	onBack: () => void;
 	onEdit: () => void;
+	onJoiningLetter?: (action: PdfAction) => void;
+	isPreparingLetter?: boolean;
 };
 
 const currency = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 });
@@ -106,6 +109,16 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 							<ActionButton borderRadius="full" leftIcon={<EditIcon />} onClick={onEdit} flexShrink={0}>
 								Edit employee
 							</ActionButton>
+						)}
+						{onJoiningLetter && (
+							<HStack spacing={2} flexShrink={0} flexWrap="wrap">
+								<ActionButton borderRadius="full" leftIcon={<DownloadIcon />} isLoading={isPreparingLetter} isDisabled={isLoading} onClick={() => onJoiningLetter('download')}>
+									Download joining letter
+								</ActionButton>
+								<ActionButton tone="neutral" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={isLoading || isPreparingLetter} onClick={() => onJoiningLetter('print')}>
+									Print
+								</ActionButton>
+							</HStack>
 						)}
 					</Stack>
 

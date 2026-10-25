@@ -20,6 +20,7 @@ import {
   TagCloseButton,
   TagLabel,
   Text,
+  useBreakpointValue,
   Wrap,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
@@ -62,6 +63,7 @@ function AssignEmployeeDialog({
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const modalSize = useBreakpointValue({ base: 'full', md: '3xl', lg: '4xl' }) ?? '4xl';
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -131,16 +133,16 @@ function AssignEmployeeDialog({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      size="4xl"
+      size={modalSize}
       closeOnEsc={!isSaving}
       closeOnOverlayClick={!isSaving}
       scrollBehavior="inside"
     >
       <ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
-      <ModalContent borderRadius="xl" overflow="hidden" boxShadow="0 24px 64px rgba(15, 23, 42, 0.2)">
+      <ModalContent borderRadius={{ base: 0, md: 'xl' }} overflow="hidden" boxShadow="0 24px 64px rgba(15, 23, 42, 0.2)">
         <ModalHeader pb={1} pr={12} fontSize="xl" color="slate.900">Assign employee</ModalHeader>
         <ModalCloseButton top={5} right={5} borderRadius="md" isDisabled={isSaving} />
-        <ModalBody pt={0} pb={6}>
+        <ModalBody pt={0} pb={6} px={{ base: 4, md: 6 }}>
           <Text mb={5} fontSize="sm" color="slate.500">
             Select available {locationDesignation ? `${locationDesignation} ` : ''}employees to add to {organizationName}.
           </Text>
@@ -179,62 +181,82 @@ function AssignEmployeeDialog({
                       </Wrap>
                     </Box>
                   )}
-                  <Box border="1px solid" borderColor="slate.200" borderRadius="md" maxH="360px" overflowY="auto" bg="slate.50" p={3}>
-                    <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={3}>
+                  <Box
+                    border="1px solid"
+                    borderColor="slate.200"
+                    borderRadius="md"
+                    maxH={{ base: '50vh', md: '360px' }}
+                    overflowY="auto"
+                    bg="slate.50"
+                    p={{ base: 2, md: 3 }}
+                  >
+                    <SimpleGrid templateColumns="repeat(auto-fill, minmax(min(100%, 260px), 1fr))" spacing={{ base: 2, md: 3 }}>
                       {employees.map((employee) => {
                         const isSelected = selectedEmployees.some(({ id }) => id === employee.id);
                         return (
-                          <Box
+                          <HStack
+                            as="label"
                             key={employee.id}
-                            minH="76px"
-                            display="flex"
-                            alignItems="center"
+                            spacing={3}
+                            minW={0}
                             px={3}
-                            py={2}
+                            py={2.5}
+                            cursor="pointer"
                             border="1px solid"
-                            borderColor={isSelected ? 'brand.200' : 'slate.200'}
+                            borderColor={isSelected ? 'brand.300' : 'slate.200'}
                             borderRadius="md"
                             bg={isSelected ? 'brand.50' : 'white'}
-                            transition="background 0.15s, border-color 0.15s"
-                            _hover={{ borderColor: 'brand.300', bg: isSelected ? 'brand.50' : 'white' }}
+                            boxShadow={isSelected ? '0 0 0 1px var(--chakra-colors-brand-300)' : 'none'}
+                            transition="background 0.15s, border-color 0.15s, box-shadow 0.15s"
+                            _hover={{ borderColor: 'brand.300' }}
                           >
                             <Checkbox
-                              w="100%"
+                              flexShrink={0}
                               colorScheme="brand"
                               isChecked={isSelected}
+                              aria-label={`Select ${employee.name}`}
                               onChange={(event) => toggleEmployee(employee, event.target.checked)}
-                            >
-                              <HStack spacing={3} ml={2} minW={0}>
-                                <Avatar size="sm" name={employee.name} />
-                                <Box minW={0}>
-                                  <Text fontSize="sm" fontWeight="600" color="slate.900" noOfLines={1}>{employee.name}</Text>
-                                  <Text fontSize="xs" color="slate.500" noOfLines={1}>
-                                    {employee.email}{employee.designation ? ` · ${employee.designation}` : ''}
-                                  </Text>
-                                </Box>
-                              </HStack>
-                            </Checkbox>
-                          </Box>
+                            />
+                            <Avatar size="sm" name={employee.name} flexShrink={0} />
+                            <Box flex="1" minW={0}>
+                              <Text fontSize="sm" fontWeight="600" color="slate.900" noOfLines={1} title={employee.name}>
+                                {employee.name}
+                              </Text>
+                              <Text fontSize="xs" color="slate.500" noOfLines={1} wordBreak="break-all" title={employee.email}>
+                                {employee.email}
+                              </Text>
+                              {employee.designation && (
+                                <Text fontSize="xs" color="slate.400" noOfLines={1} textTransform="capitalize">
+                                  {employee.designation}
+                                </Text>
+                              )}
+                            </Box>
+                          </HStack>
                         );
                       })}
                     </SimpleGrid>
                   </Box>
-                <HStack justify="space-between">
+                <Stack
+                  direction={{ base: 'column', sm: 'row' }}
+                  justify="space-between"
+                  align={{ base: 'flex-start', sm: 'center' }}
+                  spacing={2}
+                >
                     <Text fontSize="sm" color="slate.500">
                       {total} available · {selectedEmployees.length} selected
                     </Text>
                   <Pagination currentPage={page} totalPages={totalPages} onPageChange={(value) => {
                     setPage(value);
                   }} />
-                </HStack>
+                </Stack>
                 <Text fontSize="xs" color="slate.500">Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, total)}</Text>
               </>
             )}
           </Stack>
         </ModalBody>
-        <ModalFooter gap={3} px={6} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
-          <Button variant="outline" onClick={onClose} isDisabled={isSaving}>Cancel</Button>
-          <Button colorScheme="brand" isLoading={isSaving} isDisabled={selectedEmployees.length === 0 || Boolean(loadError)} onClick={() => void handleAssign()}>
+        <ModalFooter gap={3} px={{ base: 4, md: 6 }} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
+          <Button flex={{ base: 1, sm: 'initial' }} variant="outline" onClick={onClose} isDisabled={isSaving}>Cancel</Button>
+          <Button flex={{ base: 1, sm: 'initial' }} colorScheme="brand" isLoading={isSaving} isDisabled={selectedEmployees.length === 0 || Boolean(loadError)} onClick={() => void handleAssign()}>
             Add {selectedEmployees.length || ''} to {locationDesignation ? 'location' : 'organization'}
           </Button>
         </ModalFooter>

@@ -5,6 +5,7 @@ import {
   createEmployee,
   deleteEmployee,
   getEmployee,
+  importEmployees,
   listEmployees,
   removeEmployeesFromOrganization,
   transferEmployees,
@@ -104,6 +105,15 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     return employee;
   }
 
+  async function importFile(file: File) {
+    const result = await importEmployees(file, organizationId);
+    if (result.created > 0) {
+      setPage(1);
+      setRefreshVersion((current) => current + 1);
+    }
+    return result;
+  }
+
   async function getDetails(id: string) {
     return getEmployee(id);
   }
@@ -155,6 +165,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     setSort: changeSort,
     setPage: changePage,
     create,
+    importFile,
     getDetails,
     update,
     assignMany,

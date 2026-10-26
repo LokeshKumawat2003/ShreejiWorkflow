@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update } = require('../controllers/employeeController');
+const { assign, create, get, importFile, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update } = require('../controllers/employeeController');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { httpError } = require('../utils/httpError');
 
@@ -25,9 +25,30 @@ function parseAppointmentLetter(req, res, next) {
 	});
 }
 
+const uploadEmployeeSheet = multer({
+	storage: multer.memoryStorage(),
+	limits: { fileSize: 5 * 1024 * 1024 },
+	fileFilter(req, file, callback) {
+		if (!/\.(xlsx|xls|csv)$/i.test(file.originalname || '')) {
+			return callback(httpError(400, 'Upload the employee Excel file (.xlsx, .xls or .csv).'));
+		}
+		return callback(null, true);
+	},
+});
+
+function parseEmployeeSheet(req, res, next) {
+	uploadEmployeeSheet.single('file')(req, res, (error) => {
+		if (!error) return next();
+		if (error.statusCode) return next(error);
+		if (error.code === 'LIMIT_FILE_SIZE') return next(httpError(413, 'Employee Excel file must be 5 MB or smaller.'));
+		return next(httpError(400, 'Unable to read the employee Excel file.'));
+	});
+}
+
 router.use(requireAuth, requireRole('admin', 'organization'));
 router.get('/', list);
 router.post('/', create);
+router.post('/import', requireRole('admin'), parseEmployeeSheet, importFile);
 router.post('/assign', assign);
 router.post('/unassign', unassign);
 router.post('/transfer', requireRole('admin'), transfer);

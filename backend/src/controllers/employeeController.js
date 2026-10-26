@@ -8,6 +8,7 @@ const {
   unassignEmployees,
   updateEmployee,
 } = require('../services/employeeService');
+const { importEmployees } = require('../services/employeeImportService');
 const { sendAppointmentLetterEmail, sendOrganizationAppointmentLettersEmail } = require('../services/appointmentLetterEmailService');
 
 async function list(req, res) {
@@ -27,6 +28,10 @@ async function get(req, res) {
 async function update(req, res) {
   const employee = await updateEmployee(req.user, req.params.id, req.body || {});
   return res.json({ employee });
+}
+
+async function importFile(req, res) {
+  return res.json(await importEmployees(req.user, req.file, req.body || {}));
 }
 
 async function assign(req, res) {
@@ -66,4 +71,4 @@ async function sendOrganizationAppointmentLetters(req, res) {
   return res.json(result);
 }
 
-module.exports = { assign, create, get, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update };
+module.exports = { assign, create, get, importFile, list, remove, sendAppointmentLetter, sendOrganizationAppointmentLetters, transfer, unassign, update };

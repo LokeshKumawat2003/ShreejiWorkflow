@@ -79,6 +79,21 @@ export async function createEmployee(input: EmployeeInput) {
   return data.employee;
 }
 
+export type EmployeeImportResult = {
+  total: number;
+  created: number;
+  failed: { row: number; name: string; message: string }[];
+};
+
+export async function importEmployees(file: File, organizationId?: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('timeZone', timeZone());
+  if (organizationId) formData.append('organizationId', organizationId);
+  const { data } = await api.post<EmployeeImportResult>('/employees/import', formData);
+  return data;
+}
+
 export async function getEmployee(id: string) {
   const { data } = await api.get<EmployeeResponse>(`/employees/${id}`);
   return data.employee;

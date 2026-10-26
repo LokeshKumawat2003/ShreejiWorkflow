@@ -1,4 +1,4 @@
-import { AddIcon } from '@chakra-ui/icons';
+import { AddIcon, AttachmentIcon } from '@chakra-ui/icons';
 import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
 import { ApiError } from '../../services/api';
@@ -7,6 +7,7 @@ import AssignEmployeeDialog from './components/AssignEmployeeDialog';
 import DeleteEmployeeDialog from './components/DeleteEmployeeDialog';
 import EmployeeDetailsPage from './components/EmployeeDetailsPage';
 import EmployeeFormDialog from './components/EmployeeFormDialog';
+import EmployeeImportDialog from './components/EmployeeImportDialog';
 import EmployeeTable from './components/EmployeeTable';
 import { useEmployees } from './hooks/useEmployees';
 import type { EmployeeInput } from '../../services/employeeService';
@@ -23,6 +24,7 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
   const employees = useEmployees(organizationId, role === 'organization' || Boolean(organizationId));
   const formDialog = useDisclosure();
   const assignmentDialog = useDisclosure();
+  const importDialog = useDisclosure();
   const deleteDialog = useDisclosure();
   const [formEmployee, setFormEmployee] = useState<Employee | null>(null);
   const [deletingEmployee, setDeletingEmployee] = useState<Employee | null>(null);
@@ -139,6 +141,11 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
                 </Button>
               )}
               {role === 'admin' && (
+                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AttachmentIcon boxSize={3} />} variant="outline" onClick={importDialog.onOpen}>
+                  Import from Excel
+                </Button>
+              )}
+              {role === 'admin' && (
                 <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
                   Add Employee
                 </Button>
@@ -183,6 +190,14 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
         onClose={closeFormDialog}
         onSave={handleSave}
       />
+      {role === 'admin' && (
+        <EmployeeImportDialog
+          isOpen={importDialog.isOpen}
+          organizationName={organizationId ? organizationName || 'this organization' : undefined}
+          onClose={importDialog.onClose}
+          onImport={employees.importFile}
+        />
+      )}
       {role === 'admin' && organizationId && (
         <AssignEmployeeDialog
           isOpen={assignmentDialog.isOpen}

@@ -28,6 +28,7 @@ import {
 } from '@chakra-ui/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
+import FileDropzone from '../../../components/ui/FileDropzone';
 import Pagination from '../../../components/ui/Pagination';
 import { ApiError } from '../../../services/api';
 import {
@@ -124,7 +125,6 @@ function AttendanceMonthUpload({
   onBusyChange,
   onSaved,
 }: AttendanceMonthUploadProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const parseRequestRef = useRef(0);
   const [month, setMonth] = useState(initialMonth);
   const [file, setFile] = useState<File | null>(null);
@@ -352,24 +352,19 @@ function AttendanceMonthUpload({
             Download this location's Excel
           </Button>
         </HStack>
-        <Input
-          ref={fileInputRef}
-          aria-label="Monthly attendance sheet file"
-          type="file"
+        <FileDropzone
+          label="Monthly attendance sheet file"
           accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp"
-          h="40px"
-          pt="6px"
-          fontSize="sm"
+          hint="PDF, Excel, CSV or image (PNG, JPG, WEBP)"
+          file={file}
           isDisabled={isParsing || isSaving}
-          onChange={(event) => handleFileChange(event.target.files?.[0])}
+          onFileSelect={handleFileChange}
+          details={[
+            isParsing ? 'Reading sheet...' : '',
+            result?.sheetPeriod ? `Sheet period: ${result.sheetPeriod.label}` : '',
+            result ? `Day columns found: ${formatDayList(result.sheetDays)}` : '',
+          ].filter(Boolean).join(' · ')}
         />
-        {file ? (
-          <Text mt={2} fontSize="xs" color="slate.500">
-            {file.name}
-            {result?.sheetPeriod ? ` · Sheet period: ${result.sheetPeriod.label}` : ''}
-            {result ? ` · Day columns found: ${formatDayList(result.sheetDays)}` : ''}
-          </Text>
-        ) : null}
         {result?.warning ? <Alert mt={4} status="warning">{result.warning}</Alert> : null}
         {result && result.skippedFutureDays.length > 0 ? (
           <Alert mt={4} status="info">

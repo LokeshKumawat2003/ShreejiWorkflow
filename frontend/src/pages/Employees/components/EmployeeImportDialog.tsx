@@ -3,7 +3,6 @@ import {
   AlertIcon,
   Box,
   Button,
-  Input,
   ListItem,
   Modal,
   ModalBody,
@@ -23,8 +22,9 @@ import {
   Thead,
   Tr,
 } from '@chakra-ui/react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
+import FileDropzone from '../../../components/ui/FileDropzone';
 import { ApiError } from '../../../services/api';
 import type { EmployeeImportResult } from '../../../services/employeeService';
 import { downloadEmployeeImportTemplate } from '../utils/employeeImportTemplate';
@@ -41,7 +41,6 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 function EmployeeImportDialog({ isOpen, organizationName, onClose, onImport }: EmployeeImportDialogProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<EmployeeImportResult | null>(null);
   const [error, setError] = useState('');
@@ -53,7 +52,6 @@ function EmployeeImportDialog({ isOpen, organizationName, onClose, onImport }: E
     setFile(null);
     setResult(null);
     setError('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
     onClose();
   }
 
@@ -77,7 +75,6 @@ function EmployeeImportDialog({ isOpen, organizationName, onClose, onImport }: E
     try {
       setResult(await onImport(file));
       setFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     } catch (caught) {
       setError(errorMessage(caught, 'Unable to import employees from this file.'));
     } finally {
@@ -112,20 +109,18 @@ function EmployeeImportDialog({ isOpen, organizationName, onClose, onImport }: E
               </OrderedList>
             </Box>
 
-            <Input
-              ref={fileInputRef}
-              aria-label="Employee Excel file"
-              type="file"
+            <FileDropzone
+              label="Employee Excel file"
               accept=".xlsx,.xls,.csv"
-              h="40px"
-              pt="6px"
-              fontSize="sm"
+              hint="Excel (XLSX, XLS) or CSV"
+              file={file}
               isDisabled={isUploading}
-              onChange={(event) => {
-                setFile(event.target.files?.[0] || null);
+              onFileSelect={(selected) => {
+                setFile(selected);
                 setResult(null);
                 setError('');
               }}
+              onClear={() => setFile(null)}
             />
 
             {error ? <Alert status="error" borderRadius="md"><AlertIcon />{error}</Alert> : null}

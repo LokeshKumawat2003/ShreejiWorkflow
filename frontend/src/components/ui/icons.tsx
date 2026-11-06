@@ -44,6 +44,28 @@ export const WalletIcon = createIcon({
 	),
 });
 
+export const UploadIcon = createIcon({
+	displayName: 'UploadIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96ZM14 13v4h-4v-4H7l5-5 5 5h-3Z"
+		/>
+	),
+});
+
+export const FileIcon = createIcon({
+	displayName: 'FileIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Zm-1 7V3.5L18.5 9H13ZM8 13h8v2H8v-2Zm0 4h8v2H8v-2Z"
+		/>
+	),
+});
+
 export const BuildingIcon = createIcon({
 	displayName: 'BuildingIcon',
 	viewBox: '0 0 24 24',

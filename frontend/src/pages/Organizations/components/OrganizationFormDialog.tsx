@@ -100,7 +100,7 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
     }
     const websiteUrl = normalizeWebsite(website);
     if (websiteUrl === null) {
-      showError('Enter a valid website, for example example.com.');
+      showError('Enter a valid website, for example example.com, or leave it blank.');
       return;
     }
     setFormError('');
@@ -190,13 +190,13 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
                   <FormInput label="Industry" maxLength={100} placeholder="Hospitality, facility services..." value={industry} onChange={(event) => setIndustry(event.target.value)} />
                   <FormInput label="Phone number" type="tel" autoComplete="tel" maxLength={30} placeholder="+91 98765 43210" value={phone} onChange={(event) => setPhone(event.target.value)} />
                   <FormInput
-                    label="Website"
+                    label="Website (optional)"
                     inputMode="url"
                     autoComplete="url"
                     maxLength={200}
                     placeholder="example.com"
                     value={website}
-                    helperText="https:// is added automatically."
+                    helperText="Leave blank if the organization has no website. https:// is added automatically."
                     onChange={(event) => setWebsite(event.target.value)}
                   />
                 </SimpleGrid>

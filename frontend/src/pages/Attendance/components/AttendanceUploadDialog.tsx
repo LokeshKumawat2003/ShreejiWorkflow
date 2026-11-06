@@ -29,6 +29,7 @@ import {
 import { SearchIcon } from '@chakra-ui/icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
+import FileDropzone from '../../../components/ui/FileDropzone';
 import Pagination from '../../../components/ui/Pagination';
 import AttendanceMonthUpload from './AttendanceMonthUpload';
 import { downloadDayUploadSheet } from '../utils/attendanceUploadSheet';
@@ -114,11 +115,9 @@ function AttendanceUploadDialog({
   onClose,
   onSaved,
 }: AttendanceUploadDialogProps) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const parseRequestRef = useRef(0);
   const [file, setFile] = useState<File | null>(null);
   const [markDate, setMarkDate] = useState(date);
-  const [fileName, setFileName] = useState('');
   const [employees, setEmployees] = useState<AttendanceParseEmployee[]>([]);
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -181,7 +180,6 @@ function AttendanceUploadDialog({
   function resetState() {
     parseRequestRef.current += 1;
     setFile(null);
-    setFileName('');
     setEmployees([]);
     setRows([]);
     setIsParsing(false);
@@ -190,7 +188,6 @@ function AttendanceUploadDialog({
     setWarning('');
     setSheetPeriodLabel('');
     clearFilters();
-    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   function closeDialog() {
@@ -230,7 +227,6 @@ function AttendanceUploadDialog({
   function handleFileChange(sheet?: File) {
     if (!sheet) return;
     setFile(sheet);
-    setFileName(sheet.name);
     void readSheet(sheet, markDate);
   }
 
@@ -370,23 +366,15 @@ function AttendanceUploadDialog({
               Download this location's Excel
             </Button>
           </HStack>
-          <Input
-            ref={fileInputRef}
-            aria-label="Attendance sheet file"
-            type="file"
+          <FileDropzone
+            label="Attendance sheet file"
             accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.webp"
-            h="40px"
-            pt="6px"
-            fontSize="sm"
+            hint="PDF, Excel, CSV or image (PNG, JPG, WEBP)"
+            file={file}
             isDisabled={isParsing || isSaving}
-            onChange={(event) => handleFileChange(event.target.files?.[0])}
+            onFileSelect={handleFileChange}
+            details={isParsing ? 'Reading sheet...' : sheetPeriodLabel ? `Sheet period: ${sheetPeriodLabel}` : ''}
           />
-          {fileName ? (
-            <Text mt={2} fontSize="xs" color="slate.500">
-              {fileName}
-              {sheetPeriodLabel ? ` · Sheet period: ${sheetPeriodLabel}` : ''}
-            </Text>
-          ) : null}
           {warning ? <Alert mt={4} status="warning">{warning}</Alert> : null}
           {error ? <Alert mt={4} status="error">{error}</Alert> : null}
           {isParsing ? (

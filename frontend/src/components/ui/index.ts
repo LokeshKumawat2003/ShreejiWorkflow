@@ -4,6 +4,7 @@ export { default as ContentCard } from './ContentCard';
 export { default as DataTable, type DataTableColumn } from './DataTable';
 export { default as EmptyState } from './EmptyState';
 export { default as EntityCell } from './EntityCell';
+export { default as FileDropzone } from './FileDropzone';
 export { default as FilterBar, FilterField } from './FilterBar';
 export { default as FilterInput } from './FilterInput';
 export { default as FilterSelect } from './FilterSelect';

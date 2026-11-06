@@ -124,6 +124,7 @@ function EmployeeFormDialog({
   const [currency, setCurrency] = useState('INR');
   const [basicPay, setBasicPay] = useState('0');
   const [dearnessAllowance, setDearnessAllowance] = useState('0');
+  const [otherAllowanceAmount, setOtherAllowanceAmount] = useState('');
   const [otherAllowances, setOtherAllowances] = useState('');
   const [epfoApplicable, setEpfoApplicable] = useState(false);
   const [esicApplicable, setEsicApplicable] = useState(false);
@@ -143,7 +144,8 @@ function EmployeeFormDialog({
   const currencyOptions = CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES];
   const basicPayAmount = basicPay.trim() ? Number(basicPay) : 0;
   const dearnessAllowanceAmount = dearnessAllowance.trim() ? Number(dearnessAllowance) : 0;
-  const dailySalaryAmount = Math.round(((Number(basicPayAmount) || 0) + (Number(dearnessAllowanceAmount) || 0)) * 100) / 100;
+  const otherAllowanceValue = otherAllowanceAmount.trim() ? Number(otherAllowanceAmount) : 0;
+  const dailySalaryAmount = Math.round(((Number(basicPayAmount) || 0) + (Number(dearnessAllowanceAmount) || 0) + (Number(otherAllowanceValue) || 0)) * 100) / 100;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -163,9 +165,10 @@ function EmployeeFormDialog({
     setSkillCategory(employee?.skillCategory || '');
     setDateOfJoining(employee?.dateOfJoining || '');
     setCurrency(normalizeCurrency(employee?.currency));
-    const hasPayBreakdown = Boolean(employee?.basicPay || employee?.dearnessAllowance);
+    const hasPayBreakdown = Boolean(employee?.basicPay || employee?.dearnessAllowance || employee?.otherAllowanceAmount);
     setBasicPay(String(hasPayBreakdown ? employee?.basicPay ?? 0 : employee?.dailySalary ?? 0));
     setDearnessAllowance(String(employee?.dearnessAllowance ?? 0));
+    setOtherAllowanceAmount(employee?.otherAllowanceAmount ? String(employee.otherAllowanceAmount) : '');
     setOtherAllowances(employee?.otherAllowances || '');
     setEpfoApplicable(employee?.epfoApplicable || false);
     setEsicApplicable(employee?.esicApplicable || false);
@@ -194,7 +197,7 @@ function EmployeeFormDialog({
       showError('Enter a valid phone number with at least 7 digits.');
       return;
     }
-    if (![dailySalaryAmount, basicPayAmount, dearnessAllowanceAmount].every(isValidAmount)) {
+    if (![dailySalaryAmount, basicPayAmount, dearnessAllowanceAmount, otherAllowanceValue].every(isValidAmount)) {
       showError('Enter valid non-negative amounts with at most two decimal places.');
       return;
     }
@@ -236,6 +239,7 @@ function EmployeeFormDialog({
       currency,
       basicPay: basicPayAmount,
       dearnessAllowance: dearnessAllowanceAmount,
+      otherAllowanceAmount: otherAllowanceValue,
       otherAllowances,
       epfoApplicable,
       esicApplicable,
@@ -346,12 +350,25 @@ function EmployeeFormDialog({
 
               <FormSection title="Salary & wages" description="The daily rate is used for payroll, salary slips and the appointment letter.">
                 <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
-                  <Box gridColumn={{ lg: 'span 2' }}>
-                    <FormInput label="Wages / Basic pay" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={basicPay} onChange={(event) => setBasicPay(event.target.value)} />
-                  </Box>
-                  <Box gridColumn={{ lg: 'span 2' }}>
-                    <FormInput label="Dearness allowance" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={dearnessAllowance} onChange={(event) => setDearnessAllowance(event.target.value)} />
-                  </Box>
+                  <FormInput label="Wages / Basic pay" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={basicPay} onChange={(event) => setBasicPay(event.target.value)} />
+                  <FormInput label="Dearness allowance" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={dearnessAllowance} onChange={(event) => setDearnessAllowance(event.target.value)} />
+                  <FormInput
+                    label="Other allowance"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={MAX_AMOUNT}
+                    step="0.01"
+                    placeholder="Optional"
+                    value={otherAllowanceAmount}
+                    onChange={(event) => setOtherAllowanceAmount(event.target.value)}
+                  />
+                  <FormControl>
+                    <FormLabel {...fieldLabelStyles}>Currency</FormLabel>
+                    <Select h="44px" {...fieldStyles} value={currency} onChange={(event) => setCurrency(event.target.value)}>
+                      {currencyOptions.map((code) => <option key={code} value={code}>{code}</option>)}
+                    </Select>
+                  </FormControl>
                   <Box gridColumn={{ lg: 'span 2' }}>
                     <FormInput
                       label="Daily salary"
@@ -361,19 +378,11 @@ function EmployeeFormDialog({
                       tabIndex={-1}
                       bg="slate.100"
                       cursor="default"
-                      helperText="Auto-calculated: Wages / Basic pay + Dearness allowance. Payable per present day."
+                      helperText="Auto-calculated: Wages / Basic pay + Dearness allowance + Other allowance. Payable per present day."
                     />
                   </Box>
                   <Box gridColumn={{ lg: 'span 2' }}>
-                    <FormControl>
-                      <FormLabel {...fieldLabelStyles}>Currency</FormLabel>
-                      <Select h="44px" {...fieldStyles} value={currency} onChange={(event) => setCurrency(event.target.value)}>
-                        {currencyOptions.map((code) => <option key={code} value={code}>{code}</option>)}
-                      </Select>
-                    </FormControl>
-                  </Box>
-                  <Box gridColumn={{ md: 'span 2', lg: 'span 4' }}>
-                    <TextAreaField label="Other allowances (including accommodation)" maxLength={1000} value={otherAllowances} onChange={setOtherAllowances} />
+                    <TextAreaField label="Other allowance details (optional)" maxLength={1000} placeholder="e.g. Travel 20 per day, accommodation provided" value={otherAllowances} onChange={setOtherAllowances} />
                   </Box>
                 </SimpleGrid>
               </FormSection>

@@ -66,6 +66,7 @@ export type Employee = {
   dateOfJoining: string;
   basicPay: number;
   dearnessAllowance: number;
+  otherAllowanceAmount?: number;
   otherAllowances: string;
   epfoApplicable: boolean;
   esicApplicable: boolean;

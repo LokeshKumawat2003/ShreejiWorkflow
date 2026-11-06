@@ -20,6 +20,7 @@ const employeeSchema = new mongoose.Schema(
     dateOfJoining: { type: String, trim: true, maxlength: 10, default: '' },
     basicPay: { type: Number, min: 0, max: 1000000000000, default: 0 },
     dearnessAllowance: { type: Number, min: 0, max: 1000000000000, default: 0 },
+    otherAllowanceAmount: { type: Number, min: 0, max: 1000000000000, default: 0 },
     otherAllowances: { type: String, trim: true, maxlength: 1000, default: '' },
     epfoApplicable: { type: Boolean, default: false },
     esicApplicable: { type: Boolean, default: false },

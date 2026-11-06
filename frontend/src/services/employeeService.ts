@@ -19,6 +19,7 @@ export type EmployeeInput = {
   currency?: string;
   basicPay: number;
   dearnessAllowance: number;
+  otherAllowanceAmount: number;
   otherAllowances: string;
   epfoApplicable: boolean;
   esicApplicable: boolean;

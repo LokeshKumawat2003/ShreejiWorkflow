@@ -45,6 +45,7 @@ function publicEmployee(employee, role = 'organization') {
 		dateOfJoining: value.dateOfJoining || '',
 		basicPay: value.basicPay ?? 0,
 		dearnessAllowance: value.dearnessAllowance ?? 0,
+		otherAllowanceAmount: value.otherAllowanceAmount ?? 0,
 		otherAllowances: value.otherAllowances || '',
 		epfoApplicable: Boolean(value.epfoApplicable),
 		esicApplicable: Boolean(value.esicApplicable),
@@ -155,7 +156,7 @@ function validateEmployeeInput(input, { partial = false } = {}) {
 			fields[field] = field === 'bankRoutingCode' ? value.toUpperCase() : value;
 		}
 	}
-	for (const field of ['basicPay', 'dearnessAllowance']) {
+	for (const field of ['basicPay', 'dearnessAllowance', 'otherAllowanceAmount']) {
 		if (!partial || input[field] !== undefined) {
 			const amount = input[field] === undefined ? 0 : Number(input[field]);
 			if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000_000_000 || Math.abs(Math.round(amount * 100) / 100 - amount) > 1e-8) {

@@ -21,6 +21,7 @@ const COLUMNS = [
 	{ field: 'basicPay', label: 'Wages / Basic pay', kind: 'amount' },
 	{ field: 'dearnessAllowance', label: 'Dearness allowance', kind: 'amount' },
 	{ field: 'currency', label: 'Currency' },
+	{ field: 'otherAllowanceAmount', label: 'Other allowance amount', kind: 'amount' },
 	{ field: 'otherAllowances', label: 'Other allowances' },
 	{ field: 'aadhaarConsent', label: 'Aadhaar consent', kind: 'boolean' },
 	{ field: 'aadhaarNumber', label: 'Aadhaar number' },
@@ -150,7 +151,7 @@ function toEmployeeInput(values, employmentTypeCodes) {
 	input.bankRoutingCode = input.bankRoutingCode.toUpperCase();
 	const employmentType = input.employmentType.toLowerCase();
 	input.employmentType = employmentTypeCodes.get(employmentType) || employmentType;
-	input.dailySalary = Math.round((input.basicPay + input.dearnessAllowance) * 100) / 100;
+	input.dailySalary = Math.round((input.basicPay + input.dearnessAllowance + input.otherAllowanceAmount) * 100) / 100;
 	return input;
 }
 

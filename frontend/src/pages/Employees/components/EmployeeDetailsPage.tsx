@@ -49,7 +49,7 @@ function formatMoney(value?: number) {
 function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoiningLetter, isPreparingLetter = false }: EmployeeDetailsPageProps) {
 	const isAdmin = role === 'admin';
 	const { options: masterOptions } = useMasterDataOptions();
-	const monthlyPay = (Number(employee.basicPay) || 0) + (Number(employee.dearnessAllowance) || 0);
+	const dailyPay = Number(employee.dailySalary) || (Number(employee.basicPay) || 0) + (Number(employee.dearnessAllowance) || 0) + (Number(employee.otherAllowanceAmount) || 0);
 
 	return (
 		<Stack spacing={6}>
@@ -128,8 +128,8 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 						<InfoTile
 							icon={<Text as="span" fontSize="md" fontWeight="800" lineHeight="1">₹</Text>}
 							color="brand"
-							label="Basic + DA"
-							value={monthlyPay ? currency.format(monthlyPay) : ''}
+							label={employee.otherAllowanceAmount ? 'Basic + DA + Other' : 'Basic + DA'}
+							value={dailyPay ? currency.format(dailyPay) : ''}
 						/>
 					</SimpleGrid>
 				</Box>
@@ -162,7 +162,9 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 					<Section icon={<Text as="span" fontSize="lg" fontWeight="800" lineHeight="1">₹</Text>} color="green" title="Salary" subtitle="Monthly pay structure">
 						<Detail label="Basic pay" value={formatMoney(employee.basicPay)} emphasis />
 						<Detail label="Dearness allowance" value={formatMoney(employee.dearnessAllowance)} emphasis />
-						<Detail label="Other allowances" value={employee.otherAllowances} multiline full />
+						<Detail label="Other allowance" value={employee.otherAllowanceAmount ? formatMoney(employee.otherAllowanceAmount) : ''} emphasis />
+						<Detail label="Daily salary" value={formatMoney(employee.dailySalary)} emphasis />
+						<Detail label="Other allowance details" value={employee.otherAllowances} multiline full />
 					</Section>
 
 					<Section icon={<LockIcon boxSize={4} />} color="orange" title="Statutory & compliance" subtitle="PF, ESIC and registrations">

@@ -1,6 +1,20 @@
 const express = require('express');
 const multer = require('multer');
-const { bankPayments, bulk, history, list, mark, parse, parseMonth, payroll, register, wageRegister } = require('../controllers/attendanceController');
+const {
+  bankPayments,
+  bulk,
+  history,
+  list,
+  mark,
+  parse,
+  parseMonth,
+  payroll,
+  register,
+  saveSymbols,
+  symbols,
+  uploadFile,
+  wageRegister,
+} = require('../controllers/attendanceController');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { httpError } = require('../utils/httpError');
 
@@ -48,6 +62,9 @@ router.get('/register', requireRole('admin'), register);
 router.post('/parse', requireRole('admin'), parseAttendanceUpload, parse);
 router.post('/parse-month', requireRole('admin'), parseAttendanceUpload, parseMonth);
 router.post('/bulk', requireRole('admin'), bulk);
+router.get('/symbols', requireRole('admin'), symbols);
+router.put('/symbols', requireRole('admin'), saveSymbols);
+router.get('/uploads/:id/file', requireRole('admin'), uploadFile);
 router.get('/', list);
 router.put('/', mark);
 

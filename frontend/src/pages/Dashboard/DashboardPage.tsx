@@ -8,13 +8,13 @@ import {
   DrawerOverlay,
   Flex,
   Heading,
-  Spinner,
   Stack,
   Text,
   useDisclosure,
 } from '@chakra-ui/react';
 import { getDashboardPath } from '../../app/authorization';
 import DashboardNavbar from '../../components/layout/DashboardNavbar';
+import { AppShellSkeleton } from '../../components/ui';
 import DashboardSidebar from '../../components/layout/DashboardSidebar';
 import AttendanceWorkspacePage from '../Attendance/AttendanceWorkspacePage';
 import BankInvoicePage from '../BankInvoice/BankInvoicePage';
@@ -82,11 +82,7 @@ function DashboardPage({ role }: DashboardPageProps) {
   }, []);
 
   if (isLoading || !user) {
-    return (
-      <Flex minH="100vh" align="center" justify="center" bg="slate.50">
-        <Spinner color="brand.500" size="lg" />
-      </Flex>
-    );
+    return <AppShellSkeleton />;
   }
 
   return (

@@ -25,7 +25,8 @@ const {
   parseAttendanceMonth,
   parseAttendanceSheet,
 } = require('../src/services/attendanceService');
-const { detectSheetPeriod, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth } = require('../src/services/attendanceSheetParser');
+const { detectSheetPeriod, interpretMark, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth, pdfPagesToMatrix } = require('../src/services/attendanceSheetParser');
+const { summarizeAttendance } = require('../src/utils/attendanceStatus');
 const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createToken, register, verifyToken } = require('../src/services/authService');
@@ -863,9 +864,10 @@ test('payroll pays present days only and treats legacy statuses as absent', asyn
       { fromDate: '2026-10-01', toDate: '2026-10-31' },
     );
 
-    assert.deepEqual(payroll.paidStatuses, ['present']);
+    assert.deepEqual(payroll.paidStatuses, ['present', 'half_day', 'paid_leave']);
     assert.equal(payroll.lines[0].presentDays, 2);
-    assert.equal(payroll.lines[0].absentDays, 3);
+    assert.equal(payroll.lines[0].absentDays, 2);
+    assert.equal(payroll.lines[0].otherLeaveDays, 1);
     assert.equal(payroll.lines[0].paidDays, 2);
     assert.equal(payroll.lines[0].grossPay, 60);
     assert.equal('lateDays' in payroll.lines[0], false);
@@ -993,21 +995,22 @@ test('attendance history rejects malformed date filters before database access',
   );
 });
 
-test('absent history includes legacy leave and late records', async () => {
+test('absent history includes legacy records such as late', async () => {
   const originalCountDocuments = Attendance.countDocuments;
   const originalFindAttendance = Attendance.find;
   const organizationId = '507f1f77bcf86cd799439011';
+  const otherStatuses = ['present', 'half_day', 'leave', 'paid_leave', 'casual_leave', 'sick_leave', 'weekly_off', 'holiday'];
   Attendance.countDocuments = async (filter) => {
     assert.deepEqual(filter, {
       organizationId,
-      status: { $in: ['absent', 'late', 'leave'] },
+      status: { $nin: otherStatuses },
     });
     return 1;
   };
   Attendance.find = (filter) => {
     assert.deepEqual(filter, {
       organizationId,
-      status: { $in: ['absent', 'late', 'leave'] },
+      status: { $nin: otherStatuses },
     });
     return {
       populate: () => ({
@@ -1018,7 +1021,7 @@ test('absent history includes legacy leave and late records', async () => {
                 _id: '507f1f77bcf86cd799439015',
                 employeeId: { _id: '507f1f77bcf86cd799439012', name: 'Employee' },
                 date: '2026-10-01',
-                status: 'leave',
+                status: 'late',
                 updatedAt: new Date('2026-10-01T12:00:00.000Z'),
               }],
             }),
@@ -1208,7 +1211,7 @@ test('attendance marking updates the employee/date record and returns the saved 
     );
 
     assert.deepEqual(updateFilter, { employeeId, date: today });
-    assert.deepEqual(updateFields, { organizationId, status: 'present', markedBy: userId });
+    assert.deepEqual(updateFields, { organizationId, status: 'present', markedBy: userId, source: 'manual', sourceMark: '', uploadId: null });
     assert.equal(result.status, 'present');
     assert.equal(updateCalls, 2);
   } finally {
@@ -2178,8 +2181,63 @@ test('monthly sheet parser reads every day column', () => {
   assert.deepEqual(rows, [{
     extractedName: 'RAM BAHADUR CHETTRI',
     extractedParentName: 'DUTT RAM',
-    days: { 1: 'present', 2: 'absent' },
+    days: {
+      1: { status: 'present', confidence: 'high', mark: 'P' },
+      2: { status: 'absent', confidence: 'high', mark: 'A' },
+    },
+    matrixRow: 2,
   }]);
+});
+
+test('register marks map symbols, leave codes and custom symbols to statuses', () => {
+  const read = (mark, options) => interpretMark(mark, options);
+  assert.equal(read(''), null);
+  assert.equal(read('✓').status, 'present');
+  assert.equal(read('√').status, 'present');
+  assert.equal(read('✗').status, 'absent');
+  assert.equal(read('x').status, 'absent');
+  assert.equal(read('PR').status, 'present');
+  assert.equal(read('AB').status, 'absent');
+  assert.equal(read('L').status, 'leave');
+  assert.equal(read('CL').status, 'casual_leave');
+  assert.equal(read('SL').status, 'sick_leave');
+  assert.equal(read('PL').status, 'paid_leave');
+  assert.equal(read('WO').status, 'weekly_off');
+  assert.equal(read('H').status, 'holiday');
+  assert.equal(read('Half-day').status, 'half_day');
+  assert.equal(read('hd').status, 'half_day');
+  assert.equal(read('D', { symbols: new Map([['D', 'present']]) }).status, 'present');
+});
+
+test('unclear, conflicting and low-confidence marks need review instead of a guess', () => {
+  const unknown = interpretMark('Ramesh');
+  assert.equal(unknown.status, 'needs_review');
+  assert.equal(unknown.confidence, 'low');
+  assert.equal(interpretMark('P\nA').status, 'needs_review');
+  assert.equal(interpretMark('O').status, 'needs_review');
+  const faint = interpretMark('P', { ocrConfidence: 30 });
+  assert.equal(faint.status, 'needs_review');
+  assert.equal(faint.suggested, 'present');
+  assert.equal(interpretMark('P', { ocrConfidence: 62 }).confidence, 'medium');
+  assert.equal(interpretMark('P', { ocrConfidence: 90 }).confidence, 'high');
+  assert.equal(interpretMark('V').confidence, 'medium');
+});
+
+test('attendance totals use each day status, not the number of marked cells', () => {
+  const stats = summarizeAttendance(
+    ['present', 'present', 'half_day', 'absent', 'paid_leave', 'casual_leave', 'weekly_off', 'holiday'],
+    10,
+  );
+  assert.equal(stats.workingDays, 8);
+  assert.equal(stats.presentDays, 2);
+  assert.equal(stats.halfDays, 1);
+  assert.equal(stats.absentDays, 1);
+  assert.equal(stats.paidLeaves, 1);
+  assert.equal(stats.otherLeaves, 1);
+  assert.equal(stats.weeklyOffs, 1);
+  assert.equal(stats.holidays, 1);
+  assert.equal(stats.paidDays, 3.5);
+  assert.equal(stats.attendancePercentage, 31.25);
 });
 
 test('admins import a whole month and future days are skipped', async () => {
@@ -2581,11 +2639,44 @@ test('attendance register only expects attendance until the block date', async (
     assert.equal(blocked.days[11], '');
     assert.equal(blocked.disabledOn, '2026-09-11');
     // Sundays (6, 13, 20, 27 Sep 2026) are weekly offs and never expected.
-    assert.deepEqual(register.summary, { employees: 2, present: 1, absent: 0, unmarked: 26 + 8 });
+    assert.deepEqual(
+      { employees: register.summary.employees, present: register.summary.present, absent: register.summary.absent, unmarked: register.summary.unmarked },
+      { employees: 2, present: 1, absent: 0, unmarked: 26 + 8 },
+    );
+    assert.equal(register.summary.workingDays, 26 + 9);
   } finally {
     User.findOne = originalUserFind;
     Location.findOne = originalLocationFind;
     Employee.find = originalEmployeeFind;
     Attendance.find = originalAttendanceFind;
   }
+});
+
+test('PDF registers are rebuilt into columns from text positions', () => {
+  const text = (str, x, y, width = 4) => ({ str, x, y, width });
+  const dayX = (day) => 200 + day * 15;
+  const header = [text('S.no', 30, 470, 14), text('Name of Employees', 80, 470, 62), ...[1, 2, 3, 4, 5, 6].map((day) => text(String(day), dayX(day), 470)), text('TOTAL', 320, 474, 22)];
+  const row = (serial, name, parent, marks, y) => [
+    text(String(serial), 34, y),
+    text(name, 48, y + 3.7, 60),
+    text(parent, 48, y - 3.7, 26),
+    ...marks.map((mark, index) => (mark ? text(mark, dayX(index + 1), y) : null)).filter(Boolean),
+  ];
+  const matrix = pdfPagesToMatrix([[
+    text('For the month of November 2026', 500, 520, 200),
+    ...header,
+    ...row(1, 'SUNITA PATEL', 'S/o Ram', ['', 'P', 'A', 'P', 'P', 'P'], 450),
+    ...row(2, 'RAMESH KUMAR', 'S/o Hari', ['', 'A', 'P', 'P', 'P', 'A'], 430),
+    text('Total Mandays', 250, 410, 40),
+  ]]);
+  const parsed = parseSheetMatrixMonth(matrix, '2026-11', 30);
+  assert.deepEqual(parsed.dayColumns, [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(parsed.rows.map((row) => ({
+    extractedName: row.extractedName,
+    extractedParentName: row.extractedParentName,
+    days: Object.fromEntries(Object.entries(row.days).map(([day, reading]) => [day, reading.status])),
+  })), [
+    { extractedName: 'SUNITA PATEL', extractedParentName: 'RAM', days: { 2: 'present', 3: 'absent', 4: 'present', 5: 'present', 6: 'present' } },
+    { extractedName: 'RAMESH KUMAR', extractedParentName: 'HARI', days: { 2: 'absent', 3: 'present', 4: 'present', 5: 'present', 6: 'absent' } },
+  ]);
 });

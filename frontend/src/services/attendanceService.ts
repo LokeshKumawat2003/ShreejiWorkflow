@@ -1,7 +1,31 @@
 import api from './api';
 import type { BankLetterSettings } from './settingsService';
 
-export type AttendanceStatus = 'present' | 'absent';
+export type AttendanceStatus =
+  | 'present'
+  | 'absent'
+  | 'half_day'
+  | 'leave'
+  | 'paid_leave'
+  | 'casual_leave'
+  | 'sick_leave'
+  | 'weekly_off'
+  | 'holiday';
+
+/** A day in an upload preview: a saveable status, or a mark the admin still has to check. */
+export type UploadMarkStatus = AttendanceStatus | 'needs_review';
+
+export type MarkConfidence = 'high' | 'medium' | 'low';
+
+export type AttendanceMarkDetail = {
+  mark: string;
+  confidence: MarkConfidence;
+  suggested: AttendanceStatus | null;
+  reason: string;
+  crop: string;
+};
+
+export type AttendanceSymbol = { symbol: string; status: AttendanceStatus };
 
 export type AttendanceEntry = {
   employeeId: string;
@@ -35,6 +59,8 @@ export type AttendanceHistoryEntry = {
   jobTitle: string;
   date: string;
   status: AttendanceStatus;
+  source?: 'manual' | 'upload';
+  sourceMark?: string;
   updatedAt: string;
 };
 
@@ -91,6 +117,9 @@ export type PayrollLine = {
   dailySalary: number;
   presentDays: number;
   absentDays: number;
+  halfDays?: number;
+  paidLeaveDays?: number;
+  otherLeaveDays?: number;
   paidDays: number;
   grossPay: number;
 };
@@ -234,7 +263,22 @@ export async function getBankPayments(params: BankPaymentsParams, signal?: Abort
   return data;
 }
 
-export type AttendanceRegisterMark = 'P' | 'A' | '';
+export type AttendanceRegisterMark = 'P' | 'A' | 'HD' | 'L' | 'PL' | 'CL' | 'SL' | 'WO' | 'H' | '';
+
+export type AttendanceStats = {
+  workingDays: number;
+  presentDays: number;
+  absentDays: number;
+  halfDays: number;
+  paidLeaves: number;
+  otherLeaves: number;
+  casualLeaves: number;
+  sickLeaves: number;
+  weeklyOffs: number;
+  holidays: number;
+  paidDays: number;
+  attendancePercentage: number;
+};
 
 export type AttendanceRegisterRow = {
   serial: number;
@@ -246,6 +290,7 @@ export type AttendanceRegisterRow = {
   disabledOn?: string;
   days: AttendanceRegisterMark[];
   totalPresent: number;
+  stats?: AttendanceStats;
 };
 
 export type AttendanceRegister = {
@@ -258,7 +303,19 @@ export type AttendanceRegister = {
   rows: AttendanceRegisterRow[];
   totalMandays: number;
   elapsedDays: number;
-  summary: { employees: number; present: number; absent: number; unmarked: number };
+  summary: {
+    employees: number;
+    present: number;
+    absent: number;
+    unmarked: number;
+    halfDays?: number;
+    paidLeaves?: number;
+    otherLeaves?: number;
+    weeklyOffs?: number;
+    holidays?: number;
+    workingDays?: number;
+    attendancePercentage?: number;
+  };
   categories: string[];
   pagination: { page: number; limit: number; total: number; totalPages: number } | null;
 };
@@ -350,11 +407,13 @@ export type AttendanceMonthParseRow = {
   employeeName: string;
   parentName: string;
   match: AttendanceMatch;
-  marks: (AttendanceStatus | null)[];
+  marks: (UploadMarkStatus | null)[];
+  details: (AttendanceMarkDetail | null)[];
   existing: (AttendanceStatus | null)[];
 };
 
 export type AttendanceMonthParseResponse = {
+  uploadId: string | null;
   month: string;
   periodLabel: string;
   daysInMonth: number;
@@ -385,10 +444,21 @@ export async function bulkMarkAttendance(input: {
   date?: string;
   organizationId: string;
   locationId: string;
-  entries: { employeeId: string; status: AttendanceStatus; date?: string; replace?: boolean }[];
+  uploadId?: string;
+  entries: { employeeId: string; status: AttendanceStatus; date?: string; replace?: boolean; mark?: string }[];
 }) {
   const { data } = await api.post<AttendanceBulkResponse>('/attendance/bulk', input);
   return data;
+}
+
+export async function getAttendanceSymbols() {
+  const { data } = await api.get<{ symbols: AttendanceSymbol[] }>('/attendance/symbols');
+  return data.symbols;
+}
+
+export async function saveAttendanceSymbols(symbols: AttendanceSymbol[]) {
+  const { data } = await api.put<{ symbols: AttendanceSymbol[] }>('/attendance/symbols', { symbols });
+  return data.symbols;
 }
 
 export async function markAttendance(input: {

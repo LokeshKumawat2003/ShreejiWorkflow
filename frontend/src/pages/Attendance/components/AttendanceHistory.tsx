@@ -22,6 +22,7 @@ import {
   type AttendanceStatus,
 } from '../../../services/attendanceService';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
+import { ATTENDANCE_STATUS_META, ATTENDANCE_STATUSES } from '../utils/attendanceStatus';
 
 type AttendanceHistoryProps = {
   organizationId?: string;
@@ -57,7 +58,7 @@ function currentMonth() {
 }
 
 function StatusPill({ status }: { status: AttendanceStatus }) {
-  const isPresent = status === 'present';
+  const meta = ATTENDANCE_STATUS_META[status] || ATTENDANCE_STATUS_META.absent;
   return (
     <HStack
       as="span"
@@ -66,13 +67,13 @@ function StatusPill({ status }: { status: AttendanceStatus }) {
       px={2.5}
       py={0.5}
       borderRadius="full"
-      bg={isPresent ? 'green.50' : 'red.50'}
-      color={isPresent ? 'green.700' : 'red.600'}
+      bg={meta.bg}
+      color={meta.color}
       fontSize="xs"
       fontWeight="700"
     >
-      <Box w="6px" h="6px" borderRadius="full" bg={isPresent ? 'green.500' : 'red.400'} />
-      <Text as="span">{isPresent ? 'Present' : 'Absent'}</Text>
+      <Box w="6px" h="6px" borderRadius="full" bg={meta.color} />
+      <Text as="span">{meta.label}</Text>
     </HStack>
   );
 }
@@ -219,8 +220,7 @@ function AttendanceHistory({ organizationId, locationId }: AttendanceHistoryProp
             onChange={changeStatus}
             options={[
               { value: 'all', label: 'All statuses' },
-              { value: 'present', label: 'Present' },
-              { value: 'absent', label: 'Absent' },
+              ...ATTENDANCE_STATUSES.map((value) => ({ value, label: ATTENDANCE_STATUS_META[value].label })),
             ]}
           />
         </FilterField>

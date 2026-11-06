@@ -6,12 +6,11 @@ import {
 	Heading,
 	HStack,
 	SimpleGrid,
-	Spinner,
 	Stack,
 	Text,
 } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
-import { ActionButton, BuildingIcon, ContentCard, PeopleIcon, PrintIcon, StatusBadge } from '../../../components/ui';
+import { ActionButton, BuildingIcon, ContentCard, DetailsSkeleton, PeopleIcon, PrintIcon, StatusBadge } from '../../../components/ui';
 import useMasterDataOptions, { masterLabel } from '../../../hooks/useMasterDataOptions';
 import type { Employee, UserRole } from '../../../types';
 import type { PdfAction } from '../../../utils/pdfOutput';
@@ -136,7 +135,7 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 			</Box>
 
 			{isLoading ? (
-				<HStack justify="center" py={12}><Spinner color="brand.500" /></HStack>
+				<DetailsSkeleton cards={6} />
 			) : (
 				<SimpleGrid columns={{ base: 1, xl: 2 }} spacing={6} alignItems="start">
 					<Section icon={<PeopleIcon boxSize={5} />} color="teal" title="Personal information" subtitle="Identity and family details">

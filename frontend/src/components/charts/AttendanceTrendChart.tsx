@@ -2,6 +2,7 @@ import { Box } from '@chakra-ui/react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { axisStyle, panelStyle, tooltipStyle, type AttendancePoint, type ChartState } from './chartShared';
 import { ChartHeader, ChartLegend, ChartMessage } from './ChartPrimitives';
+import { ChartSkeleton } from '../ui/Skeletons';
 
 type AttendanceTrendChartProps = ChartState & {
   data: AttendancePoint[];
@@ -25,7 +26,7 @@ function AttendanceTrendChart({
     <Box {...panelStyle}>
       <ChartHeader title={title} subtitle={subtitle} label="ATTENDANCE" />
       {isLoading ? (
-        <ChartMessage>Loading attendance data...</ChartMessage>
+        <ChartSkeleton />
       ) : hasError ? (
         <ChartMessage>Unable to load attendance data.</ChartMessage>
       ) : hasData ? (

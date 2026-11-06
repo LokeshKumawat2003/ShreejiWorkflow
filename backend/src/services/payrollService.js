@@ -3,6 +3,7 @@ const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
+const { PAID_DAY_VALUE, isAttendanceStatus, summarizeAttendance } = require('../utils/attendanceStatus');
 const { countsAttendanceOn } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
@@ -86,10 +87,9 @@ async function calculatePayroll(user, options = {}) {
   for (const record of attendance) {
     const employeeId = String(record.employeeId);
     if (!countsAttendanceOn(employeesById.get(employeeId), record.date)) continue;
-    const counts = attendanceByEmployee.get(employeeId) || { present: 0, absent: 0 };
-    const status = record.status === 'present' ? 'present' : 'absent';
-    counts[status] += 1;
-    attendanceByEmployee.set(employeeId, counts);
+    const statuses = attendanceByEmployee.get(employeeId) || [];
+    statuses.push(isAttendanceStatus(record.status) ? record.status : 'absent');
+    attendanceByEmployee.set(employeeId, statuses);
   }
 
   const payableEmployees = employees.filter((employee) => (
@@ -97,8 +97,8 @@ async function calculatePayroll(user, options = {}) {
   ));
 
   const lines = payableEmployees.map((employee) => {
-    const counts = attendanceByEmployee.get(String(employee._id)) || { present: 0, absent: 0 };
-    const paidDays = counts.present;
+    const counts = summarizeAttendance(attendanceByEmployee.get(String(employee._id)) || [], 0);
+    const { paidDays } = counts;
     const dailySalary = Number(employee.dailySalary) || 0;
     const currency = !employee.currency || employee.currency === 'NRI' ? 'INR' : employee.currency;
     const grossPay = Math.round((dailySalary * paidDays + Number.EPSILON) * 100) / 100;
@@ -131,8 +131,11 @@ async function calculatePayroll(user, options = {}) {
       jobTitle: employee.jobTitle || '',
       currency,
       dailySalary,
-      presentDays: counts.present,
-      absentDays: counts.absent,
+      presentDays: counts.presentDays,
+      absentDays: counts.absentDays,
+      halfDays: counts.halfDays,
+      paidLeaveDays: counts.paidLeaves,
+      otherLeaveDays: counts.otherLeaves,
       paidDays,
       grossPay,
     };
@@ -159,7 +162,7 @@ async function calculatePayroll(user, options = {}) {
   const result = {
     fromDate,
     toDate,
-    paidStatuses: ['present'],
+    paidStatuses: Object.keys(PAID_DAY_VALUE),
     lines: matchingLines,
     summary,
     totals: [...totalsByCurrency.entries()].map(([currency, total]) => ({
@@ -193,7 +196,7 @@ function rate(settings, field) {
 /** Builds one FORM XVII row; deductions stay unrounded so the net matches the paper register. */
 function wageRegisterRow(line, rates) {
   const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2(line.basicPay + line.dearnessAllowance);
-  const workingDays = line.presentDays;
+  const workingDays = line.paidDays;
   const wages = round2(dailyWage * workingDays);
   const bonus = wages * (rates.bonusRate / 100);
   const totalWages = wages + bonus;
@@ -370,7 +373,7 @@ async function calculateBankPayments(user, options = {}) {
       organizationName: organizationNames.get(String(location.organizationId)) || '',
       locationName: location.workName || location.name || '',
       designation: line.designation,
-      workingDays: line.presentDays,
+      workingDays: line.paidDays,
       accountHolder: line.bankAccountHolder,
       accountNumber: line.bankAccountNumber,
       ifsc: line.bankRoutingCode,

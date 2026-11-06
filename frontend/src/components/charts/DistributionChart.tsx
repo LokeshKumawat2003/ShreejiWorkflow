@@ -1,4 +1,4 @@
-import { Box, Flex, HStack, Text } from '@chakra-ui/react';
+import { Box, Flex, HStack, SkeletonCircle, Text } from '@chakra-ui/react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { chartColors, panelStyle, tooltipStyle, type ChartState, type DistributionItem } from './chartShared';
 import { ChartHeader, ChartMessage } from './ChartPrimitives';
@@ -29,7 +29,7 @@ function DistributionChart({
     <Box {...panelStyle}>
       <ChartHeader title={title} subtitle={subtitle} label={label} />
       {isLoading ? (
-        <ChartMessage>Loading...</ChartMessage>
+        <Flex h="260px" align="center" justify="center"><SkeletonCircle size="180px" /></Flex>
       ) : hasError ? (
         <ChartMessage>Unable to load this chart.</ChartMessage>
       ) : total > 0 ? (

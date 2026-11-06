@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flex, Heading, Spinner, Stack, Text } from '@chakra-ui/react';
+import { Flex, Heading, Skeleton, SkeletonCircle, Stack, Text } from '@chakra-ui/react';
 import BrandLogo from '../../components/layout/BrandLogo';
 import AuthStoryPanel, { AuthMobileFeatures } from './components/AuthStoryPanel';
 import LoginForm from './components/LoginForm';
@@ -28,8 +28,15 @@ function LoginPage() {
 
     if (isCheckingSession) {
         return (
-            <Flex minH="100vh" align="center" justify="center" bg="slate.50">
-                <Spinner color="brand.500" size="lg" />
+            <Flex minH="100vh" align="center" justify="center" bg="slate.50" p={4}>
+                <Stack w="100%" maxW="400px" spacing={4} bg="white" p={8} borderRadius="xl" boxShadow="sm">
+                    <SkeletonCircle size="12" alignSelf="center" />
+                    <Skeleton h="20px" w="60%" alignSelf="center" />
+                    <Skeleton h="12px" w="80%" alignSelf="center" />
+                    <Skeleton h="44px" borderRadius="md" />
+                    <Skeleton h="44px" borderRadius="md" />
+                    <Skeleton h="44px" borderRadius="md" />
+                </Stack>
             </Flex>
         );
     }

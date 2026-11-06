@@ -1,8 +1,11 @@
 const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
+const AttendanceSymbol = require('../models/AttendanceSymbol');
+const AttendanceUpload = require('../models/AttendanceUpload');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
+const { ATTENDANCE_STATUSES, STATUS_CODES, summarizeAttendance } = require('../utils/attendanceStatus');
 const { canMarkAttendanceOn, countsAttendanceOn, isSunday } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
@@ -11,15 +14,21 @@ const {
   extractSheetSource,
   fileKind,
   matchExtractedEmployee,
-  parseSheetMatrixMonth,
+  normalizeMarkToken,
   periodFromParts,
+  readMonthRegister,
 } = require('./attendanceSheetParser');
 
-const ATTENDANCE_STATUSES = ['present', 'absent'];
+const MAX_CUSTOM_SYMBOLS = 100;
 const HISTORY_PAGE_SIZE = 10;
 const REGISTER_PAGE_SIZE = 20;
 const REGISTER_MAX_PAGE_SIZE = 100;
 const REGISTER_FILTERS = ['all', 'absent', 'full', 'unmarked'];
+
+// Statuses saved before the current list existed (e.g. "late") are reported as absent.
+function publicStatus(status) {
+  return ATTENDANCE_STATUSES.includes(status) ? status : 'absent';
+}
 
 function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -104,7 +113,7 @@ async function listAttendance(user, options = {}) {
         department: employee.department,
         employeeStatus: employee.status,
         canMark: canMarkAttendanceOn(employee, date),
-        status: record ? (record.status === 'present' ? 'present' : 'absent') : null,
+        status: record ? publicStatus(record.status) : null,
         updatedAt: record?.updatedAt || null,
       };
     }),
@@ -124,7 +133,7 @@ async function listAttendanceHistory(user, options = {}) {
   const filter = { organizationId };
   if (locationEmployeeIds) filter.employeeId = { $in: locationEmployeeIds };
   const status = ATTENDANCE_STATUSES.includes(options.status) ? options.status : 'all';
-  if (status === 'absent') filter.status = { $in: ['absent', 'late', 'leave'] };
+  if (status === 'absent') filter.status = { $nin: ATTENDANCE_STATUSES.filter((value) => value !== 'absent') };
   else if (status !== 'all') filter.status = status;
 
   const fromDate = options.fromDate || '';
@@ -182,7 +191,9 @@ async function listAttendanceHistory(user, options = {}) {
         department: employee?.department || '',
         jobTitle: employee?.jobTitle || '',
         date: record.date,
-        status: record.status === 'present' ? 'present' : 'absent',
+        status: publicStatus(record.status),
+        source: record.source || 'manual',
+        sourceMark: record.sourceMark || '',
         updatedAt: record.updatedAt,
       };
     }),
@@ -216,7 +227,7 @@ async function markAttendance(user, input = {}) {
   if (!canMarkAttendanceOn(employee, date)) throw httpError(400, blockedMessage(employee));
 
   const filter = { employeeId, date };
-  const update = { $set: { organizationId, status, markedBy: user.id } };
+  const update = { $set: { organizationId, status, markedBy: user.id, source: 'manual', sourceMark: '', uploadId: null } };
   let record;
 
   try {
@@ -310,7 +321,7 @@ async function parseAttendanceSheet(user, input = {}) {
         blocked,
         match: matched.match,
         alreadyMarked: Boolean(existing),
-        existingStatus: existing ? (existing.status === 'present' ? 'present' : 'absent') : null,
+        existingStatus: existing ? publicStatus(existing.status) : null,
       };
     }),
   };
@@ -324,6 +335,70 @@ function parseMonthInput(month) {
   const period = periodFromParts(monthNumber, year);
   if (!period) return null;
   return { month, year, monthNumber, period, daysInMonth: new Date(Date.UTC(year, monthNumber, 0)).getUTCDate() };
+}
+
+function databaseReady() {
+  return mongoose.connection.readyState === 1;
+}
+
+async function loadSymbolMap() {
+  if (!databaseReady()) return new Map();
+  const symbols = await AttendanceSymbol.find().lean();
+  return new Map(symbols.map(({ symbol, status }) => [symbol, status]));
+}
+
+async function getAttendanceSymbols(user) {
+  requireAdmin(user);
+  const symbols = await AttendanceSymbol.find().sort({ symbol: 1 }).lean();
+  return { symbols: symbols.map(({ symbol, status }) => ({ symbol, status })) };
+}
+
+async function updateAttendanceSymbols(user, input = {}) {
+  requireAdmin(user);
+  if (!Array.isArray(input.symbols)) throw httpError(400, 'Send the list of attendance symbols.');
+  if (input.symbols.length > MAX_CUSTOM_SYMBOLS) throw httpError(400, `Add ${MAX_CUSTOM_SYMBOLS} symbols or fewer.`);
+  const bySymbol = new Map();
+  for (const entry of input.symbols) {
+    const symbol = normalizeMarkToken(typeof entry?.symbol === 'string' ? entry.symbol : '');
+    if (!symbol) throw httpError(400, 'Every attendance symbol needs a mark.');
+    if (symbol.length > 20) throw httpError(400, `Symbol "${symbol}" must be 20 characters or fewer.`);
+    if (!ATTENDANCE_STATUSES.includes(entry?.status)) throw httpError(400, `Select a valid status for symbol "${symbol}".`);
+    if (bySymbol.has(symbol)) throw httpError(400, `Symbol "${symbol}" is listed more than once.`);
+    bySymbol.set(symbol, entry.status);
+  }
+  await AttendanceSymbol.deleteMany({ symbol: { $nin: [...bySymbol.keys()] } });
+  if (bySymbol.size > 0) {
+    await AttendanceSymbol.bulkWrite([...bySymbol].map(([symbol, status]) => ({
+      updateOne: { filter: { symbol }, update: { $set: { symbol, status } }, upsert: true },
+    })));
+  }
+  return getAttendanceSymbols(user);
+}
+
+async function saveRegisterUpload(user, input, organizationId, month) {
+  if (!databaseReady()) return null;
+  return AttendanceUpload.create({
+    organizationId,
+    locationId: input.locationId,
+    month,
+    fileName: String(input.file.originalname || '').slice(0, 255),
+    mimeType: String(input.file.mimetype || '').slice(0, 120),
+    size: input.file.size || input.file.buffer.length,
+    file: input.file.buffer,
+    uploadedBy: user.id,
+  });
+}
+
+async function getAttendanceUploadFile(user, uploadId) {
+  requireAdmin(user);
+  if (!mongoose.isValidObjectId(uploadId)) throw httpError(400, 'Invalid upload id.');
+  const upload = await AttendanceUpload.findById(uploadId).select('+file').lean();
+  if (!upload) throw httpError(404, 'Uploaded register not found.');
+  return {
+    buffer: Buffer.isBuffer(upload.file) ? upload.file : Buffer.from(upload.file.buffer),
+    mimeType: upload.mimeType || 'application/octet-stream',
+    fileName: upload.fileName || 'attendance-register',
+  };
 }
 
 async function parseAttendanceMonth(user, input = {}) {
@@ -340,11 +415,12 @@ async function parseAttendanceMonth(user, input = {}) {
 
   const organizationId = await getOrganizationId(user, input.organizationId);
   const employees = await getLocationEmployees(input.locationId, organizationId);
-  const source = await extractSheetSource(input.file);
-  const parsed = parseSheetMatrixMonth(source.matrix, selected.month, selected.daysInMonth);
+  const [source, symbols] = await Promise.all([extractSheetSource(input.file), loadSymbolMap()]);
+  const parsed = await readMonthRegister(source, { month: selected.month, daysInMonth: selected.daysInMonth, symbols });
   if (parsed.dayColumns.length === 0) {
     throw httpError(400, 'No day columns (1-31) were found in this sheet. Use single day upload for this file.');
   }
+  const upload = await saveRegisterUpload(user, input, organizationId, selected.month);
 
   const futureDays = new Set();
   for (const row of parsed.rows) {
@@ -352,7 +428,6 @@ async function parseAttendanceMonth(user, input = {}) {
       if (day > lastImportableDay) futureDays.add(day);
     }
   }
-
   const fromDate = `${selected.month}-01`;
   const toDate = `${selected.month}-${String(selected.daysInMonth).padStart(2, '0')}`;
   const records = await Attendance.find({
@@ -362,13 +437,14 @@ async function parseAttendanceMonth(user, input = {}) {
   }).lean();
   const existingByKey = new Map(records.map((record) => [
     `${String(record.employeeId)}|${Number(record.date.slice(8, 10))}`,
-    record.status === 'present' ? 'present' : 'absent',
+    publicStatus(record.status),
   ]));
 
   const periodMismatch = source.period
     && (source.period.month !== selected.monthNumber || source.period.year !== selected.year);
 
   return {
+    uploadId: upload ? String(upload._id) : null,
     month: selected.month,
     periodLabel: selected.period.label,
     daysInMonth: selected.daysInMonth,
@@ -386,9 +462,10 @@ async function parseAttendanceMonth(user, input = {}) {
         employees,
       );
       const employee = matched.employee;
-      const marks = Array.from({ length: lastImportableDay }, (_, index) => {
+      const readings = Array.from({ length: lastImportableDay }, (_, index) => {
         const date = `${selected.month}-${String(index + 1).padStart(2, '0')}`;
-        return employee && !canMarkAttendanceOn(employee, date) ? null : row.days[index + 1] || null;
+        if (isSunday(date) || (employee && !canMarkAttendanceOn(employee, date))) return null;
+        return row.days[index + 1] || null;
       });
       const existing = Array.from({ length: lastImportableDay }, (_, index) => (
         employee ? existingByKey.get(`${String(employee._id)}|${index + 1}`) || null : null
@@ -400,7 +477,14 @@ async function parseAttendanceMonth(user, input = {}) {
         employeeName: employee?.name || '',
         parentName: employee?.parentName || '',
         match: matched.match,
-        marks,
+        marks: readings.map((reading) => reading?.status || null),
+        details: readings.map((reading) => (reading ? {
+          mark: reading.mark,
+          confidence: reading.confidence,
+          suggested: reading.suggested || null,
+          reason: reading.reason || '',
+          crop: reading.crop || '',
+        } : null)),
         existing,
       };
     }),
@@ -423,6 +507,15 @@ async function bulkMarkAttendance(user, input = {}) {
   const organizationId = await getOrganizationId(user, input.organizationId);
   const employees = await getLocationEmployees(input.locationId, organizationId);
   const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+  let upload = null;
+  if (input.uploadId) {
+    if (!mongoose.isValidObjectId(input.uploadId)) throw httpError(400, 'Invalid upload id.');
+    upload = await AttendanceUpload.findOne({ _id: input.uploadId, organizationId, locationId: input.locationId }).select('_id').lean();
+    if (!upload) throw httpError(404, 'Uploaded register not found for this location.');
+  }
+  const sourceFields = (entry) => (upload
+    ? { source: 'upload', uploadId: upload._id, sourceMark: typeof entry.mark === 'string' ? entry.mark.slice(0, 40) : '' }
+    : { source: 'manual', uploadId: null, sourceMark: '' });
   const seen = new Set();
   const candidateIds = new Set();
   const candidateDates = new Set();
@@ -446,7 +539,7 @@ async function bulkMarkAttendance(user, input = {}) {
     seen.add(key);
     candidateIds.add(employeeId);
     candidateDates.add(date);
-    accepted.push({ employeeId, status, date, replace: entry?.replace === true });
+    accepted.push({ employeeId, status, date, replace: entry?.replace === true, mark: entry?.mark });
   }
 
   const existing = accepted.length === 0 ? [] : await Attendance.find({
@@ -471,6 +564,7 @@ async function bulkMarkAttendance(user, input = {}) {
       date: entry.date,
       status: entry.status,
       markedBy: user.id,
+      ...sourceFields(entry),
     });
   }
 
@@ -491,10 +585,17 @@ async function bulkMarkAttendance(user, input = {}) {
     const result = await Attendance.bulkWrite(toUpdate.map((entry) => ({
       updateOne: {
         filter: { organizationId, employeeId: entry.employeeId, date: entry.date },
-        update: { $set: { status: entry.status, markedBy: user.id } },
+        update: { $set: { status: entry.status, markedBy: user.id, ...(upload ? sourceFields(entry) : {}) } },
       },
     })), { ordered: false });
     updated = result.matchedCount ?? result.nMatched ?? toUpdate.length;
+  }
+
+  if (upload) {
+    await AttendanceUpload.updateOne(
+      { _id: upload._id },
+      { $set: { status: 'confirmed', confirmedAt: new Date() }, $inc: { savedCount: saved + updated } },
+    );
   }
 
   return { saved, updated, skippedDuplicates, skippedInvalid, skippedBlocked };
@@ -536,8 +637,10 @@ async function getAttendanceRegister(user, input = {}) {
     const key = String(record.employeeId);
     if (!countsAttendanceOn(employeesById.get(key), record.date)) continue;
     if (!marksByEmployee.has(key)) marksByEmployee.set(key, new Map());
-    marksByEmployee.get(key).set(Number(record.date.slice(8, 10)), record.status === 'present' ? 'P' : 'A');
+    marksByEmployee.get(key).set(Number(record.date.slice(8, 10)), publicStatus(record.status));
   }
+  const sundays = new Set(Array.from({ length: daysInMonth }, (_, index) => index)
+    .filter((index) => isSunday(`${input.month}-${String(index + 1).padStart(2, '0')}`)));
 
   const today = currentDateInTimeZone(input.timeZone || 'UTC');
   const elapsedDays = today.slice(0, 7) > input.month
@@ -558,7 +661,10 @@ async function getAttendanceRegister(user, input = {}) {
     ))
     .map((employee, index) => {
       const marks = marksByEmployee.get(String(employee._id)) || new Map();
-      const days = Array.from({ length: daysInMonth }, (_, day) => marks.get(day + 1) || '');
+      const statuses = [...marks.values()];
+      const workingDays = workingDaysFor(employee);
+      const countableDays = Array.from({ length: workingDays }, (_, day) => day).filter((day) => !sundays.has(day)).length;
+      const stats = summarizeAttendance(statuses, countableDays);
       return {
         serial: index + 1,
         employeeId: String(employee._id),
@@ -567,31 +673,41 @@ async function getAttendanceRegister(user, input = {}) {
         skillCategory: employee.skillCategory || '',
         employeeStatus: employee.status,
         disabledOn: employee.status === 'disabled' ? employee.disabledOn || '' : '',
-        workingDays: workingDaysFor(employee),
-        days,
-        totalPresent: days.filter((mark) => mark === 'P').length,
+        workingDays,
+        days: Array.from({ length: daysInMonth }, (_, day) => STATUS_CODES[marks.get(day + 1)] || ''),
+        totalPresent: stats.presentDays + stats.halfDays * 0.5,
+        stats,
       };
     });
 
-  const sundays = new Set(Array.from({ length: daysInMonth }, (_, index) => index)
-    .filter((index) => isSunday(`${input.month}-${String(index + 1).padStart(2, '0')}`)));
   const workingMarks = (row) => row.days.slice(0, row.workingDays).filter((_, index) => !sundays.has(index));
 
-  let present = 0;
-  let absent = 0;
+  const totals = { present: 0, absent: 0, halfDays: 0, paidLeaves: 0, otherLeaves: 0, weeklyOffs: 0, holidays: 0, workingDays: 0 };
   let unmarked = 0;
   for (const row of allRows) {
-    for (const mark of row.days) {
-      if (mark === 'P') present += 1;
-      else if (mark === 'A') absent += 1;
-    }
+    totals.present += row.stats.presentDays;
+    totals.absent += row.stats.absentDays;
+    totals.halfDays += row.stats.halfDays;
+    totals.paidLeaves += row.stats.paidLeaves;
+    totals.otherLeaves += row.stats.otherLeaves;
+    totals.weeklyOffs += row.stats.weeklyOffs;
+    totals.holidays += row.stats.holidays;
+    totals.workingDays += row.stats.workingDays;
     unmarked += workingMarks(row).filter((mark) => mark === '').length;
   }
+  const attended = totals.present + totals.halfDays * 0.5;
   const summary = {
     employees: allRows.length,
-    present,
-    absent,
+    present: totals.present,
+    absent: totals.absent,
     unmarked,
+    halfDays: totals.halfDays,
+    paidLeaves: totals.paidLeaves,
+    otherLeaves: totals.otherLeaves,
+    weeklyOffs: totals.weeklyOffs,
+    holidays: totals.holidays,
+    workingDays: totals.workingDays,
+    attendancePercentage: totals.workingDays > 0 ? Math.round((attended / totals.workingDays) * 10000) / 100 : 0,
   };
   const categories = [...new Set(allRows.map((row) => row.skillCategory).filter(Boolean))].sort();
 
@@ -602,7 +718,7 @@ async function getAttendanceRegister(user, input = {}) {
     if (category && row.skillCategory !== category) return false;
     const elapsed = workingMarks(row);
     if (attendanceFilter === 'absent' && !row.days.includes('A')) return false;
-    if (attendanceFilter === 'full' && (elapsed.length === 0 || elapsed.some((mark) => mark !== 'P'))) return false;
+    if (attendanceFilter === 'full' && (!elapsed.includes('P') || elapsed.some((mark) => !['P', 'WO', 'H'].includes(mark)))) return false;
     if (attendanceFilter === 'unmarked' && !elapsed.includes('')) return false;
     if (!search) return true;
     return row.name.toLowerCase().includes(search) || row.parentName.toLowerCase().includes(search);
@@ -648,9 +764,12 @@ module.exports = {
   bulkMarkAttendance,
   currentDateInTimeZone,
   getAttendanceRegister,
+  getAttendanceSymbols,
+  getAttendanceUploadFile,
   listAttendance,
   listAttendanceHistory,
   markAttendance,
   parseAttendanceMonth,
   parseAttendanceSheet,
+  updateAttendanceSymbols,
 };

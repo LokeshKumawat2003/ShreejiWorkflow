@@ -14,7 +14,6 @@ import {
   ModalOverlay,
   Box,
   SimpleGrid,
-  Spinner,
   Stack,
   Tag,
   TagCloseButton,
@@ -28,6 +27,7 @@ import { ApiError } from '../../../services/api';
 import { listEmployees, type EmployeeListParams } from '../../../services/employeeService';
 import type { Employee } from '../../../types';
 import Pagination from '../../../components/ui/Pagination';
+import { ListSkeleton } from '../../../components/ui/Skeletons';
 
 type AssignEmployeeDialogProps = {
   isOpen: boolean;
@@ -156,7 +156,7 @@ function AssignEmployeeDialog({
             {loadError ? (
               <Alert status="error">{loadError}</Alert>
             ) : isLoading ? (
-              <HStack justify="center" py={5}><Spinner color="brand.500" /></HStack>
+              <ListSkeleton rows={4} rowHeight="56px" />
             ) : total === 0 ? (
               <Text py={3} color="slate.500" fontSize="sm">
                 {search ? 'No available employees match this search.' : 'There are no available employees to add.'}

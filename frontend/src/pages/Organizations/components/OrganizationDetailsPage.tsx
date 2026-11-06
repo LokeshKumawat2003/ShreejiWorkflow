@@ -13,7 +13,7 @@ import {
   ModalHeader,
   ModalOverlay,
   SimpleGrid,
-  Spinner,
+  Skeleton,
   Stack,
   Text,
   useDisclosure,
@@ -182,7 +182,9 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
           </Stack>
 
           {isLoading ? (
-            <HStack justify="center" pt={8} pb={2}><Spinner color="brand.500" /></HStack>
+            <SimpleGrid mt={6} columns={{ base: 1, sm: 2, xl: 4 }} spacing={3}>
+              {[0, 1, 2, 3].map((item) => <Skeleton key={item} h="64px" borderRadius="md" />)}
+            </SimpleGrid>
           ) : (
             <SimpleGrid mt={6} columns={{ base: 1, sm: 2, xl: 4 }} spacing={3}>
               <InfoTile icon={<PeopleIcon boxSize={4} />} color="brand" label="Account holder" value={organization.name} />

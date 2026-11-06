@@ -8,7 +8,6 @@ import {
   Select,
   SimpleGrid,
   Skeleton,
-  Spinner,
   Stack,
   Text,
   Tooltip,
@@ -26,6 +25,7 @@ import {
   type AttendanceStatus,
 } from '../../../services/attendanceService';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
+import { ATTENDANCE_STATUS_META, ATTENDANCE_STATUS_OPTIONS, REGISTER_MARK_META } from '../utils/attendanceStatus';
 import AttendanceUploadDialog from './AttendanceUploadDialog';
 
 type AttendanceRegisterGridProps = {
@@ -52,11 +52,9 @@ function dayDate(month: string, day: number) {
   return `${month}-${String(day).padStart(2, '0')}`;
 }
 
-const markStyles: Record<AttendanceRegisterMark, { bg: string; color: string; border: string; hover: string }> = {
-  P: { bg: 'green.50', color: 'green.700', border: 'green.200', hover: 'green.100' },
-  A: { bg: 'red.50', color: 'red.600', border: 'red.200', hover: 'red.100' },
-  '': { bg: 'white', color: 'slate.400', border: 'slate.200', hover: 'slate.100' },
-};
+const markStyles = REGISTER_MARK_META;
+const LEGEND_MARKS: AttendanceRegisterMark[] = ['P', 'A', 'HD', 'L', 'CL', 'SL', 'PL', 'WO', 'H', ''];
+const LEAVE_MARKS = new Set<AttendanceRegisterMark>(['L', 'CL', 'SL', 'PL']);
 
 function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegisterGridProps) {
   const toast = useToast();
@@ -76,6 +74,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | 'print' | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [editBrush, setEditBrush] = useState<'toggle' | AttendanceStatus>('toggle');
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -122,8 +121,8 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
   const visibleRows = register?.rows || [];
   const pagination = register?.pagination;
   const summary = register?.summary;
-  const attendanceRate = summary && summary.present + summary.absent
-    ? `${Math.round((summary.present / (summary.present + summary.absent)) * 100)}%`
+  const attendanceRate = summary?.attendancePercentage !== undefined && summary.workingDays
+    ? `${Math.round(summary.attendancePercentage)}%`
     : '—';
   const totalMarks = summary ? summary.present + summary.absent + summary.unmarked : 0;
   const markShare = (value?: number) => (totalMarks ? (value ?? 0) / totalMarks : null);
@@ -156,16 +155,26 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
         if (row.employeeId !== employeeId) return row;
         const days = [...row.days];
         days[dayIndex] = mark;
-        return { ...row, days, totalPresent: days.filter((value) => value === 'P').length };
+        return {
+          ...row,
+          days,
+          totalPresent: days.filter((value) => value === 'P').length + days.filter((value) => value === 'HD').length * 0.5,
+        };
       }),
     });
+  }
+
+  function nextStatusFor(currentMark: AttendanceRegisterMark): AttendanceStatus {
+    if (editBrush !== 'toggle') return editBrush;
+    return currentMark === 'P' ? 'absent' : 'present';
   }
 
   async function toggleCell(employeeId: string, dayIndex: number, currentMark: AttendanceRegisterMark) {
     const key = `${employeeId}|${dayIndex}`;
     if (savingCells.has(key)) return;
-    const nextStatus: AttendanceStatus = currentMark === 'P' ? 'absent' : 'present';
-    const nextMark: AttendanceRegisterMark = nextStatus === 'present' ? 'P' : 'A';
+    const nextStatus = nextStatusFor(currentMark);
+    const nextMark = ATTENDANCE_STATUS_META[nextStatus].code;
+    if (nextMark === currentMark) return;
     setRowMark(employeeId, dayIndex, nextMark, currentMark);
     setSavingCells((current) => new Set(current).add(key));
     try {
@@ -211,7 +220,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
         <StatCard label="Present marks" value={summary?.present ?? 0} color="green.500" icon={<CheckCircleIcon />} helper="Of all days" share={markShare(summary?.present)} isLoading={!summary} />
         <StatCard label="Absent marks" value={summary?.absent ?? 0} color="red.500" icon={<NotAllowedIcon />} helper="Of all days" share={markShare(summary?.absent)} isLoading={!summary} />
         <StatCard label="Not marked" value={summary?.unmarked ?? 0} color="orange.400" icon={<TimeIcon />} helper="Still pending" share={markShare(summary?.unmarked)} isLoading={!summary} />
-        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" icon={<CalendarIcon />} helper="Present ÷ marked days" isLoading={!summary} />
+        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" icon={<CalendarIcon />} helper="Present (½ for half days) ÷ working days" isLoading={!summary} />
       </SimpleGrid>
 
       <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
@@ -333,16 +342,37 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
         </FilterBar>
 
         <HStack justify="space-between" flexWrap="wrap" px={{ base: 3, md: 4 }} py={2.5} fontSize="xs" color="slate.500">
-          <Text>
-            {pagination?.total ?? visibleRows.length} of {summary?.employees ?? 0} employees · {isEditing
-              ? 'Click a cell to switch Present / Absent'
-              : 'Click "Edit attendance" to make changes'}
-          </Text>
-          <HStack spacing={3}>
-            {(['P', 'A', ''] as const).map((mark) => (
+          <HStack spacing={3} flexWrap="wrap">
+            <Text>
+              {pagination?.total ?? visibleRows.length} of {summary?.employees ?? 0} employees · {isEditing
+                ? editBrush === 'toggle'
+                  ? 'Click a cell to switch Present / Absent'
+                  : `Click a cell to mark it ${ATTENDANCE_STATUS_META[editBrush].label}`
+                : 'Click "Edit attendance" to make changes'}
+            </Text>
+            {isEditing ? (
+              <Select
+                aria-label="Status applied when clicking a day"
+                size="sm"
+                w="auto"
+                fontSize="xs"
+                borderRadius="md"
+                bg="white"
+                value={editBrush}
+                onChange={(event) => setEditBrush(event.target.value as 'toggle' | AttendanceStatus)}
+              >
+                <option value="toggle">Click toggles Present / Absent</option>
+                {ATTENDANCE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{`Click sets ${option.label}`}</option>
+                ))}
+              </Select>
+            ) : null}
+          </HStack>
+          <HStack spacing={3} flexWrap="wrap">
+            {LEGEND_MARKS.map((mark) => (
               <HStack key={mark || 'empty'} spacing={1.5}>
                 <Box w="14px" h="14px" borderRadius="4px" bg={markStyles[mark].bg} border="1px solid" borderColor={markStyles[mark].border} />
-                <Text>{mark === 'P' ? 'Present' : mark === 'A' ? 'Absent' : 'Not marked'}</Text>
+                <Text>{mark ? `${mark} ${markStyles[mark].label}` : markStyles[mark].label}</Text>
               </HStack>
             ))}
             <HStack spacing={1.5}>
@@ -354,7 +384,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
 
         {loadError ? (
           <Alert status="error">{loadError}</Alert>
-        ) : isLoading && !register ? (
+        ) : isLoading ? (
           <Stack p={4} spacing={2}>
             {[0, 1, 2, 3, 4].map((item) => <Skeleton key={item} h="40px" borderRadius="md" />)}
           </Stack>
@@ -369,8 +399,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
             <Text fontSize="sm" color="slate.500">Try a different search or filter.</Text>
           </Box>
         ) : (
-          <Box position="relative" overflowX="auto" opacity={isLoading ? 0.6 : 1} transition="opacity 0.15s">
-            {isLoading ? <Spinner position="absolute" top="40%" left="50%" color="brand.500" zIndex={5} /> : null}
+          <Box position="relative" overflowX="auto">
             <Box as="table" w="max-content" minW="100%" fontSize="sm" sx={{ borderCollapse: 'separate', borderSpacing: 0 }}>
               <Box as="thead">
                 <Box as="tr" bg="slate.50" position="sticky" top={0} zIndex={3}>
@@ -405,11 +434,26 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                   <Box as="th" px={3} py={2} textAlign="center" fontSize="xs" color="red.600" minW="56px" borderBottom="1px solid" borderColor="slate.200">
                     A
                   </Box>
+                  <Box as="th" px={3} py={2} textAlign="center" fontSize="xs" color="teal.700" minW="56px" borderBottom="1px solid" borderColor="slate.200">
+                    HD
+                  </Box>
+                  <Box as="th" px={3} py={2} textAlign="center" fontSize="xs" color="purple.700" minW="56px" borderBottom="1px solid" borderColor="slate.200" title="Paid, casual, sick and other leave">
+                    Leave
+                  </Box>
+                  <Box as="th" px={3} py={2} textAlign="center" fontSize="xs" color="blue.600" minW="60px" borderBottom="1px solid" borderColor="slate.200" title="Present (½ for half days) ÷ working days, excluding weekly offs and holidays">
+                    %
+                  </Box>
                 </Box>
               </Box>
               <Box as="tbody">
                 {visibleRows.map((row) => {
-                  const absent = row.days.filter((mark) => mark === 'A').length;
+                  const countOf = (mark: AttendanceRegisterMark) => row.days.filter((value) => value === mark).length;
+                  const absent = countOf('A');
+                  const halfDays = countOf('HD');
+                  const leaves = row.days.filter((mark) => LEAVE_MARKS.has(mark)).length;
+                  const countableDays = row.stats ? row.stats.workingDays + row.stats.weeklyOffs + row.stats.holidays : 0;
+                  const workingDays = countableDays - countOf('WO') - countOf('H');
+                  const percentage = workingDays > 0 ? Math.round(((countOf('P') + halfDays * 0.5) / workingDays) * 100) : null;
                   return (
                     <Box as="tr" key={row.employeeId} bg="white" _hover={{ bg: 'slate.50' }}>
                       <Box as="td" {...stickyCell(0, STICKY_SERIAL_WIDTH)} px={3} py={1.5} color="slate.500" borderBottom="1px solid" borderColor="slate.100">
@@ -451,8 +495,8 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                                 : isBlocked
                                   ? `${row.name} is blocked`
                                   : isEditing
-                                  ? `${row.name} · ${dayDate(month, dayIndex + 1)} · click to mark ${mark === 'P' ? 'absent' : 'present'}`
-                                  : `${row.name} · ${dayDate(month, dayIndex + 1)}`}
+                                  ? `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label} · click to mark ${ATTENDANCE_STATUS_META[nextStatusFor(mark)].label}`
+                                  : `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label}`}
                               openDelay={400}
                               hasArrow
                               fontSize="xs"
@@ -460,7 +504,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                               <Box
                                 as="button"
                                 type="button"
-                                aria-label={`${row.name} day ${dayIndex + 1}: ${mark === 'P' ? 'present' : mark === 'A' ? 'absent' : 'not marked'}`}
+                                aria-label={`${row.name} day ${dayIndex + 1}: ${style.label.toLowerCase()}`}
                                 disabled={!isEditable || isSaving}
                                 onClick={() => void toggleCell(row.employeeId, dayIndex, mark)}
                                 w={CELL_SIZE}
@@ -494,6 +538,15 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                       </Box>
                       <Box as="td" px={3} textAlign="center" fontWeight="700" color="red.600" borderBottom="1px solid" borderColor="slate.100">
                         {absent}
+                      </Box>
+                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="teal.700" borderBottom="1px solid" borderColor="slate.100">
+                        {halfDays}
+                      </Box>
+                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="purple.700" borderBottom="1px solid" borderColor="slate.100">
+                        {leaves}
+                      </Box>
+                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="blue.600" borderBottom="1px solid" borderColor="slate.100">
+                        {percentage === null ? '—' : `${percentage}%`}
                       </Box>
                     </Box>
                   );

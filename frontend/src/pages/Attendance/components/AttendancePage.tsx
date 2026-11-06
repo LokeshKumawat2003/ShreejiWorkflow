@@ -5,7 +5,7 @@ import {
   Box,
   Button,
   HStack,
-  Spinner,
+  Skeleton,
   Table,
   TableContainer,
   Tbody,
@@ -22,6 +22,7 @@ import { addTableSheet, createWorkbook, downloadWorkbook } from '../../../utils/
 import { finishPdf, type PdfAction } from '../../../utils/pdfOutput';
 import { ApiError } from '../../../services/api';
 import { listAttendance, markAttendance, type AttendanceEntry, type AttendanceStatus } from '../../../services/attendanceService';
+import { ATTENDANCE_STATUS_META } from '../utils/attendanceStatus';
 import type { UserRole } from '../../../types';
 import AttendanceUploadDialog from './AttendanceUploadDialog';
 
@@ -226,7 +227,14 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
             </Thead>
             <Tbody>
               {isLoading ? (
-                <Tr><Td colSpan={4} textAlign="center" py={10}><Spinner color="brand.500" /></Td></Tr>
+                [0, 1, 2, 3, 4].map((row) => (
+                  <Tr key={row}>
+                    <Td><Skeleton h="14px" w="70%" mb={2} /><Skeleton h="10px" w="50%" /></Td>
+                    <Td><Skeleton h="12px" w="60%" /></Td>
+                    <Td><Skeleton h="12px" w="60%" /></Td>
+                    <Td><Skeleton h="32px" w="160px" borderRadius="md" /></Td>
+                  </Tr>
+                ))
               ) : entries.length === 0 ? (
                 <Tr><Td colSpan={4} textAlign="center" py={10} color="slate.500">No employees assigned to this organization.</Td></Tr>
               ) : entries.map((entry) => {
@@ -283,7 +291,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
                         fontSize="xs"
                         fontWeight="600"
                       >
-                        {entry.status ? entry.status.toUpperCase() : 'NOT MARKED'}
+                        {entry.status ? ATTENDANCE_STATUS_META[entry.status].label.toUpperCase() : 'NOT MARKED'}
                       </Badge>
                     )}
                   </Td>

@@ -16,7 +16,6 @@ import {
   ModalHeader,
   ModalOverlay,
   Select,
-  Spinner,
   Table,
   TableContainer,
   Tbody,
@@ -31,7 +30,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
 import FileDropzone from '../../../components/ui/FileDropzone';
 import Pagination from '../../../components/ui/Pagination';
+import { ListSkeleton } from '../../../components/ui/Skeletons';
 import AttendanceMonthUpload from './AttendanceMonthUpload';
+import { ATTENDANCE_STATUS_OPTIONS } from '../utils/attendanceStatus';
 import { downloadDayUploadSheet } from '../utils/attendanceUploadSheet';
 import { ApiError } from '../../../services/api';
 import {
@@ -378,7 +379,7 @@ function AttendanceUploadDialog({
           {warning ? <Alert mt={4} status="warning">{warning}</Alert> : null}
           {error ? <Alert mt={4} status="error">{error}</Alert> : null}
           {isParsing ? (
-            <Box py={10} textAlign="center"><Spinner color="brand.500" /></Box>
+            <ListSkeleton rows={6} rowHeight="36px" py={5} />
           ) : rows.length > 0 ? (
             <>
             <HStack mt={5} mb={3} spacing={3} flexWrap="wrap" align="flex-end">
@@ -492,8 +493,9 @@ function AttendanceUploadDialog({
                             })}
                           >
                             <option value="">Not read</option>
-                            <option value="present">Present</option>
-                            <option value="absent">Absent</option>
+                            {ATTENDANCE_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
                           </Select>
                         </Td>
                         <Td>

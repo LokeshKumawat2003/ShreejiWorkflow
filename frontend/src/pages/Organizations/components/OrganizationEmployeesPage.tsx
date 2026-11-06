@@ -1,6 +1,6 @@
 import { AddIcon } from '@chakra-ui/icons';
 import { useDisclosure, useToast } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActionButton } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { createAppointmentLetterPdf, createCombinedAppointmentLettersPdf, downloadAppointmentLetters } from '../../../services/appointmentLetterService';
@@ -21,6 +21,7 @@ type OrganizationEmployeesPageProps = {
   organizationId: string;
   organizationName: string;
   location: OrganizationLocation;
+  onViewingChange?: (isViewing: boolean) => void;
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -39,7 +40,7 @@ async function sendOrganizationAppointmentLetters(employees: Employee[], locatio
   if (pdf) await emailOrganizationAppointmentLetters(location.id, pdf);
 }
 
-function OrganizationEmployeesPage({ organizationId, organizationName, location }: OrganizationEmployeesPageProps) {
+function OrganizationEmployeesPage({ organizationId, organizationName, location, onViewingChange }: OrganizationEmployeesPageProps) {
   const toast = useToast();
   const employees = useEmployees(organizationId, true, location.id);
   const formDialog = useDisclosure();
@@ -53,6 +54,14 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location 
   const [isRemoving, setIsRemoving] = useState(false);
   const [movingEmployee, setMovingEmployee] = useState<Employee | null>(null);
   const [isMoving, setIsMoving] = useState(false);
+  const isViewing = viewingEmployee !== null;
+
+  useEffect(() => {
+    onViewingChange?.(isViewing);
+    if (isViewing) window.scrollTo({ top: 0 });
+  }, [isViewing, onViewingChange]);
+
+  useEffect(() => () => onViewingChange?.(false), [onViewingChange]);
 
   function openCreateDialog() {
     setFormEmployee(null);

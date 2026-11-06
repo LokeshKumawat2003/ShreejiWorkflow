@@ -1,6 +1,6 @@
 import { CalendarIcon, ChevronLeftIcon, InfoOutlineIcon, TimeIcon } from '@chakra-ui/icons';
 import { Avatar, Box, Button, Heading, HStack, SimpleGrid, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { BuildingIcon, MapPinIcon, PeopleIcon, StatusBadge } from '../../../components/ui';
 import type { OrganizationLocation, User } from '../../../types';
 import AttendanceRegisterGrid from '../../Attendance/components/AttendanceRegisterGrid';
@@ -24,11 +24,14 @@ const workspaceTabs = [
 function LocationWorkspacePage({ organization, location, onBack }: LocationWorkspacePageProps) {
 	const organizationId = organization.id || organization._id;
 	const missingId = <Text color="red.600">This organization has no valid ID.</Text>;
+	const [isViewingEmployee, setIsViewingEmployee] = useState(false);
+	const headerDisplay = isViewingEmployee ? 'none' : undefined;
 
 	return (
 		<Tabs colorScheme="brand" variant="unstyled" isLazy>
 			<Stack spacing={6}>
 				<Button
+					display={headerDisplay}
 					alignSelf="flex-start"
 					h="34px"
 					px={3}
@@ -44,7 +47,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 					Back to locations
 				</Button>
 
-				<Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
+				<Box display={headerDisplay} bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">
 					<Box
 						position="relative"
 						h={{ base: '76px', md: '92px' }}
@@ -113,7 +116,7 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 
 				<TabPanels>
 					<TabPanel p={0}>
-						{organizationId ? <OrganizationEmployeesPage organizationId={organizationId} organizationName={location.name} location={location} /> : missingId}
+						{organizationId ? <OrganizationEmployeesPage organizationId={organizationId} organizationName={location.name} location={location} onViewingChange={setIsViewingEmployee} /> : missingId}
 					</TabPanel>
 					<TabPanel p={0}>
 						{organizationId ? <AttendanceRegisterGrid organizationId={organizationId} locationId={location.id} /> : missingId}

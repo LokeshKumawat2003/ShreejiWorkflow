@@ -3,7 +3,7 @@ const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
-const { canMarkAttendanceOn, countsAttendanceOn } = require('../utils/employeeStatus');
+const { canMarkAttendanceOn, countsAttendanceOn, isSunday } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 const {
@@ -206,6 +206,7 @@ async function markAttendance(user, input = {}) {
     throw httpError(400, 'Organizations can only mark attendance for today.');
   }
   if (!ATTENDANCE_STATUSES.includes(status)) throw httpError(400, 'Select a valid attendance status.');
+  if (isSunday(date)) throw httpError(400, 'Sunday is a weekly off. Attendance cannot be marked on Sundays.');
 
   const employeeFilter = { _id: employeeId, organizationId };
   if (input.locationId) employeeFilter.locationId = input.locationId;
@@ -434,7 +435,7 @@ async function bulkMarkAttendance(user, input = {}) {
     const status = entry?.status;
     const date = entry?.date || defaultDate;
     const key = `${employeeId}|${date}`;
-    if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || seen.has(key)) {
+    if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || isSunday(date) || seen.has(key)) {
       skippedInvalid += 1;
       continue;
     }
@@ -572,15 +573,19 @@ async function getAttendanceRegister(user, input = {}) {
       };
     });
 
+  const sundays = new Set(Array.from({ length: daysInMonth }, (_, index) => index)
+    .filter((index) => isSunday(`${input.month}-${String(index + 1).padStart(2, '0')}`)));
+  const workingMarks = (row) => row.days.slice(0, row.workingDays).filter((_, index) => !sundays.has(index));
+
   let present = 0;
   let absent = 0;
   let unmarked = 0;
   for (const row of allRows) {
-    for (const [index, mark] of row.days.entries()) {
+    for (const mark of row.days) {
       if (mark === 'P') present += 1;
       else if (mark === 'A') absent += 1;
-      else if (index < row.workingDays) unmarked += 1;
     }
+    unmarked += workingMarks(row).filter((mark) => mark === '').length;
   }
   const summary = {
     employees: allRows.length,
@@ -595,7 +600,7 @@ async function getAttendanceRegister(user, input = {}) {
   const attendanceFilter = REGISTER_FILTERS.includes(input.filter) ? input.filter : 'all';
   const filteredRows = allRows.filter((row) => {
     if (category && row.skillCategory !== category) return false;
-    const elapsed = row.days.slice(0, row.workingDays);
+    const elapsed = workingMarks(row);
     if (attendanceFilter === 'absent' && !row.days.includes('A')) return false;
     if (attendanceFilter === 'full' && (elapsed.length === 0 || elapsed.some((mark) => mark !== 'P'))) return false;
     if (attendanceFilter === 'unmarked' && !elapsed.includes('')) return false;

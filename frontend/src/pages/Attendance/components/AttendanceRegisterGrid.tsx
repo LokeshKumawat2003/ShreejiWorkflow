@@ -345,6 +345,10 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                 <Text>{mark === 'P' ? 'Present' : mark === 'A' ? 'Absent' : 'Not marked'}</Text>
               </HStack>
             ))}
+            <HStack spacing={1.5}>
+              <Box w="14px" h="14px" borderRadius="4px" bg="orange.50" border="1px solid" borderColor="orange.100" />
+              <Text>Sunday (off)</Text>
+            </HStack>
           </HStack>
         </HStack>
 
@@ -424,6 +428,15 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                         {row.skillCategory || '—'}
                       </Box>
                       {row.days.map((mark, dayIndex) => {
+                        if (dayHeaders[dayIndex]?.isSunday) {
+                          return (
+                            <Box as="td" key={dayIndex} px={0.5} py={1.5} textAlign="center" bg="orange.50" borderBottom="1px solid" borderColor="slate.100">
+                              <Tooltip label="Sunday · weekly off" openDelay={400} hasArrow fontSize="xs">
+                                <Box aria-label={`${row.name} day ${dayIndex + 1}: Sunday`} w={CELL_SIZE} h={CELL_SIZE} display="inline-block" />
+                              </Tooltip>
+                            </Box>
+                          );
+                        }
                         const isElapsed = dayIndex < lastEditableDay;
                         const isBlocked = row.employeeStatus === 'disabled'
                           && (!row.disabledOn || dayDate(month, dayIndex + 1) >= row.disabledOn);

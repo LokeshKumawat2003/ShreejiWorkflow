@@ -2221,7 +2221,10 @@ test('admins import a whole month and future days are skipped', async () => {
     );
     assert.equal(result.lastImportableDay, today);
     assert.equal(result.rows[0].marks.length, today);
-    assert.ok(result.rows[0].marks.every((mark) => mark === 'present'));
+    assert.ok(result.rows[0].marks.every((mark, index) => {
+      const isSunday = new Date(`${month}-${String(index + 1).padStart(2, '0')}T00:00:00Z`).getUTCDay() === 0;
+      return mark === (isSunday ? null : 'present');
+    }));
     assert.equal(result.rows[0].existing[0], 'absent');
     assert.equal(result.skippedFutureDays.length, daysInMonth - today);
 
@@ -2577,7 +2580,8 @@ test('attendance register only expects attendance until the block date', async (
     assert.equal(blocked.totalPresent, 1);
     assert.equal(blocked.days[11], '');
     assert.equal(blocked.disabledOn, '2026-09-11');
-    assert.deepEqual(register.summary, { employees: 2, present: 1, absent: 0, unmarked: 30 + 9 });
+    // Sundays (6, 13, 20, 27 Sep 2026) are weekly offs and never expected.
+    assert.deepEqual(register.summary, { employees: 2, present: 1, absent: 0, unmarked: 26 + 8 });
   } finally {
     User.findOne = originalUserFind;
     Location.findOne = originalLocationFind;

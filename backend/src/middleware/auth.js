@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 const User = require('../models/User');
-const { verifyToken } = require('../services/authService');
+const { createToken, verifyToken } = require('../services/authService');
 const { httpError } = require('../utils/httpError');
+const { readAuthCookie, setAuthCookie } = require('../utils/authCookie');
 const { publicUser } = require('../utils/user');
 
 async function requireAuth(req, res, next) {
-  const authorization = req.get('authorization') || '';
-  const [scheme, token] = authorization.split(' ');
-  if (scheme !== 'Bearer' || !token) {
+  const token = readAuthCookie(req);
+  if (!token) {
     return next(httpError(401, 'Authentication is required.'));
   }
 
@@ -29,6 +29,10 @@ async function requireAuth(req, res, next) {
     }
 
     req.user = publicUser(user);
+    req.rememberMe = payload.remember !== false;
+    if (!req.rememberMe) {
+      setAuthCookie(res, createToken(user, { rememberMe: false }), false);
+    }
     return next();
   } catch (error) {
     if (error.statusCode) {

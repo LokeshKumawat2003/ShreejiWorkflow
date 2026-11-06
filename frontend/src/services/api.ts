@@ -1,4 +1,9 @@
 import axios, { type AxiosError } from 'axios';
+import type { User } from '../types';
+
+// Only a flag, never the token: sessionStorage is cleared when the tab closes,
+// which is what ends a login made without "Remember me".
+const TAB_SESSION_KEY = 'tabSession';
 
 type ApiErrorResponse = {
   message?: string;
@@ -18,45 +23,41 @@ const api = axios.create({
   // baseURL: import.meta.env.VITE_API_URL ?? 'https://shreejiworkflow.onrender.com/api',
   
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api',
+  withCredentials: true,
 });
 
-export function getAccessToken() {
-  return localStorage.getItem('accessToken') ?? sessionStorage.getItem('accessToken');
-}
-
-export function getTokenExpiry(token: string): number | null {
-  try {
-    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const { exp } = JSON.parse(atob(payload)) as { exp?: number };
-    return typeof exp === 'number' ? exp * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
-export function isAccessTokenExpired() {
-  const token = getAccessToken();
-  if (!token) return true;
-  const expiry = getTokenExpiry(token);
-  return expiry !== null && Date.now() >= expiry;
-}
-
 export function logoutToLogin() {
-  clearAccessToken();
   if (window.location.pathname !== '/login') {
     window.location.replace('/login');
   }
 }
 
-api.interceptors.request.use((config) => {
-  const token = getAccessToken();
+export function markTabSession() {
+  sessionStorage.setItem(TAB_SESSION_KEY, '1');
+}
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+export async function logout() {
+  sessionStorage.removeItem(TAB_SESSION_KEY);
+  await api.post('/auth/logout').catch(() => undefined);
+}
+
+export async function getSessionUser(): Promise<User | null> {
+  try {
+    const { data } = await api.get<{ user: User; rememberMe: boolean }>('/auth/me');
+    if (data.rememberMe || sessionStorage.getItem(TAB_SESSION_KEY)) return data.user;
+    return null;
+  } catch {
+    return null;
   }
+}
 
-  return config;
-});
+export async function checkSession() {
+  try {
+    await api.get('/auth/me');
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) logoutToLogin();
+  }
+}
 
 api.interceptors.response.use(
   (response) => response,
@@ -71,18 +72,5 @@ api.interceptors.response.use(
     return Promise.reject(new ApiError(message, status));
   },
 );
-
-export function setAccessToken(token: string, rememberMe: boolean) {
-  const storage = rememberMe ? localStorage : sessionStorage;
-  const otherStorage = rememberMe ? sessionStorage : localStorage;
-
-  otherStorage.removeItem('accessToken');
-  storage.setItem('accessToken', token);
-}
-
-export function clearAccessToken() {
-  localStorage.removeItem('accessToken');
-  sessionStorage.removeItem('accessToken');
-}
 
 export default api;

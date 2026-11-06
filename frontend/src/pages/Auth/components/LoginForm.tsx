@@ -19,12 +19,11 @@ import {
 } from '@chakra-ui/react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api, { ApiError, setAccessToken } from '../../../services/api';
+import api, { ApiError, markTabSession } from '../../../services/api';
 import type { User } from '../../../types';
 import { getDashboardPath } from '../../../app/authorization';
 
 type LoginResponse = {
-  token: string;
   user: User;
 };
 
@@ -62,8 +61,8 @@ function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      const { data } = await api.post<LoginResponse>('/auth/login', { email, password });
-      setAccessToken(data.token, rememberMe);
+      const { data } = await api.post<LoginResponse>('/auth/login', { email, password, rememberMe });
+      markTabSession();
       navigate(getDashboardPath(data.user.role), {
         replace: true,
         state: { user: data.user },

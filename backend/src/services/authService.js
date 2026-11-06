@@ -20,13 +20,17 @@ function getJwtSecret() {
   return secret;
 }
 
-function createToken(user) {
-  return jwt.sign({ role: user.role }, getJwtSecret(), {
+// Logins without "Remember me" are kept alive by the open tab refreshing them;
+// once the tab is closed they lapse after this idle window.
+const SESSION_ONLY_EXPIRES_IN = '3m';
+
+function createToken(user, { rememberMe = true } = {}) {
+  return jwt.sign({ role: user.role, remember: rememberMe }, getJwtSecret(), {
     algorithm: JWT_ALGORITHM,
     subject: String(user.id),
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    expiresIn: rememberMe ? process.env.JWT_EXPIRES_IN || '7d' : SESSION_ONLY_EXPIRES_IN,
   });
 }
 
@@ -51,7 +55,8 @@ async function login(input) {
     throw httpError(401, 'Invalid email or password.');
   }
 
-  return { token: createToken(user), user: publicUser(user) };
+  const rememberMe = input.rememberMe !== false;
+  return { token: createToken(user, { rememberMe }), user: publicUser(user), rememberMe };
 }
 
 async function registerAdmin(input) {

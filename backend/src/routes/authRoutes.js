@@ -4,6 +4,7 @@ const {
   forgotPassword,
   resetPasswordWithToken,
   signIn,
+  signOut,
   signUp,
 } = require('../controllers/authController');
 const { requireAuth } = require('../middleware/auth');
@@ -22,6 +23,7 @@ function requireDatabase(req, res, next) {
 
 router.post('/login', ...loginLimiters, requireDatabase, signIn);
 router.post('/register', requireDatabase, signUp);
+router.post('/logout', signOut);
 router.post('/forgot-password', ...forgotPasswordLimiters, requireDatabase, forgotPassword);
 router.post('/reset-password', ...resetPasswordLimiters, requireDatabase, resetPasswordWithToken);
 router.get('/me', requireAuth, currentUser);

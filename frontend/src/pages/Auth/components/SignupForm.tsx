@@ -16,12 +16,11 @@ import {
 } from '@chakra-ui/react';
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api, { ApiError, setAccessToken } from '../../../services/api';
+import api, { ApiError } from '../../../services/api';
 import type { User, UserRole } from '../../../types';
 import { getDashboardPath } from '../../../app/authorization';
 
 type SignupResponse = {
-  token: string;
   user: User;
 };
 
@@ -68,7 +67,6 @@ function SignupForm() {
         ? { role, name, email, password }
         : { role, name, organizationName, email, password };
       const { data } = await api.post<SignupResponse>('/auth/register', payload);
-      setAccessToken(data.token, true);
       navigate(getDashboardPath(data.user.role), {
         replace: true,
         state: { user: data.user },

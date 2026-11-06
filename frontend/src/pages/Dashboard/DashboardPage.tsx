@@ -20,7 +20,7 @@ import AttendanceWorkspacePage from '../Attendance/AttendanceWorkspacePage';
 import BankInvoicePage from '../BankInvoice/BankInvoicePage';
 import OrganizationsPage from '../Organizations/OrganizationsPage';
 import AdminPayrollPage from '../Payroll/AdminPayrollPage';
-import api, { clearAccessToken, isAccessTokenExpired, logoutToLogin } from '../../services/api';
+import api, { checkSession, getSessionUser } from '../../services/api';
 import type { User, UserRole } from '../../types';
 import EmployeesPage from '../Employees/EmployeesPage';
 import SettingsPage from '../Settings/SettingsPage';
@@ -44,6 +44,7 @@ function DashboardPage({ role }: DashboardPageProps) {
       const endpoint = role === 'admin' ? '/dashboard/admin' : '/dashboard';
 
       try {
+        if (!(await getSessionUser())) throw new Error('No session for this tab.');
         const { data } = await api.get<{ user: User }>(endpoint);
         if (!isActive) return;
 
@@ -53,16 +54,10 @@ function DashboardPage({ role }: DashboardPageProps) {
         }
         setUser(data.user);
       } catch {
-        clearAccessToken();
         navigate('/login', { replace: true });
       } finally {
         if (isActive) setIsLoading(false);
       }
-    }
-
-    if (isAccessTokenExpired()) {
-      logoutToLogin();
-      return;
     }
 
     void loadDashboard();
@@ -73,7 +68,7 @@ function DashboardPage({ role }: DashboardPageProps) {
 
   useEffect(() => {
     function checkExpiry() {
-      if (isAccessTokenExpired()) logoutToLogin();
+      void checkSession();
     }
 
     const intervalId = window.setInterval(checkExpiry, 60_000);

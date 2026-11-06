@@ -1,10 +1,39 @@
-import { Flex, Heading, Stack, Text } from '@chakra-ui/react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Flex, Heading, Spinner, Stack, Text } from '@chakra-ui/react';
 import BrandLogo from '../../components/layout/BrandLogo';
 import AuthStoryPanel, { AuthMobileFeatures } from './components/AuthStoryPanel';
 import LoginForm from './components/LoginForm';
 import AuthLayout from '../../components/layout/AuthLayout';
+import { getDashboardPath } from '../../app/authorization';
+import { getSessionUser } from '../../services/api';
 
 function LoginPage() {
+    const navigate = useNavigate();
+    const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+    useEffect(() => {
+        let isActive = true;
+
+        void getSessionUser().then((user) => {
+            if (!isActive) return;
+            if (user) navigate(getDashboardPath(user.role), { replace: true });
+            else setIsCheckingSession(false);
+        });
+
+        return () => {
+            isActive = false;
+        };
+    }, [navigate]);
+
+    if (isCheckingSession) {
+        return (
+            <Flex minH="100vh" align="center" justify="center" bg="slate.50">
+                <Spinner color="brand.500" size="lg" />
+            </Flex>
+        );
+    }
+
     return (
         <AuthLayout storyPanel={<AuthStoryPanel />} mobileFooter={<AuthMobileFeatures />}>
             <Stack align="stretch" spacing={0} textAlign="center" color="slate.900">

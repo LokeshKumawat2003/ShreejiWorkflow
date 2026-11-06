@@ -19,7 +19,7 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
-import { clearAccessToken } from '../../services/api';
+import { logout } from '../../services/api';
 import type { UserRole } from '../../types';
 
 type DashboardNavbarProps = {
@@ -32,8 +32,8 @@ type DashboardNavbarProps = {
 function DashboardNavbar({ onOpenSidebar, title, userName, role }: DashboardNavbarProps) {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    clearAccessToken();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login', { replace: true });
   };
   return (

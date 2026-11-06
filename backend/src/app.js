@@ -41,6 +41,7 @@ function createApp() {
       }
       return callback(new Error('Origin is not allowed by CORS.'));
     },
+    credentials: true,
   }));
   const defaultJsonParser = express.json({ limit: '10kb' });
   const bulkAttendanceJsonParser = express.json({ limit: '512kb' });

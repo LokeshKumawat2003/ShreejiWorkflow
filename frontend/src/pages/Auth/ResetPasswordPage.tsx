@@ -21,7 +21,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import BrandLogo from '../../components/layout/BrandLogo';
 import AuthLayout from '../../components/layout/AuthLayout';
 import api, { ApiError } from '../../services/api';
-import AuthStoryPanel from './components/AuthStoryPanel';
+import AuthStoryPanel, { AuthMobileFeatures } from './components/AuthStoryPanel';
 
 const inputStyles = {
     bg: 'white',
@@ -67,10 +67,7 @@ function ResetPasswordPage() {
     }
 
     return (
-        <AuthLayout storyPanel={<AuthStoryPanel />}>
-            <Flex display={{ base: 'flex', lg: 'none' }} justify="center" mb={8}>
-                <BrandLogo compact />
-            </Flex>
+        <AuthLayout storyPanel={<AuthStoryPanel />} mobileFooter={<AuthMobileFeatures />}>
             <Stack align="stretch" spacing={0} textAlign="center" color="slate.900">
                 <Flex display={{ base: 'none', lg: 'flex' }} justify="center" mb={7}>
                     <BrandLogo compact />

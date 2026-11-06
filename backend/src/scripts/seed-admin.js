@@ -4,7 +4,7 @@ const User = require('../models/User');
 
 async function seedAdmin() {
   const isProduction = process.env.NODE_ENV === 'production';
-  const name = process.env.ADMIN_NAME || 'Shreeji workflow Admin';
+  const name = process.env.ADMIN_NAME || 'Shreeji Caretaker Admin';
   const email = (isProduction ? process.env.ADMIN_EMAIL || '' : 'admin@gmail.com').trim().toLowerCase();
   const password = isProduction ? process.env.ADMIN_PASSWORD || '' : 'admin123';
 

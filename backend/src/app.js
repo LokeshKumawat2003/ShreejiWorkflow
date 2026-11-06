@@ -14,7 +14,9 @@ const settingsRoutes = require('./routes/settingsRoutes');
 
 function createApp() {
   const app = express();
-  const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+  // const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+  
+  const allowedOrigin =  'http://localhost:5173';
   const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY || '', 10);
   if (trustProxyHops > 0) {
     app.set('trust proxy', trustProxyHops);

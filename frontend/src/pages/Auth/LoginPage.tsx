@@ -1,22 +1,24 @@
 import { Flex, Heading, Stack, Text } from '@chakra-ui/react';
 import BrandLogo from '../../components/layout/BrandLogo';
-import AuthStoryPanel from './components/AuthStoryPanel';
+import AuthStoryPanel, { AuthMobileFeatures } from './components/AuthStoryPanel';
 import LoginForm from './components/LoginForm';
 import AuthLayout from '../../components/layout/AuthLayout';
 
 function LoginPage() {
     return (
-        <AuthLayout storyPanel={<AuthStoryPanel />}>
-            <Flex display={{ base: 'flex', lg: 'none' }} justify="center" mb={8}>
-                <BrandLogo compact />
-            </Flex>
+        <AuthLayout storyPanel={<AuthStoryPanel />} mobileFooter={<AuthMobileFeatures />}>
             <Stack align="stretch" spacing={0} textAlign="center" color="slate.900">
-                <Flex display={{ base: 'none', lg: 'flex' }} justify="center" mb={7}>
+                <Flex display={{ base: 'none', lg: 'flex', xl: 'none' }} justify="center" mb={5}>
+                    <BrandLogo compact size="sm" />
+                </Flex>
+                <Flex display={{ base: 'none', xl: 'flex' }} justify="center" mb={8}>
                     <BrandLogo compact />
                 </Flex>
-                <Heading as="h1" fontSize="2xl" fontWeight="800">Sign in to Shreeji workflow</Heading>
-                <Text mt={2} color="slate.500" fontSize="md">
-                    Access your account to continue
+                <Heading as="h1" fontSize={{ base: '24px', sm: '26px', lg: 'clamp(1.125rem, 1.7vw, 1.5rem)' }} fontWeight={{ base: '800', lg: '700' }}>
+                    Welcome Back!
+                </Heading>
+                <Text mt={{ base: 1, lg: 1.5 }} color="slate.500" fontSize={{ base: 'sm', lg: 'clamp(0.8125rem, 1.1vw, 1rem)' }}>
+                    Sign in to continue to your account
                 </Text>
                 <LoginForm />
             </Stack>

@@ -117,7 +117,7 @@ async function requestPasswordReset(input) {
     await getMailTransport().sendMail({
       from: process.env.MAIL_FROM,
       to: user.email,
-      subject: 'Reset your Shreeji workflow password',
+      subject: 'Reset your Shreeji Caretaker password',
       text: `Hello ${displayName},\n\nWe received a request to reset your password. Open the link below to choose a new password. This link expires in 30 minutes.\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.\n\nShreeji Caretaker Company`,
       html: `<p>Hello ${escapeHtml(displayName)},</p>
 <p>We received a request to reset your password. Click the button below to choose a new password. This link expires in 30 minutes.</p>

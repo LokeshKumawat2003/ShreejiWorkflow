@@ -91,7 +91,7 @@ function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }
           </Icon>
         </Flex>
         <Box minW={0}>
-          <Text fontSize="md" fontWeight="800" color="slate.900" lineHeight="1.2" letterSpacing="-0.01em">Shreeji workflow</Text>
+          <Text fontSize="md" fontWeight="800" color="slate.900" lineHeight="1.2" letterSpacing="-0.01em">Shreeji Caretaker</Text>
           <Text fontSize="xs" color="slate.500">People management</Text>
         </Box>
       </HStack>
@@ -185,7 +185,7 @@ function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }
             </Tooltip>
           )}
         </HStack>
-        <Text mt={3} textAlign="center" fontSize="11px" color="slate.400">Shreeji workflow · v1.0.0</Text>
+        <Text mt={3} textAlign="center" fontSize="11px" color="slate.400">Shreeji Caretaker · v1.0.0</Text>
       </Box>
     </Flex>
   );

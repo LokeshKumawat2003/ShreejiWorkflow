@@ -1,41 +1,45 @@
-import { Box, Center, Text } from '@chakra-ui/react';
+import { Box, Flex, Text, type FlexProps } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 
-type FeatureTileProps = {
+type FeatureTileProps = Omit<FlexProps, 'children'> & {
   icon: ReactNode;
   label: string;
-  tone: 'blue' | 'green' | 'violet' | 'amber' | 'cyan';
-  isDark?: boolean;
 };
 
-function FeatureTile({ icon, label, tone, isDark = false }: FeatureTileProps) {
-  const toneColors = {
-    blue: 'blue.500',
-    green: 'green.500',
-    violet: 'purple.500',
-    amber: 'orange.400',
-    cyan: 'cyan.500',
-  };
-
+function FeatureTile({ icon, label, ...props }: FeatureTileProps) {
   return (
-    <Center
-      w="70px"
-      h="70px"
-      flexDirection="column"
-      gap={1}
+    <Flex
+      direction={{ base: 'column', lg: 'row' }}
+      align="center"
+      justify={{ base: 'center', lg: 'flex-start' }}
+      flex={{ base: 'none', lg: '1 1 0' }}
+      gap={{ base: 1.5, lg: 'clamp(5px, 0.7vw, 10px)' }}
+      w={{ base: '68px', sm: '72px', lg: 'auto' }}
+      minW={0}
+      minH={{ base: '56px', lg: 'auto' }}
+      px={{ base: 1, lg: 'clamp(7px, 0.8vw, 12px)' }}
+      py={{ base: 2, lg: 'min(1.5vh, 12px)' }}
+      bg="whiteAlpha.900"
       border="1px solid"
-      borderColor={isDark ? 'whiteAlpha.200' : 'whiteAlpha.700'}
-      borderRadius="md"
-      bg={isDark ? 'whiteAlpha.100' : 'whiteAlpha.800'}
-      boxShadow="sm"
+      borderColor="white"
+      borderRadius="10px"
+      boxShadow="0 6px 18px -10px rgba(49, 46, 129, 0.25)"
+      {...props}
     >
-      <Box color={toneColors[tone]} fontSize="2xl" aria-hidden="true">
+      <Box color="brand.500" fontSize={{ base: 'lg', lg: 'clamp(1.05rem, 1.65vw, 1.5rem)' }} lineHeight={0} aria-hidden="true">
         {icon}
       </Box>
-      <Text color={isDark ? 'white' : 'slate.900'} fontSize="xs" fontWeight="700">
+      <Text
+        color="slate.800"
+        fontSize={{ base: '10px', lg: 'clamp(0.65rem, 0.95vw, 0.875rem)' }}
+        fontWeight="500"
+        lineHeight="1.3"
+        textAlign={{ base: 'center', lg: 'left' }}
+        whiteSpace="pre-line"
+      >
         {label}
       </Text>
-    </Center>
+    </Flex>
   );
 }
 

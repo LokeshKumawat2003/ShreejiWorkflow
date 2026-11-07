@@ -387,6 +387,14 @@ function nearestPdfColumn(columns, center) {
   return bestIndex;
 }
 
+// Names are left-aligned, so a short name's center can sit nearer the narrow serial-number header than its own.
+function pdfColumnFor(columns, item) {
+  const center = item.x + item.width / 2;
+  const index = nearestPdfColumn(columns, center);
+  if (index < 0 || columns[index].type !== 'sno' || !/[A-Za-z]/.test(item.str)) return index;
+  return nearestPdfColumn(columns.map((column) => (column.type === 'sno' ? { ...column, center: Infinity } : column)), center);
+}
+
 // OCR misreads some day numbers (8 as "a", 29 as "28"); when the header holds exactly one cell per day, number them by position.
 function numberDayColumns(columns) {
   const dayIndexes = columns.map((column, index) => (column.type === 'day' ? index : -1)).filter((index) => index >= 0);
@@ -474,11 +482,11 @@ function pdfPagesToMatrix(pages, { unit = 1 } = {}) {
       const cells = columns.map(() => []);
       for (const stack of stacks) {
         const widest = stack.items.reduce((best, item) => (item.width > best.width ? item : best));
-        const stackColumn = nearestPdfColumn(columns, widest.x + widest.width / 2);
+        const stackColumn = pdfColumnFor(columns, widest);
         for (const item of stack.items) {
           const index = stack.items.length > 1 && columns[stackColumn]?.type !== 'day'
             ? stackColumn
-            : nearestPdfColumn(columns, item.x + item.width / 2);
+            : pdfColumnFor(columns, item);
           if (index < 0 || (columns[index].type === 'day' && !item.fromAnchor)) continue;
           cells[index].push({ y: item.y, str: item.str, confidence: item.confidence });
         }

@@ -10,10 +10,9 @@ import {
   Skeleton,
   Stack,
   Text,
-  Tooltip,
   useToast,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionButton, FilterBar, FilterField, FilterInput, FilterSelect, Pagination, PeopleIcon, PrintIcon, SearchInput, StatCard } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
@@ -22,6 +21,7 @@ import {
   type AttendanceRegister,
   type AttendanceRegisterFilter,
   type AttendanceRegisterMark,
+  type AttendanceRegisterRow,
   type AttendanceStatus,
 } from '../../../services/attendanceService';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
@@ -57,6 +57,152 @@ const markStyles = REGISTER_MARK_META;
 const LEGEND_MARKS: AttendanceRegisterMark[] = ['P', 'A', 'HD', 'L', 'CL', 'SL', 'PL', 'WO', 'H', ''];
 const LEAVE_MARKS = new Set<AttendanceRegisterMark>(['L', 'CL', 'SL', 'PL']);
 
+type EditBrush = 'toggle' | AttendanceStatus;
+
+type DayHeader = {
+  day: number;
+  weekday: string;
+  isSunday: boolean;
+  isToday: boolean;
+};
+
+function nextStatusFor(editBrush: EditBrush, currentMark: AttendanceRegisterMark): AttendanceStatus {
+  if (editBrush !== 'toggle') return editBrush;
+  return currentMark === 'P' ? 'absent' : 'present';
+}
+
+function stickyCell(left: number, width: number) {
+  return {
+    position: 'sticky' as const,
+    left: `${left}px`,
+    minW: `${width}px`,
+    maxW: `${width}px`,
+    zIndex: 2,
+    bg: 'inherit',
+  };
+}
+
+type RegisterRowProps = {
+  row: AttendanceRegisterRow;
+  dayHeaders: DayHeader[];
+  month: string;
+  lastEditableDay: number;
+  isEditing: boolean;
+  editBrush: EditBrush;
+  savingDays: string;
+  onToggle: (employeeId: string, dayIndex: number, currentMark: AttendanceRegisterMark) => void;
+};
+
+const RegisterRow = memo(function RegisterRow({
+  row,
+  dayHeaders,
+  month,
+  lastEditableDay,
+  isEditing,
+  editBrush,
+  savingDays,
+  onToggle,
+}: RegisterRowProps) {
+  const countOf = (mark: AttendanceRegisterMark) => row.days.filter((value) => value === mark).length;
+  const absent = countOf('A');
+  const halfDays = countOf('HD');
+  const leaves = row.days.filter((mark) => LEAVE_MARKS.has(mark)).length;
+  const countableDays = row.stats ? row.stats.workingDays + row.stats.weeklyOffs + row.stats.holidays : 0;
+  const workingDays = countableDays - countOf('WO') - countOf('H');
+  const percentage = workingDays > 0 ? Math.round(((countOf('P') + halfDays * 0.5) / workingDays) * 100) : null;
+  const saving = new Set(savingDays ? savingDays.split(',').map(Number) : []);
+
+  return (
+    <Box as="tr" bg="white" _hover={{ bg: 'slate.50' }}>
+      <Box as="td" {...stickyCell(0, STICKY_SERIAL_WIDTH)} px={3} py={1.5} color="slate.500" borderBottom="1px solid" borderColor="slate.100">
+        {row.serial}
+      </Box>
+      <Box as="td" {...stickyCell(STICKY_SERIAL_WIDTH, STICKY_NAME_WIDTH)} px={3} py={1.5} borderBottom="1px solid" borderRight="1px solid" borderColor="slate.100">
+        <Text fontWeight="700" color="slate.900" fontSize="xs" textTransform="uppercase" noOfLines={1} title={row.name}>{row.name}</Text>
+        {row.parentName ? <Text fontSize="10px" color="slate.400" noOfLines={1}>S/o {row.parentName}</Text> : null}
+        {row.employeeStatus === 'disabled' ? (
+          <Text fontSize="10px" color="red.500" noOfLines={1}>
+            {row.disabledOn ? `Blocked from ${row.disabledOn}` : 'Blocked'}
+          </Text>
+        ) : null}
+      </Box>
+      <Box as="td" px={3} py={1.5} fontSize="xs" color="slate.500" borderBottom="1px solid" borderColor="slate.100" whiteSpace="nowrap">
+        {row.skillCategory || '—'}
+      </Box>
+      {row.days.map((mark, dayIndex) => {
+        if (dayHeaders[dayIndex]?.isSunday) {
+          return (
+            <Box as="td" key={dayIndex} px={0.5} py={1.5} textAlign="center" bg="orange.50" borderBottom="1px solid" borderColor="slate.100">
+              <Box aria-label={`${row.name} day ${dayIndex + 1}: Sunday`} title="Sunday · weekly off" w={CELL_SIZE} h={CELL_SIZE} display="inline-block" />
+            </Box>
+          );
+        }
+        const isElapsed = dayIndex < lastEditableDay;
+        const isBlocked = row.employeeStatus === 'disabled'
+          && (!row.disabledOn || dayDate(month, dayIndex + 1) >= row.disabledOn);
+        const isEditable = isEditing && isElapsed && !isBlocked;
+        const isSaving = saving.has(dayIndex);
+        const style = markStyles[mark];
+        const title = !isElapsed
+          ? 'Future date'
+          : isBlocked
+            ? `${row.name} is blocked`
+            : isEditing
+              ? `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label} · click to mark ${ATTENDANCE_STATUS_META[nextStatusFor(editBrush, mark)].label}`
+              : `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label}`;
+        return (
+          <Box as="td" key={dayIndex} px={0.5} py={1.5} textAlign="center" borderBottom="1px solid" borderColor="slate.100">
+            <Box
+              as="button"
+              type="button"
+              title={title}
+              aria-label={`${row.name} day ${dayIndex + 1}: ${style.label.toLowerCase()}`}
+              disabled={!isEditable || isSaving}
+              onClick={() => onToggle(row.employeeId, dayIndex, mark)}
+              w={CELL_SIZE}
+              h={CELL_SIZE}
+              display="inline-flex"
+              alignItems="center"
+              justifyContent="center"
+              borderRadius="6px"
+              border="1px solid"
+              borderColor={style.border}
+              bg={style.bg}
+              color={style.color}
+              fontSize="xs"
+              fontWeight="700"
+              cursor={isEditable ? 'pointer' : isElapsed ? 'default' : 'not-allowed'}
+              opacity={isElapsed ? (isSaving ? 0.5 : 1) : 0.35}
+              outline={isEditable ? '1px dashed' : undefined}
+              outlineColor="brand.100"
+              outlineOffset="1px"
+              transition="all 0.12s ease"
+              _hover={isEditable ? { bg: style.hover, transform: 'scale(1.08)' } : undefined}
+            >
+              {mark || (isElapsed ? '·' : '')}
+            </Box>
+          </Box>
+        );
+      })}
+      <Box as="td" px={3} textAlign="center" fontWeight="700" color="green.700" borderBottom="1px solid" borderLeft="1px solid" borderColor="slate.100">
+        {row.totalPresent}
+      </Box>
+      <Box as="td" px={3} textAlign="center" fontWeight="700" color="red.600" borderBottom="1px solid" borderColor="slate.100">
+        {absent}
+      </Box>
+      <Box as="td" px={3} textAlign="center" fontWeight="700" color="teal.700" borderBottom="1px solid" borderColor="slate.100">
+        {halfDays}
+      </Box>
+      <Box as="td" px={3} textAlign="center" fontWeight="700" color="purple.700" borderBottom="1px solid" borderColor="slate.100">
+        {leaves}
+      </Box>
+      <Box as="td" px={3} textAlign="center" fontWeight="700" color="blue.600" borderBottom="1px solid" borderColor="slate.100">
+        {percentage === null ? '—' : `${percentage}%`}
+      </Box>
+    </Box>
+  );
+});
+
 function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }: AttendanceRegisterGridProps) {
   const toast = useToast();
   const today = currentLocalDate();
@@ -75,7 +221,7 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'pdf' | 'excel' | 'print' | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [editBrush, setEditBrush] = useState<'toggle' | AttendanceStatus>('toggle');
+  const [editBrush, setEditBrush] = useState<EditBrush>('toggle');
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -128,7 +274,7 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
   const totalMarks = summary ? summary.present + summary.absent + summary.unmarked : 0;
   const markShare = (value?: number) => (totalMarks ? (value ?? 0) / totalMarks : null);
 
-  const dayHeaders = useMemo(() => {
+  const dayHeaders = useMemo((): DayHeader[] => {
     if (!register) return [];
     const [year, monthNumber] = month.split('-').map(Number);
     return Array.from({ length: register.daysInMonth }, (_, index) => {
@@ -165,15 +311,10 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
     });
   }
 
-  function nextStatusFor(currentMark: AttendanceRegisterMark): AttendanceStatus {
-    if (editBrush !== 'toggle') return editBrush;
-    return currentMark === 'P' ? 'absent' : 'present';
-  }
-
   async function toggleCell(employeeId: string, dayIndex: number, currentMark: AttendanceRegisterMark) {
     const key = `${employeeId}|${dayIndex}`;
     if (savingCells.has(key)) return;
-    const nextStatus = nextStatusFor(currentMark);
+    const nextStatus = nextStatusFor(editBrush, currentMark);
     const nextMark = ATTENDANCE_STATUS_META[nextStatus].code;
     if (nextMark === currentMark) return;
     setRowMark(employeeId, dayIndex, nextMark, currentMark);
@@ -192,6 +333,21 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
     }
   }
 
+  const toggleCellRef = useRef(toggleCell);
+  toggleCellRef.current = toggleCell;
+  const handleToggle = useCallback((employeeId: string, dayIndex: number, currentMark: AttendanceRegisterMark) => {
+    void toggleCellRef.current(employeeId, dayIndex, currentMark);
+  }, []);
+
+  const savingDaysByEmployee = useMemo(() => {
+    const byEmployee = new Map<string, number[]>();
+    for (const key of savingCells) {
+      const [employeeId, dayIndex] = key.split('|');
+      byEmployee.set(employeeId, [...(byEmployee.get(employeeId) || []), Number(dayIndex)]);
+    }
+    return byEmployee;
+  }, [savingCells]);
+
   async function exportRegister(format: 'pdf' | 'excel' | 'print') {
     setExportingFormat(format);
     try {
@@ -204,15 +360,6 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
       setExportingFormat(null);
     }
   }
-
-  const stickyCell = (left: number, width: number) => ({
-    position: 'sticky' as const,
-    left: `${left}px`,
-    minW: `${width}px`,
-    maxW: `${width}px`,
-    zIndex: 2,
-    bg: 'inherit',
-  });
 
   return (
     <Stack spacing={4}>
@@ -451,111 +598,19 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
                 </Box>
               </Box>
               <Box as="tbody">
-                {visibleRows.map((row) => {
-                  const countOf = (mark: AttendanceRegisterMark) => row.days.filter((value) => value === mark).length;
-                  const absent = countOf('A');
-                  const halfDays = countOf('HD');
-                  const leaves = row.days.filter((mark) => LEAVE_MARKS.has(mark)).length;
-                  const countableDays = row.stats ? row.stats.workingDays + row.stats.weeklyOffs + row.stats.holidays : 0;
-                  const workingDays = countableDays - countOf('WO') - countOf('H');
-                  const percentage = workingDays > 0 ? Math.round(((countOf('P') + halfDays * 0.5) / workingDays) * 100) : null;
-                  return (
-                    <Box as="tr" key={row.employeeId} bg="white" _hover={{ bg: 'slate.50' }}>
-                      <Box as="td" {...stickyCell(0, STICKY_SERIAL_WIDTH)} px={3} py={1.5} color="slate.500" borderBottom="1px solid" borderColor="slate.100">
-                        {row.serial}
-                      </Box>
-                      <Box as="td" {...stickyCell(STICKY_SERIAL_WIDTH, STICKY_NAME_WIDTH)} px={3} py={1.5} borderBottom="1px solid" borderRight="1px solid" borderColor="slate.100">
-                        <Text fontWeight="700" color="slate.900" fontSize="xs" textTransform="uppercase" noOfLines={1} title={row.name}>{row.name}</Text>
-                        {row.parentName ? <Text fontSize="10px" color="slate.400" noOfLines={1}>S/o {row.parentName}</Text> : null}
-                        {row.employeeStatus === 'disabled' ? (
-                          <Text fontSize="10px" color="red.500" noOfLines={1}>
-                            {row.disabledOn ? `Blocked from ${row.disabledOn}` : 'Blocked'}
-                          </Text>
-                        ) : null}
-                      </Box>
-                      <Box as="td" px={3} py={1.5} fontSize="xs" color="slate.500" borderBottom="1px solid" borderColor="slate.100" whiteSpace="nowrap">
-                        {row.skillCategory || '—'}
-                      </Box>
-                      {row.days.map((mark, dayIndex) => {
-                        if (dayHeaders[dayIndex]?.isSunday) {
-                          return (
-                            <Box as="td" key={dayIndex} px={0.5} py={1.5} textAlign="center" bg="orange.50" borderBottom="1px solid" borderColor="slate.100">
-                              <Tooltip label="Sunday · weekly off" openDelay={400} hasArrow fontSize="xs">
-                                <Box aria-label={`${row.name} day ${dayIndex + 1}: Sunday`} w={CELL_SIZE} h={CELL_SIZE} display="inline-block" />
-                              </Tooltip>
-                            </Box>
-                          );
-                        }
-                        const isElapsed = dayIndex < lastEditableDay;
-                        const isBlocked = row.employeeStatus === 'disabled'
-                          && (!row.disabledOn || dayDate(month, dayIndex + 1) >= row.disabledOn);
-                        const isEditable = isEditing && isElapsed && !isBlocked;
-                        const isSaving = savingCells.has(`${row.employeeId}|${dayIndex}`);
-                        const style = markStyles[mark];
-                        return (
-                          <Box as="td" key={dayIndex} px={0.5} py={1.5} textAlign="center" borderBottom="1px solid" borderColor="slate.100">
-                            <Tooltip
-                              label={!isElapsed
-                                ? 'Future date'
-                                : isBlocked
-                                  ? `${row.name} is blocked`
-                                  : isEditing
-                                  ? `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label} · click to mark ${ATTENDANCE_STATUS_META[nextStatusFor(mark)].label}`
-                                  : `${row.name} · ${dayDate(month, dayIndex + 1)} · ${style.label}`}
-                              openDelay={400}
-                              hasArrow
-                              fontSize="xs"
-                            >
-                              <Box
-                                as="button"
-                                type="button"
-                                aria-label={`${row.name} day ${dayIndex + 1}: ${style.label.toLowerCase()}`}
-                                disabled={!isEditable || isSaving}
-                                onClick={() => void toggleCell(row.employeeId, dayIndex, mark)}
-                                w={CELL_SIZE}
-                                h={CELL_SIZE}
-                                display="inline-flex"
-                                alignItems="center"
-                                justifyContent="center"
-                                borderRadius="6px"
-                                border="1px solid"
-                                borderColor={style.border}
-                                bg={style.bg}
-                                color={style.color}
-                                fontSize="xs"
-                                fontWeight="700"
-                                cursor={isEditable ? 'pointer' : isElapsed ? 'default' : 'not-allowed'}
-                                opacity={isElapsed ? (isSaving ? 0.5 : 1) : 0.35}
-                                outline={isEditable ? '1px dashed' : undefined}
-                                outlineColor="brand.100"
-                                outlineOffset="1px"
-                                transition="all 0.12s ease"
-                                _hover={isEditable ? { bg: style.hover, transform: 'scale(1.08)' } : undefined}
-                              >
-                                {mark || (isElapsed ? '·' : '')}
-                              </Box>
-                            </Tooltip>
-                          </Box>
-                        );
-                      })}
-                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="green.700" borderBottom="1px solid" borderLeft="1px solid" borderColor="slate.100">
-                        {row.totalPresent}
-                      </Box>
-                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="red.600" borderBottom="1px solid" borderColor="slate.100">
-                        {absent}
-                      </Box>
-                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="teal.700" borderBottom="1px solid" borderColor="slate.100">
-                        {halfDays}
-                      </Box>
-                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="purple.700" borderBottom="1px solid" borderColor="slate.100">
-                        {leaves}
-                      </Box>
-                      <Box as="td" px={3} textAlign="center" fontWeight="700" color="blue.600" borderBottom="1px solid" borderColor="slate.100">
-                        {percentage === null ? '—' : `${percentage}%`}
-                      </Box>
-                    </Box>
-                  );
-                })}
+                {visibleRows.map((row) => (
+                  <RegisterRow
+                    key={row.employeeId}
+                    row={row}
+                    dayHeaders={dayHeaders}
+                    month={month}
+                    lastEditableDay={lastEditableDay}
+                    isEditing={isEditing}
+                    editBrush={editBrush}
+                    savingDays={savingDaysByEmployee.get(row.employeeId)?.join(',') || ''}
+                    onToggle={handleToggle}
+                  />
+                ))}
               </Box>
             </Box>
           </Box>

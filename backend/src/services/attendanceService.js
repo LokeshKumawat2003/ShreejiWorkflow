@@ -217,15 +217,20 @@ async function markAttendance(user, input = {}) {
   if (!ATTENDANCE_STATUSES.includes(status)) throw httpError(400, 'Select a valid attendance status.');
   if (isSunday(date)) throw httpError(400, 'Sunday is a weekly off. Attendance cannot be marked on Sundays.');
   if (locationId && !mongoose.isValidObjectId(locationId)) throw httpError(400, 'Invalid location id.');
-  const organizationId = await getOrganizationId(user, input.organizationId);
+  if (user.role === 'admin' && !mongoose.isValidObjectId(input.organizationId)) {
+    throw httpError(400, 'A valid organization id is required.');
+  }
+  const organizationId = user.role === 'admin' ? String(input.organizationId) : user.id;
 
   const employeeFilter = { _id: employeeId, organizationId };
   if (locationId) employeeFilter.locationId = locationId;
   if (user.role === 'organization') employeeFilter.status = 'active';
-  const [location, employee] = await Promise.all([
+  const [organization, location, employee] = await Promise.all([
+    user.role === 'admin' ? User.findOne({ _id: organizationId, role: 'organization' }) : true,
     locationId ? Location.exists({ _id: locationId, organizationId }) : true,
     Employee.findOne(employeeFilter),
   ]);
+  if (!organization) throw httpError(404, 'Organization not found.');
   if (!location) throw httpError(404, 'Location not found for this organization.');
   if (!employee) throw httpError(404, 'Employee not found for this organization.');
   if (!canMarkAttendanceOn(employee, date)) throw httpError(400, blockedMessage(employee));

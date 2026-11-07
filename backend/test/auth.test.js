@@ -2707,3 +2707,23 @@ test('PDF registers are rebuilt into columns from text positions', () => {
     { extractedName: 'RAMESH KUMAR', extractedParentName: 'HARI', days: { 2: 'absent', 3: 'present', 4: 'present', 5: 'present', 6: 'absent' } },
   ]);
 });
+
+test('PDF registers keep short left-aligned names out of the serial number column', () => {
+  const text = (str, x, y, width = 3.61) => ({ str, x, y, width });
+  const dayX = (day) => 220 + day * 15;
+  const header = [text('S.no', 27, 472, 14.09), text('Name of Employees', 76.97, 472, 61.77), text('category', 182, 472, 27), ...[1, 2, 3, 4, 5].map((day) => text(String(day), dayX(day), 472))];
+  const row = (serial, name, width, y) => [
+    text(String(serial), 32.23, y),
+    text(name, 48.19, y, width),
+    text('Un-skilled', 181.42, y, 28.53),
+    ...['P', 'P', 'A', 'P', 'P'].map((mark, index) => text(mark, dayX(index + 1), y)),
+  ];
+  const matrix = pdfPagesToMatrix([[
+    ...header,
+    ...row(1, 'BIKASH RAI', 36.48, 455.75),
+    ...row(2, 'SUMAN TAMANG', 53.09, 442.61),
+  ]]);
+  const parsed = parseSheetMatrixMonth(matrix, '2026-05', 31);
+  assert.deepEqual(parsed.rows.map((row) => row.extractedName), ['BIKASH RAI', 'SUMAN TAMANG']);
+  assert.deepEqual(matrix.slice(1).map((row) => row[0]), ['1', '2']);
+});

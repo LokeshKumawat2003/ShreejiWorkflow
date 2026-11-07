@@ -15,7 +15,14 @@ const toneHover: Record<Tone, { bg: string; color: string; borderColor: string }
 
 function IconAction({ label, tone = 'default', ...buttonProps }: IconActionProps) {
 	return (
-		<Tooltip label={label} hasArrow openDelay={300}>
+		<Tooltip
+			label={label}
+			hasArrow
+			openDelay={300}
+			placement="top"
+			maxW="240px"
+			modifiers={[{ name: 'preventOverflow', options: { padding: 12, rootBoundary: 'viewport' } }]}
+		>
 			<IconButton
 				aria-label={label}
 				w="32px"

@@ -33,6 +33,13 @@ const config: ThemeConfig = {
 export const theme = extendTheme({
   config,
   colors,
+  styles: {
+    global: {
+      'html, body': {
+        overflowX: 'clip',
+      },
+    },
+  },
   fonts: {
     heading: 'Inter, sans-serif',
     body: 'Inter, sans-serif',

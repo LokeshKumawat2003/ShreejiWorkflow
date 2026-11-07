@@ -83,25 +83,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
       } else {
         const createdEmployee = await employees.create(input);
         toast({ title: 'Employee added to location', status: 'success', position: 'top' });
-        const emailResults = await sendAppointmentLetters([createdEmployee], location);
-        let organizationEmailError: unknown;
-        try {
-          await sendOrganizationAppointmentLetters([createdEmployee], location);
-        } catch (error) {
-          organizationEmailError = error;
-        }
-        if (emailResults[0].status === 'fulfilled') {
-          toast({
-            title: organizationEmailError ? 'Appointment letter emailed to employee, but organization email failed' : 'Appointment letter emailed to employee and organization',
-            status: organizationEmailError ? 'error' : 'success',
-            position: 'top',
-          });
-        } else {
-          toast({ title: getErrorMessage(emailResults[0].reason, 'Employee was added, but the appointment letter could not be emailed.'), status: 'error', position: 'top' });
-        }
-        if (organizationEmailError) {
-          toast({ title: getErrorMessage(organizationEmailError, 'Organization copy could not be emailed.'), status: 'error', position: 'top' });
-        }
+        void deliverAppointmentLetters([createdEmployee], location);
       }
       return true;
     } catch (error) {
@@ -123,13 +105,11 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
   }
 
   async function deliverAppointmentLetters(letterEmployees: Employee[], letterLocation: OrganizationLocation) {
-    const emailResults = await sendAppointmentLetters(letterEmployees, letterLocation);
-    let organizationEmailError: unknown;
-    try {
-      await sendOrganizationAppointmentLetters(letterEmployees, letterLocation);
-    } catch (error) {
-      organizationEmailError = error;
-    }
+    const [emailResults, organizationResult] = await Promise.all([
+      sendAppointmentLetters(letterEmployees, letterLocation),
+      sendOrganizationAppointmentLetters(letterEmployees, letterLocation).then(() => undefined, (error: unknown) => ({ error })),
+    ]);
+    const organizationEmailError = organizationResult?.error;
     const failedEmails = emailResults.filter((result) => result.status === 'rejected');
     if (failedEmails.length === 0 && !organizationEmailError) {
       toast({
@@ -153,7 +133,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     try {
       const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
-      await deliverAppointmentLetters(assignedEmployees, location);
+      void deliverAppointmentLetters(assignedEmployees, location);
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to assign employees.'), status: 'error', position: 'top' });
@@ -179,7 +159,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
       const place = [targetOrganizationId !== organizationId ? targetOrganizationName : '', targetLocation.workName || targetLocation.name].filter(Boolean).join(' · ');
       toast({ title: `${movingEmployee.name} moved to ${place}`, description: 'Preparing the new appointment letter…', status: 'success', position: 'top' });
       setMovingEmployee(null);
-      await deliverAppointmentLetters(movedEmployees, targetLocation, 'Employee was moved, but the new appointment letter could not be generated.');
+      void deliverAppointmentLetters(movedEmployees, targetLocation);
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to move the employee.'), status: 'error', position: 'top' });
     } finally {

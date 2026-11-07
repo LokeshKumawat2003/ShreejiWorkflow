@@ -25,6 +25,7 @@ import api, { checkSession, getSessionUser } from '../../services/api';
 import type { User, UserRole } from '../../types';
 import EmployeesPage from '../Employees/EmployeesPage';
 import SettingsPage from '../Settings/SettingsPage';
+import TicketsPage from '../Tickets/TicketsPage';
 import DashboardHome from './components/DashboardHome';
 
 type DashboardPageProps = {
@@ -136,6 +137,8 @@ function DashboardPage({ role }: DashboardPageProps) {
               <AttendanceWorkspacePage organizationId={user.id || user._id} />
             ) : role === 'organization' && activeTab === 'Attendance sheet' && (user.id || user._id) ? (
               <AttendanceSheetPage organizationId={(user.id || user._id) as string} />
+            ) : activeTab === 'Issue reports' ? (
+              <TicketsPage role={role} />
             ) : role === 'admin' && activeTab === 'Organizations' ? (
               <OrganizationsPage />
             ) : role === 'admin' && activeTab === 'Payroll' ? (

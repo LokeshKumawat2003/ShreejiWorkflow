@@ -11,6 +11,7 @@ const locationRoutes = require('./routes/locationRoutes');
 const masterDataRoutes = require('./routes/masterDataRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
+const ticketRoutes = require('./routes/ticketRoutes');
 
 function createApp() {
   const app = express();
@@ -67,6 +68,7 @@ function createApp() {
   app.use('/api/organizations', locationRoutes);
   app.use('/api/organizations', organizationRoutes);
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/tickets', ticketRoutes);
 
   app.use((req, res, next) => {
     const error = new Error('Route not found.');

@@ -49,12 +49,19 @@ const SheetIcon = createIcon({
   path: <path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5ZM7 11v2h10v-2H7Zm0 4v2h10v-2H7Zm3-4v6h1.5v-6H10Zm4 0v6h1.5v-6H14Z" />,
 });
 
+const TicketIcon = createIcon({
+  displayName: 'TicketIcon',
+  viewBox: '0 0 24 24',
+  path: <path fill="currentColor" d="M4 4h16a2 2 0 0 1 2 2v3a3 3 0 0 0 0 6v3a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 1 2-2Zm7 3v2h2V7h-2Zm0 4v6h2v-6h-2Z" />,
+});
+
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', icon: DashboardIcon, section: 'Workspace' },
   { label: 'Organizations', icon: BuildingIcon, roles: ['admin'], section: 'Workspace' },
   { label: 'Employees', icon: PeopleIcon, section: 'Workspace' },
   { label: 'Attendance', icon: CalendarIcon, roles: ['organization'], section: 'Workspace' },
   { label: 'Attendance sheet', icon: SheetIcon, roles: ['organization'], section: 'Workspace' },
+  { label: 'Issue reports', icon: TicketIcon, section: 'Workspace' },
   { label: 'Payroll', icon: WalletIcon, roles: ['admin'], section: 'Administration' },
   { label: 'Bank invoice', icon: BankIcon, roles: ['admin'], section: 'Administration' },
   { label: 'Settings', icon: SettingsIcon, roles: ['admin'], section: 'Administration' },

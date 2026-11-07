@@ -7,6 +7,7 @@ import {
   EmptyState,
   FilterBar,
   FilterField,
+  FilterSelect,
   PageHeader,
   PeopleIcon,
   PrintIcon,
@@ -17,7 +18,8 @@ import {
 import { ApiError } from '../../services/api';
 import type { PayrollResponse } from '../../services/attendanceService';
 import { listEmployees } from '../../services/employeeService';
-import type { Employee } from '../../types';
+import { listOrganizations } from '../../services/organizationService';
+import type { Employee, User } from '../../types';
 import { addRowsSheet, addTableSheet, createWorkbook, downloadWorkbook } from '../../utils/excelOutput';
 import { PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './components/PayrollShared';
 import { usePayroll, type PayrollQuery } from './hooks/usePayroll';
@@ -117,6 +119,9 @@ function AdminPayrollPage() {
   const [employeeTotalPages, setEmployeeTotalPages] = useState(1);
   const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
   const [employeeError, setEmployeeError] = useState('');
+  const [organizations, setOrganizations] = useState<User[]>([]);
+  const [organizationId, setOrganizationId] = useState('');
+  const [payrollOrganizationName, setPayrollOrganizationName] = useState('');
   const [scope, setScope] = useState<EmployeeScope>('all');
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const toast = useToast();
@@ -132,6 +137,20 @@ function AdminPayrollPage() {
   const invalidDateRange = !fromDate || !toDate || fromDate > toDate;
   const canGenerate = !invalidDateRange && !isLoadingEmployees && (scope === 'all' || selectedEmployeeIds.length > 0);
 
+  const organizationName = (id: string) => {
+    const organization = organizations.find((item) => item.id === id);
+    return organization ? organization.organizationName || organization.name || organization.email : '';
+  };
+  const selectedOrganizationName = organizationName(organizationId);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void listOrganizations({ search: '', status: 'all', sort: 'name-asc', page: 1, limit: 100 }, controller.signal)
+      .then((result) => setOrganizations(result.organizations.filter((organization) => organization.id)))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     setIsLoadingEmployees(true);
@@ -143,6 +162,7 @@ function AdminPayrollPage() {
       page: employeePage,
       limit: EMPLOYEE_PAGE_SIZE,
       assignedOnly: true,
+      ...(organizationId ? { organizationId } : {}),
     }, controller.signal)
       .then((result) => {
         if (controller.signal.aborted) return;
@@ -157,7 +177,14 @@ function AdminPayrollPage() {
         if (!controller.signal.aborted) setIsLoadingEmployees(false);
       });
     return () => controller.abort();
-  }, [employeeSearch, employeePage]);
+  }, [employeeSearch, employeePage, organizationId]);
+
+  function changeOrganization(next: string) {
+    setOrganizationId(next);
+    setEmployeePage(1);
+    setSelectedEmployeeIds([]);
+    setRunQuery(null);
+  }
 
   function changeScope(next: EmployeeScope) {
     setScope(next);
@@ -185,9 +212,15 @@ function AdminPayrollPage() {
 
   function generatePayroll() {
     if (!canGenerate) return;
-    setRunQuery({ fromDate, toDate, ...(scope === 'selected' ? { employeeIds: selectedEmployeeIds } : {}) });
+    setRunQuery({
+      fromDate,
+      toDate,
+      ...(organizationId ? { organizationId } : {}),
+      ...(scope === 'selected' ? { employeeIds: selectedEmployeeIds } : {}),
+    });
     setRunCount((current) => current + 1);
     setPayrollScope(scope);
+    setPayrollOrganizationName(selectedOrganizationName);
   }
 
   async function runExport(kind: 'slips' | 'excel' | 'print') {
@@ -232,7 +265,7 @@ function AdminPayrollPage() {
     ], payroll.lines);
 
     addRowsSheet(workbook, 'Totals', [
-      ['Organization scope', 'All organizations'],
+      ['Organization scope', payrollOrganizationName || 'All organizations'],
       ['Pay period', payPeriod],
       ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected employees`],
       [],
@@ -242,9 +275,10 @@ function AdminPayrollPage() {
     await downloadWorkbook(workbook, `payroll-${payroll.fromDate}-to-${payroll.toDate}.xlsx`);
   }
 
+  const organizationScope = selectedOrganizationName || 'All organizations';
   const runSummary = scope === 'all'
-    ? `All ${employeeTotal} assigned employees · ${periodLabel(fromDate, toDate)}`
-    : `${selectedEmployeeIds.length} selected employee${selectedEmployeeIds.length === 1 ? '' : 's'} · ${periodLabel(fromDate, toDate)}`;
+    ? `All ${employeeTotal} assigned employees · ${organizationScope} · ${periodLabel(fromDate, toDate)}`
+    : `${selectedEmployeeIds.length} selected employee${selectedEmployeeIds.length === 1 ? '' : 's'} · ${organizationScope} · ${periodLabel(fromDate, toDate)}`;
 
   return (
     <Stack spacing={6}>
@@ -272,6 +306,17 @@ function AdminPayrollPage() {
                 setRunQuery((current) => (current && isValid ? { ...current, ...range } : null));
               }}
             />
+            <FilterField label="Organization" flex={{ base: '1 1 100%', md: '0 1 260px' }}>
+              <FilterSelect
+                label="Filter payroll by organization"
+                value={organizationId}
+                onChange={changeOrganization}
+                options={[
+                  { value: '', label: 'All organizations' },
+                  ...organizations.map((organization) => ({ value: organization.id as string, label: organizationName(organization.id as string) })),
+                ]}
+              />
+            </FilterField>
             <FilterField label="Employees" flex={{ base: '1 1 100%', md: '0 0 280px' }}>
               <ScopeToggle scope={scope} onChange={changeScope} />
             </FilterField>
@@ -308,7 +353,9 @@ function AdminPayrollPage() {
               <Text fontWeight="700" color="slate.900">
                 {isLoadingEmployees && employeeTotal === 0 ? 'Counting employees…' : `${employeeTotal} assigned employee${employeeTotal === 1 ? '' : 's'} will be included`}
               </Text>
-              <Text fontSize="sm" color="slate.500">Across every organization and location. Switch to “Choose employees” to pick specific people.</Text>
+              <Text fontSize="sm" color="slate.500">
+                {selectedOrganizationName ? `Every location of ${selectedOrganizationName}.` : 'Across every organization and location.'} Switch to “Choose employees” to pick specific people.
+              </Text>
             </Box>
           </HStack>
         ) : (
@@ -381,7 +428,7 @@ function AdminPayrollPage() {
             noPadding
             icon={<PeopleIcon boxSize={5} />}
             title="Payroll results"
-            subtitle={`${periodLabel(payroll.fromDate, payroll.toDate)} · ${payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected`}`}
+            subtitle={`${periodLabel(payroll.fromDate, payroll.toDate)} · ${payrollOrganizationName || 'All organizations'} · ${payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected`}`}
             actions={(
               <>
                 <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'slips'} onClick={() => void runExport('slips')}>

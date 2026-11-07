@@ -1,5 +1,5 @@
 import { AddIcon, AtSignIcon, CalendarIcon, CheckCircleIcon, InfoIcon, RepeatIcon, SettingsIcon, TimeIcon, WarningIcon } from '@chakra-ui/icons';
-import { Alert, Avatar, Box, Button, ButtonGroup, Grid, HStack, IconButton, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { Alert, Avatar, Box, Grid, HStack, IconButton, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import AttendanceTrendChart from '../../../components/charts/AttendanceTrendChart';
 import DistributionChart from '../../../components/charts/DistributionChart';
@@ -8,6 +8,7 @@ import {
 	BuildingIcon,
 	ContentCard,
 	DataTable,
+	FilterBar,
 	MapPinIcon,
 	PageHeader,
 	PeopleIcon,
@@ -18,8 +19,9 @@ import {
 	type DataTableColumn,
 } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { getDashboardSummary, type DashboardRange, type DashboardSummary } from '../../../services/dashboardService';
+import { getDashboardSummary, type DashboardPeriod, type DashboardSummary } from '../../../services/dashboardService';
 import type { User, UserRole } from '../../../types';
+import { PeriodFields, lastDaysRange, localDateString, periodLabel, thisMonthRange, type PeriodPreset } from '../../Payroll/components/PayrollShared';
 import LocationAttendanceCard from './LocationAttendanceCard';
 import NotMarkedTodayCard from './NotMarkedTodayCard';
 import TodayAttendanceCard from './TodayAttendanceCard';
@@ -31,6 +33,13 @@ type DashboardHomeProps = {
 };
 
 type RecentEmployee = DashboardSummary['recentEmployees'][number];
+
+const DEFAULT_PERIOD_DAYS = 30;
+const PERIOD_PRESETS: PeriodPreset[] = [
+	{ label: 'Last 30 days', range: () => lastDaysRange(DEFAULT_PERIOD_DAYS) },
+	{ label: 'This month', range: thisMonthRange },
+	{ label: 'Last 7 days', range: () => lastDaysRange(7) },
+];
 
 function formatDay(date: string, options: Intl.DateTimeFormatOptions) {
 	const [year, month, day] = date.split('-').map(Number);
@@ -67,13 +76,14 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [refreshToken, setRefreshToken] = useState(0);
-	const [range, setRange] = useState<DashboardRange>(7);
+	const [periodInput, setPeriodInput] = useState<DashboardPeriod>(() => lastDaysRange(DEFAULT_PERIOD_DAYS));
+	const [period, setPeriod] = useState<DashboardPeriod>(periodInput);
 
 	useEffect(() => {
 		const controller = new AbortController();
 		setIsLoading(true);
 		setError('');
-		void getDashboardSummary(range, controller.signal)
+		void getDashboardSummary(period, controller.signal)
 			.then(setSummary)
 			.catch((loadError: unknown) => {
 				if (!controller.signal.aborted) {
@@ -84,19 +94,20 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [refreshToken, range]);
+	}, [refreshToken, period]);
 
 	const trend = useMemo(
-		() => (summary?.trend || []).map((point) => ({
+		() => (summary?.trend || []).map((point, _, points) => ({
 			...point,
-			label: formatDay(point.date, summary?.range === 30 ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric' }),
+			label: formatDay(point.date, points.length > 14 ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric' }),
 		})),
 		[summary],
 	);
 
 	const totals = summary?.totals;
 	const today = summary?.today;
-	const month = summary?.month;
+	const month = summary?.period;
+	const selectedPeriodLabel = periodLabel(period.fromDate, period.toDate);
 	const todayLabel = summary ? formatDay(summary.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
 	const ratio = (part?: number | null, whole?: number | null) => (whole ? (part ?? 0) / whole : null);
@@ -203,6 +214,27 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 				)}
 			/>
 
+			<FilterBar
+				canClear={periodInput.fromDate !== lastDaysRange(DEFAULT_PERIOD_DAYS).fromDate || periodInput.toDate !== lastDaysRange(DEFAULT_PERIOD_DAYS).toDate}
+				onClear={() => {
+					const range = lastDaysRange(DEFAULT_PERIOD_DAYS);
+					setPeriodInput(range);
+					setPeriod(range);
+				}}
+			>
+				<PeriodFields
+					fromDate={periodInput.fromDate}
+					toDate={periodInput.toDate}
+					presets={PERIOD_PRESETS}
+					ariaLabel="Dashboard"
+					maxDate={localDateString(new Date())}
+					onChange={(range) => {
+						setPeriodInput(range);
+						if (range.fromDate && range.toDate && range.fromDate <= range.toDate) setPeriod(range);
+					}}
+				/>
+			</FilterBar>
+
 			{error ? <Alert status="error" borderRadius="md">{error}</Alert> : null}
 
 			<SimpleGrid columns={{ base: 1, sm: 2, xl: 4 }} spacing={4}>
@@ -223,8 +255,8 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 
 			<Stack spacing={3}>
 				<HStack justify="space-between" align="baseline">
-					<Text fontSize="sm" fontWeight="700" color="slate.700">This month{month ? ` · ${month.label}` : ''}</Text>
-					<Text fontSize="xs" color="slate.500">Up to today</Text>
+					<Text fontSize="sm" fontWeight="700" color="slate.700">Selected period · {selectedPeriodLabel}</Text>
+					<Text fontSize="xs" color="slate.500">From the date filter</Text>
 				</HStack>
 				<StatStrip items={monthItems} />
 			</Stack>
@@ -234,24 +266,8 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 					data={trend}
 					isLoading={isLoading && !summary}
 					hasError={Boolean(error) && !summary}
-					title={`Attendance — last ${range} days`}
+					title={`Attendance — ${selectedPeriodLabel}`}
 					subtitle="Present, half day, leave and absent marks per day"
-					actions={(
-						<ButtonGroup size="xs" isAttached variant="outline">
-							{([7, 30] as const).map((option) => (
-								<Button
-									key={option}
-									onClick={() => setRange(option)}
-									bg={range === option ? 'brand.500' : 'white'}
-									color={range === option ? 'white' : 'slate.600'}
-									borderColor={range === option ? 'brand.500' : 'slate.200'}
-									_hover={{ bg: range === option ? 'brand.600' : 'slate.50' }}
-								>
-									{option} days
-								</Button>
-							))}
-						</ButtonGroup>
-					)}
 				/>
 				<TodayAttendanceCard counts={today ?? null} dateLabel={todayLabel} isLoading={isLoading && !summary} />
 			</Grid>

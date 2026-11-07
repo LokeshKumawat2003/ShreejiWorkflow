@@ -64,19 +64,19 @@ function LocationAttendanceCard({ locations, isSunday, isLoading, onOpenAttendan
 			},
 		},
 		{
-			key: 'month',
-			header: 'Month rate',
+			key: 'period',
+			header: 'Period rate',
 			align: 'right',
-			render: (site) => (site.monthRate === null
+			render: (site) => (site.periodRate === null
 				? <Text fontSize="xs" color="slate.400">—</Text>
-				: <Text fontWeight="700" color={rateColor(site.monthRate)}>{site.monthRate}%</Text>),
+				: <Text fontWeight="700" color={rateColor(site.periodRate)}>{site.periodRate}%</Text>),
 		},
 	];
 
 	return (
 		<ContentCard
 			title="Attendance by location"
-			subtitle="Today's marks and this month's attendance rate per site"
+			subtitle="Today's marks and the attendance rate per site for the selected dates"
 			icon={<MapPinIcon boxSize={5} />}
 			noPadding
 			actions={<ActionButton tone="neutral" size="sm" onClick={onOpenAttendance}>Open attendance</ActionButton>}

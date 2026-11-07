@@ -1,8 +1,6 @@
 import api from './api';
 import type { EmployeeStatus } from '../types';
 
-export type DashboardRange = 7 | 30;
-
 /** Leave covers every leave type; off covers weekly offs and holidays. */
 export type DashboardStatusCounts = {
 	present: number;
@@ -20,12 +18,16 @@ export type DashboardLocation = {
 	status: 'active' | 'disabled';
 	employees: number;
 	today: DashboardStatusCounts & { notMarked: number };
-	monthRate: number | null;
+	periodRate: number | null;
+};
+
+export type DashboardPeriod = {
+	fromDate: string;
+	toDate: string;
 };
 
 export type DashboardSummary = {
 	date: string;
-	range: DashboardRange;
 	totals: {
 		organizations: number | null;
 		locations: number;
@@ -36,10 +38,7 @@ export type DashboardSummary = {
 	};
 	today: DashboardStatusCounts & { notMarked: number; isSunday: boolean };
 	trend: (DashboardStatusCounts & { date: string })[];
-	month: DashboardStatusCounts & {
-		label: string;
-		fromDate: string;
-		toDate: string;
+	period: DashboardStatusCounts & DashboardPeriod & {
 		attendanceRate: number | null;
 		/** Salary figures are only sent to admins. */
 		paidDays: number | null;
@@ -60,9 +59,9 @@ export type DashboardSummary = {
 	}[];
 };
 
-export async function getDashboardSummary(range: DashboardRange, signal?: AbortSignal) {
+export async function getDashboardSummary(period: DashboardPeriod, signal?: AbortSignal) {
 	const { data } = await api.get<DashboardSummary>('/dashboard/summary', {
-		params: { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, range },
+		params: { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, ...period },
 		signal,
 	});
 	return data;

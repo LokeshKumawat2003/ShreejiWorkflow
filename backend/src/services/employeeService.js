@@ -278,7 +278,7 @@ async function listEmployees(user, options = {}) {
 	if (!isLocationAssignmentList && user.role === 'admin' && (options.unassigned === 'true' || options.unassigned === true)) {
 		filter.organizationId = null;
 	}
-	if (!isLocationAssignmentList && user.role === 'admin' && !options.unassigned && (options.assignedOnly === 'true' || options.assignedOnly === true)) {
+	if (!isLocationAssignmentList && user.role === 'admin' && !options.unassigned && !options.organizationId && (options.assignedOnly === 'true' || options.assignedOnly === true)) {
 		filter.organizationId = { $ne: null };
 	}
 	const activeOnly = user.role === 'organization'

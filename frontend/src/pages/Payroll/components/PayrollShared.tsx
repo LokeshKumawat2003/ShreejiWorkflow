@@ -44,7 +44,20 @@ export function thisMonthRange() {
 	return { fromDate: localDateString(new Date(today.getFullYear(), today.getMonth(), 1)), toDate: localDateString(today) };
 }
 
-const PRESETS = [
+export function lastDaysRange(days: number) {
+	const today = new Date();
+	return {
+		fromDate: localDateString(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1))),
+		toDate: localDateString(today),
+	};
+}
+
+export type PeriodPreset = {
+	label: string;
+	range: () => { fromDate: string; toDate: string };
+};
+
+const PRESETS: PeriodPreset[] = [
 	{
 		label: 'This month',
 		range: thisMonthRange,
@@ -72,15 +85,18 @@ type PeriodFieldsProps = {
 	fromDate: string;
 	toDate: string;
 	onChange: (range: { fromDate: string; toDate: string }) => void;
+	presets?: PeriodPreset[];
+	ariaLabel?: string;
+	maxDate?: string;
 };
 
 /** Quick-range chips plus From/Through inputs; render inside a FilterBar. */
-export function PeriodFields({ fromDate, toDate, onChange }: PeriodFieldsProps) {
+export function PeriodFields({ fromDate, toDate, onChange, presets = PRESETS, ariaLabel = 'Payroll', maxDate }: PeriodFieldsProps) {
 	return (
 		<>
 			<FilterField label="Quick range" flex={{ base: '1 1 100%', md: '0 0 auto' }}>
 				<HStack spacing={1} p={1} h="40px" bg="white" border="1px solid" borderColor="slate.200" borderRadius="10px">
-					{PRESETS.map((preset) => {
+					{presets.map((preset) => {
 						const range = preset.range();
 						const isActive = range.fromDate === fromDate && range.toDate === toDate;
 						return (
@@ -104,10 +120,10 @@ export function PeriodFields({ fromDate, toDate, onChange }: PeriodFieldsProps) 
 				</HStack>
 			</FilterField>
 			<FilterField label="From" flex={{ base: '1 1 45%', md: '0 0 170px' }}>
-				<FilterInput aria-label="Payroll start date" type="date" value={fromDate} max={toDate} onChange={(event) => onChange({ fromDate: event.target.value, toDate })} />
+				<FilterInput aria-label={`${ariaLabel} start date`} type="date" value={fromDate} max={toDate} onChange={(event) => onChange({ fromDate: event.target.value, toDate })} />
 			</FilterField>
 			<FilterField label="Through" flex={{ base: '1 1 45%', md: '0 0 170px' }}>
-				<FilterInput aria-label="Payroll end date" type="date" value={toDate} min={fromDate} onChange={(event) => onChange({ fromDate, toDate: event.target.value })} />
+				<FilterInput aria-label={`${ariaLabel} end date`} type="date" value={toDate} min={fromDate} max={maxDate} onChange={(event) => onChange({ fromDate, toDate: event.target.value })} />
 			</FilterField>
 		</>
 	);

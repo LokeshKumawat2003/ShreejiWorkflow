@@ -73,8 +73,8 @@ async function calculatePayroll(user, options = {}) {
   if (attendanceEmployeeIds.length > 0) employeeConditions.push({ _id: { $in: attendanceEmployeeIds } });
   const employees = await Employee.find({ $or: employeeConditions }).lean();
   const organizationDetailsById = new Map();
-  if (user.role === 'admin' && !organizationId) {
-    const organizations = await User.find({ role: 'organization' })
+  if (user.role === 'admin') {
+    const organizations = await User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) })
       .select('_id organizationName phone address website')
       .lean();
     for (const organization of organizations) {

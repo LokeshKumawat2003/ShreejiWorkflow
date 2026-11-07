@@ -83,11 +83,6 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
       } else {
         const createdEmployee = await employees.create(input);
         toast({ title: 'Employee added to location', status: 'success', position: 'top' });
-        try {
-          await downloadAppointmentLetters([createdEmployee], location);
-        } catch (error) {
-          toast({ title: getErrorMessage(error, 'Employee was added, but the appointment letter could not be generated.'), status: 'error', position: 'top' });
-        }
         const emailResults = await sendAppointmentLetters([createdEmployee], location);
         let organizationEmailError: unknown;
         try {
@@ -127,12 +122,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     }
   }
 
-  async function deliverAppointmentLetters(letterEmployees: Employee[], letterLocation: OrganizationLocation, generateFailure: string) {
-    try {
-      await downloadAppointmentLetters(letterEmployees, letterLocation);
-    } catch (error) {
-      toast({ title: getErrorMessage(error, generateFailure), status: 'error', position: 'top' });
-    }
+  async function deliverAppointmentLetters(letterEmployees: Employee[], letterLocation: OrganizationLocation) {
     const emailResults = await sendAppointmentLetters(letterEmployees, letterLocation);
     let organizationEmailError: unknown;
     try {
@@ -163,7 +153,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     try {
       const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
-      await deliverAppointmentLetters(assignedEmployees, location, 'Employees were assigned, but appointment letters could not be generated.');
+      await deliverAppointmentLetters(assignedEmployees, location);
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to assign employees.'), status: 'error', position: 'top' });

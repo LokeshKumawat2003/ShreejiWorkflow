@@ -351,6 +351,33 @@ export async function getAttendanceRegister(
   return data;
 }
 
+export type AttendanceSheetScope = {
+  organizationId: string;
+  locationId: string;
+  month: string;
+};
+
+export type AttendanceSheetMarks = Record<string, AttendanceRegisterMark[]>;
+
+export type AttendanceSheetDraft = AttendanceSheetScope & {
+  marks: AttendanceSheetMarks;
+  updatedAt: string | null;
+};
+
+export async function getAttendanceSheetDraft(scope: AttendanceSheetScope, signal?: AbortSignal) {
+  const { data } = await api.get<AttendanceSheetDraft>('/attendance/sheet', { params: scope, signal });
+  return data;
+}
+
+export async function saveAttendanceSheetDraft(scope: AttendanceSheetScope, marks: AttendanceSheetMarks) {
+  const { data } = await api.put<AttendanceSheetDraft>('/attendance/sheet', { ...scope, marks });
+  return data;
+}
+
+export async function clearAttendanceSheetDraft(scope: AttendanceSheetScope) {
+  await api.delete('/attendance/sheet', { params: scope });
+}
+
 export type AttendanceMatch = 'exact' | 'fuzzy' | 'ambiguous' | 'unmatched';
 
 export type AttendanceParseEmployee = {

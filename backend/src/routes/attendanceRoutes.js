@@ -3,6 +3,7 @@ const multer = require('multer');
 const {
   bankPayments,
   bulk,
+  clearSheet,
   history,
   list,
   mark,
@@ -10,7 +11,9 @@ const {
   parseMonth,
   payroll,
   register,
+  saveSheet,
   saveSymbols,
+  sheet,
   symbols,
   uploadFile,
   wageRegister,
@@ -59,6 +62,9 @@ router.get('/payroll', payroll);
 router.get('/wage-register', wageRegister);
 router.get('/bank-payments', requireRole('admin'), bankPayments);
 router.get('/register', register);
+router.get('/sheet', sheet);
+router.put('/sheet', saveSheet);
+router.delete('/sheet', clearSheet);
 router.post('/parse', requireRole('admin'), parseAttendanceUpload, parse);
 router.post('/parse-month', requireRole('admin'), parseAttendanceUpload, parseMonth);
 router.post('/bulk', requireRole('admin'), bulk);

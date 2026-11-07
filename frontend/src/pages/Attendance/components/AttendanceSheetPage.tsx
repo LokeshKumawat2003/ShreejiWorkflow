@@ -19,10 +19,18 @@ import {
 	Tooltip,
 	useToast,
 } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionButton, ConfirmDialog, EmptyState, FilterBar, FilterField, FilterInput, FilterSelect, MapPinIcon, PrintIcon } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { getAttendanceRegister, type AttendanceRegister, type AttendanceRegisterMark } from '../../../services/attendanceService';
+import {
+	clearAttendanceSheetDraft,
+	getAttendanceRegister,
+	getAttendanceSheetDraft,
+	saveAttendanceSheetDraft,
+	type AttendanceRegister,
+	type AttendanceRegisterMark,
+	type AttendanceSheetScope,
+} from '../../../services/attendanceService';
 import { locationLabel, useOwnLocations } from '../hooks/useOwnLocations';
 import { REGISTER_MARK_META } from '../utils/attendanceStatus';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
@@ -33,6 +41,17 @@ type AttendanceSheetPageProps = {
 
 type SheetMarks = Record<string, AttendanceRegisterMark[]>;
 type ExportFormat = 'pdf' | 'excel' | 'print';
+type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
+type PendingSave = { scope: AttendanceSheetScope; marks: SheetMarks; legacyKey?: string };
+
+const SAVE_DELAY_MS = 700;
+const SAVE_LABEL: Record<SaveState, string> = {
+	idle: '',
+	pending: 'Unsaved changes…',
+	saving: 'Saving…',
+	saved: 'All changes saved',
+	error: 'Could not save — changes will retry on your next edit',
+};
 
 const BRUSHES: AttendanceRegisterMark[] = ['P', 'A', 'HD', 'L', 'CL', 'SL', 'PL', 'WO', 'H', ''];
 const FILE_PREFIX = 'attendance-sheet';
@@ -50,17 +69,21 @@ function weekdayOf(month: string, day: number) {
 	return new Date(year, monthNumber - 1, day).getDay();
 }
 
-function draftKey(organizationId: string, locationId: string, month: string) {
-	return `attendance-sheet:${organizationId}:${locationId}:${month}`;
+function legacyDraftKey(scope: AttendanceSheetScope) {
+	return `attendance-sheet:${scope.organizationId}:${scope.locationId}:${scope.month}`;
 }
 
-function readDraft(key: string): SheetMarks {
+function readLegacyDraft(key: string): SheetMarks {
 	try {
 		const value = JSON.parse(localStorage.getItem(key) || '{}') as unknown;
 		return value && typeof value === 'object' ? value as SheetMarks : {};
 	} catch {
 		return {};
 	}
+}
+
+function hasMarks(marks: SheetMarks) {
+	return Object.values(marks).some((days) => Array.isArray(days) && days.some(Boolean));
 }
 
 function presentTotal(days: AttendanceRegisterMark[]) {
@@ -82,23 +105,63 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 	const [brush, setBrush] = useState<AttendanceRegisterMark>('P');
 	const [exporting, setExporting] = useState<ExportFormat | null>(null);
 	const [isClearOpen, setIsClearOpen] = useState(false);
+	const [isClearing, setIsClearing] = useState(false);
+	const [saveState, setSaveState] = useState<SaveState>('idle');
+	const saveTimer = useRef<number | undefined>(undefined);
+	const pendingSave = useRef<PendingSave | null>(null);
 
-	const storageKey = locationId ? draftKey(organizationId, locationId, month) : '';
+	const scope = useMemo<AttendanceSheetScope | null>(
+		() => (locationId ? { organizationId, locationId, month } : null),
+		[locationId, month, organizationId],
+	);
+
+	const flushSave = useCallback(() => {
+		window.clearTimeout(saveTimer.current);
+		const job = pendingSave.current;
+		pendingSave.current = null;
+		if (!job) return;
+		setSaveState('saving');
+		saveAttendanceSheetDraft(job.scope, job.marks)
+			.then(() => {
+				if (job.legacyKey) localStorage.removeItem(job.legacyKey);
+				setSaveState(pendingSave.current ? 'pending' : 'saved');
+			})
+			.catch(() => {
+				if (!pendingSave.current) pendingSave.current = job;
+				setSaveState('error');
+			});
+	}, []);
+
+	const scheduleSave = useCallback((job: PendingSave) => {
+		pendingSave.current = job;
+		setSaveState('pending');
+		window.clearTimeout(saveTimer.current);
+		saveTimer.current = window.setTimeout(flushSave, SAVE_DELAY_MS);
+	}, [flushSave]);
 
 	useEffect(() => {
-		if (!locationId) return;
+		if (!scope) return;
 		const controller = new AbortController();
 		setIsLoading(true);
 		setLoadError('');
-		getAttendanceRegister({ organizationId, locationId, month }, controller.signal)
-			.then((register) => {
+		setSaveState('idle');
+		Promise.all([
+			getAttendanceRegister(scope, controller.signal),
+			getAttendanceSheetDraft(scope, controller.signal),
+		])
+			.then(([register, draft]) => {
 				const rows = register.rows.filter((row) => row.employeeStatus !== 'disabled');
-				const draft = readDraft(draftKey(organizationId, locationId, month));
-				setTemplate({ ...register, rows });
-				setMarks(Object.fromEntries(rows.map((row) => {
-					const saved = draft[row.employeeId];
+				const legacyKey = legacyDraftKey(scope);
+				const legacy = hasMarks(draft.marks) ? {} : readLegacyDraft(legacyKey);
+				const source = hasMarks(legacy) ? legacy : draft.marks;
+				const nextMarks = Object.fromEntries(rows.map((row) => {
+					const saved = source[row.employeeId];
 					return [row.employeeId, Array.from({ length: register.daysInMonth }, (_, index) => saved?.[index] ?? '')];
-				})));
+				}));
+				setTemplate({ ...register, rows });
+				setMarks(nextMarks);
+				if (hasMarks(legacy)) scheduleSave({ scope, marks: nextMarks, legacyKey });
+				else if (draft.updatedAt) setSaveState('saved');
 			})
 			.catch((error: unknown) => {
 				if (controller.signal.aborted) return;
@@ -108,15 +171,16 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 			.finally(() => {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
-		return () => controller.abort();
-	}, [locationId, month, organizationId]);
+		return () => {
+			controller.abort();
+			flushSave();
+		};
+	}, [scope, scheduleSave, flushSave]);
 
 	function updateMarks(updater: (current: SheetMarks) => SheetMarks) {
-		setMarks((current) => {
-			const next = updater(current);
-			if (storageKey) localStorage.setItem(storageKey, JSON.stringify(next));
-			return next;
-		});
+		const next = updater(marks);
+		setMarks(next);
+		if (scope) scheduleSave({ scope, marks: next });
 	}
 
 	const days = useMemo(() => Array.from({ length: template?.daysInMonth ?? 0 }, (_, index) => index + 1), [template]);
@@ -157,10 +221,22 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 		])));
 	}
 
-	function clearAll() {
-		updateMarks((current) => Object.fromEntries(Object.keys(current).map((employeeId) => [employeeId, current[employeeId].map(() => '' as AttendanceRegisterMark)])));
-		if (storageKey) localStorage.removeItem(storageKey);
-		setIsClearOpen(false);
+	async function clearAll() {
+		if (!scope) return;
+		window.clearTimeout(saveTimer.current);
+		pendingSave.current = null;
+		setIsClearing(true);
+		try {
+			await clearAttendanceSheetDraft(scope);
+			localStorage.removeItem(legacyDraftKey(scope));
+			setMarks((current) => Object.fromEntries(Object.keys(current).map((employeeId) => [employeeId, current[employeeId].map(() => '' as AttendanceRegisterMark)])));
+			setSaveState('idle');
+			setIsClearOpen(false);
+		} catch (error) {
+			toast({ title: error instanceof ApiError ? error.message : 'Unable to clear the sheet.', status: 'error', position: 'top' });
+		} finally {
+			setIsClearing(false);
+		}
 	}
 
 	async function exportSheet(format: ExportFormat) {
@@ -206,7 +282,7 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 			<Alert status="info" borderRadius="md" fontSize="sm">
 				<AlertIcon />
 				<AlertDescription>
-					This sheet does not mark attendance in the system. Your entries are kept only in this browser until you download the file.
+					This sheet does not mark attendance in the system. Your entries are saved automatically as a draft, so you can continue later from any device.
 				</AlertDescription>
 			</Alert>
 
@@ -247,6 +323,11 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 						<Text fontSize="xs" color="slate.500">
 							{rows.length} employees · {filledCells} cells filled · Total mandays {totalMandays}
 						</Text>
+						{saveState !== 'idle' && (
+							<Text fontSize="xs" mt={0.5} color={saveState === 'error' ? 'red.500' : saveState === 'saved' ? 'green.600' : 'slate.400'}>
+								{SAVE_LABEL[saveState]}
+							</Text>
+						)}
 					</Box>
 					<HStack spacing={2} flexWrap="wrap">
 						<Menu>
@@ -402,8 +483,9 @@ function AttendanceSheetPage({ organizationId }: AttendanceSheetPageProps) {
 				title="Clear the whole sheet?"
 				description="All marks you entered for this location and month will be removed."
 				confirmLabel="Clear sheet"
+				isLoading={isClearing}
 				onClose={() => setIsClearOpen(false)}
-				onConfirm={clearAll}
+				onConfirm={() => void clearAll()}
 			/>
 		</Stack>
 	);

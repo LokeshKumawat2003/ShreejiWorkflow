@@ -14,6 +14,7 @@ import {
 } from '@chakra-ui/react';
 import type { UserRole } from '../../types';
 import { BuildingIcon, PeopleIcon, WalletIcon } from '../ui';
+import DeveloperContact from './DeveloperContact';
 
 type NavigationItem = {
   label: string;
@@ -192,7 +193,7 @@ function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }
             </Tooltip>
           )}
         </HStack>
-        <Text mt={3} textAlign="center" fontSize="11px" color="slate.400">Shreeji Caretaker · v1.0.0</Text>
+        <DeveloperContact mt={3} />
       </Box>
     </Flex>
   );

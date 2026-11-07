@@ -6,6 +6,7 @@ import { BrandMark } from './BrandLogo';
 type AuthLayoutProps = {
   storyPanel: ReactNode;
   mobileFooter?: ReactNode;
+  cornerNote?: ReactNode;
   children: ReactNode;
 };
 
@@ -69,7 +70,7 @@ function BackgroundArt() {
   );
 }
 
-function AuthLayout({ storyPanel, mobileFooter, children }: AuthLayoutProps) {
+function AuthLayout({ storyPanel, mobileFooter, cornerNote, children }: AuthLayoutProps) {
   return (
     <Box
       position="relative"
@@ -159,7 +160,24 @@ function AuthLayout({ storyPanel, mobileFooter, children }: AuthLayoutProps) {
           </Box>
         </Flex>
         {mobileFooter && <Box display={{ base: 'block', lg: 'none' }}>{mobileFooter}</Box>}
+        {cornerNote && <Box display={{ base: 'block', lg: 'none' }} pb={4}>{cornerNote}</Box>}
       </Grid>
+      {cornerNote && (
+        <Box
+          display={{ base: 'none', lg: 'block' }}
+          position="absolute"
+          left={6}
+          bottom={4}
+          zIndex={2}
+          px={3}
+          py={1.5}
+          borderRadius="full"
+          bg="whiteAlpha.800"
+          backdropFilter="blur(4px)"
+        >
+          {cornerNote}
+        </Box>
+      )}
     </Box>
   );
 }

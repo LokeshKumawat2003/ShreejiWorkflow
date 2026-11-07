@@ -45,8 +45,9 @@ function createApp() {
   }));
   const defaultJsonParser = express.json({ limit: '10kb' });
   const bulkAttendanceJsonParser = express.json({ limit: '512kb' });
+  const largeJsonPaths = new Set(['/api/attendance/bulk', '/api/attendance/sheet']);
   app.use((req, res, next) => (
-    req.path === '/api/attendance/bulk' ? bulkAttendanceJsonParser : defaultJsonParser
+    largeJsonPaths.has(req.path) ? bulkAttendanceJsonParser : defaultJsonParser
   )(req, res, next));
   if (process.env.NODE_ENV !== 'test') {
     app.use(morgan('dev'));

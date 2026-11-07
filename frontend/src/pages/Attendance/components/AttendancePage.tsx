@@ -58,7 +58,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
   const [loadError, setLoadError] = useState('');
   const [refreshToken, setRefreshToken] = useState(0);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [savingAttendance, setSavingAttendance] = useState<{ employeeId: string; status: AttendanceStatus } | null>(null);
+  const [savingEmployees, setSavingEmployees] = useState<Set<string>>(() => new Set());
   const isOrganizationUser = role === 'organization';
   const canMarkAttendance = isOrganizationUser || Boolean(organizationId);
   const canUploadAttendance = role === 'admin' && Boolean(organizationId) && Boolean(locationId);
@@ -132,7 +132,9 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
   }
 
   async function updateAttendance(employeeId: string, status: AttendanceStatus) {
-    setSavingAttendance({ employeeId, status });
+    const previous = entries.find((entry) => entry.employeeId === employeeId);
+    setSavingEmployees((current) => new Set(current).add(employeeId));
+    setEntries((current) => current.map((entry) => (entry.employeeId === employeeId ? { ...entry, status } : entry)));
     try {
       const record = await markAttendance({
         employeeId,
@@ -149,9 +151,18 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
       )));
       toast({ title: 'Attendance saved', status: 'success', position: 'top' });
     } catch (error) {
+      if (previous) {
+        setEntries((current) => current.map((entry) => (
+          entry.employeeId === employeeId ? { ...entry, status: previous.status, updatedAt: previous.updatedAt } : entry
+        )));
+      }
       toast({ title: errorMessage(error, 'Unable to save attendance.'), status: 'error', position: 'top' });
     } finally {
-      setSavingAttendance(null);
+      setSavingEmployees((current) => {
+        const next = new Set(current);
+        next.delete(employeeId);
+        return next;
+      });
     }
   }
 
@@ -238,7 +249,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
               ) : entries.length === 0 ? (
                 <Tr><Td colSpan={4} textAlign="center" py={10} color="slate.500">No employees assigned to this organization.</Td></Tr>
               ) : entries.map((entry) => {
-                const isSaving = savingAttendance?.employeeId === entry.employeeId;
+                const isSaving = savingEmployees.has(entry.employeeId);
                 return (
                 <Tr key={entry.employeeId}>
                   <Td>
@@ -260,7 +271,6 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
                           colorScheme="green"
                           variant={entry.status === 'present' ? 'solid' : 'outline'}
                           isDisabled={isSaving}
-                          isLoading={isSaving && savingAttendance?.status === 'present'}
                           onClick={() => updateAttendance(entry.employeeId, 'present')}
                         >
                           Present
@@ -275,7 +285,6 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
                           colorScheme="red"
                           variant={entry.status === 'absent' ? 'solid' : 'outline'}
                           isDisabled={isSaving}
-                          isLoading={isSaving && savingAttendance?.status === 'absent'}
                           onClick={() => updateAttendance(entry.employeeId, 'absent')}
                         >
                           Absent

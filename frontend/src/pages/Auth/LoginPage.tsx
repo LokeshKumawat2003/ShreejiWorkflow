@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flex, Heading, Skeleton, SkeletonCircle, Stack, Text } from '@chakra-ui/react';
 import BrandLogo from '../../components/layout/BrandLogo';
+import DeveloperContact from '../../components/layout/DeveloperContact';
 import AuthStoryPanel, { AuthMobileFeatures } from './components/AuthStoryPanel';
 import LoginForm from './components/LoginForm';
 import AuthLayout from '../../components/layout/AuthLayout';
@@ -42,7 +43,7 @@ function LoginPage() {
     }
 
     return (
-        <AuthLayout storyPanel={<AuthStoryPanel />} mobileFooter={<AuthMobileFeatures />}>
+        <AuthLayout storyPanel={<AuthStoryPanel />} mobileFooter={<AuthMobileFeatures />} cornerNote={<DeveloperContact fontSize="xs" />}>
             <Stack align="stretch" spacing={0} textAlign="center" color="slate.900">
                 <Flex display={{ base: 'none', lg: 'flex', xl: 'none' }} justify="center" mb={5}>
                     <BrandLogo compact size="sm" />

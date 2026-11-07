@@ -10,6 +10,7 @@ const {
   parseAttendanceSheet,
   updateAttendanceSymbols,
 } = require('../services/attendanceService');
+const { clearAttendanceSheet, getAttendanceSheet, saveAttendanceSheet } = require('../services/attendanceSheetService');
 const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister } = require('../services/payrollService');
 
 async function list(req, res) {
@@ -59,6 +60,18 @@ async function register(req, res) {
   return res.json(await getAttendanceRegister(req.user, req.query));
 }
 
+async function sheet(req, res) {
+  return res.json(await getAttendanceSheet(req.user, req.query));
+}
+
+async function saveSheet(req, res) {
+  return res.json(await saveAttendanceSheet(req.user, req.body || {}));
+}
+
+async function clearSheet(req, res) {
+  return res.json(await clearAttendanceSheet(req.user, req.query));
+}
+
 async function symbols(req, res) {
   return res.json(await getAttendanceSymbols(req.user));
 }
@@ -80,6 +93,7 @@ async function uploadFile(req, res) {
 module.exports = {
   bankPayments,
   bulk,
+  clearSheet,
   history,
   list,
   mark,
@@ -87,7 +101,9 @@ module.exports = {
   parseMonth,
   payroll,
   register,
+  saveSheet,
   saveSymbols,
+  sheet,
   symbols,
   uploadFile,
   wageRegister,

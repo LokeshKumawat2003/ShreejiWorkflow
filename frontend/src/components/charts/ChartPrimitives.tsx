@@ -1,13 +1,16 @@
 import { Box, Flex, HStack, Text } from '@chakra-ui/react';
+import type { ReactNode } from 'react';
 
 export function ChartHeader({
   title,
   subtitle,
   label,
+  actions,
 }: {
   title: string;
   subtitle: string;
   label?: string;
+  actions?: ReactNode;
 }) {
   return (
     <Flex justify="space-between" align="flex-start" gap={3} mb={5}>
@@ -15,11 +18,11 @@ export function ChartHeader({
         <Text fontSize="md" fontWeight="700" color="#0F172A">{title}</Text>
         <Text mt={1} fontSize="xs" color="#94A3B8">{subtitle}</Text>
       </Box>
-      {label && (
+      {actions ?? (label && (
         <Box px={2.5} py={1} bg="#EEF2FF" color="#4F46E5" borderRadius="full" flexShrink={0}>
           <Text fontSize="10px" fontWeight="700">{label}</Text>
         </Box>
-      )}
+      ))}
     </Flex>
   );
 }

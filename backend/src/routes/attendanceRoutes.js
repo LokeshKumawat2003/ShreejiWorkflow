@@ -58,7 +58,7 @@ router.get('/history', history);
 router.get('/payroll', payroll);
 router.get('/wage-register', wageRegister);
 router.get('/bank-payments', requireRole('admin'), bankPayments);
-router.get('/register', requireRole('admin'), register);
+router.get('/register', register);
 router.post('/parse', requireRole('admin'), parseAttendanceUpload, parse);
 router.post('/parse-month', requireRole('admin'), parseAttendanceUpload, parseMonth);
 router.post('/bulk', requireRole('admin'), bulk);

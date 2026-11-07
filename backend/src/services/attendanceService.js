@@ -608,7 +608,6 @@ const REGISTER_CONTRACTOR = {
 };
 
 async function getAttendanceRegister(user, input = {}) {
-  requireAdmin(user);
   const monthMatch = typeof input.month === 'string' ? input.month.match(/^(\d{4})-(\d{2})$/) : null;
   const year = monthMatch ? Number(monthMatch[1]) : 0;
   const monthNumber = monthMatch ? Number(monthMatch[2]) : 0;

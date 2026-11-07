@@ -1,8 +1,31 @@
 import api from './api';
 import type { EmployeeStatus } from '../types';
 
+export type DashboardRange = 7 | 30;
+
+/** Leave covers every leave type; off covers weekly offs and holidays. */
+export type DashboardStatusCounts = {
+	present: number;
+	absent: number;
+	halfDay: number;
+	leave: number;
+	off: number;
+};
+
+export type DashboardLocation = {
+	id: string;
+	name: string;
+	place: string;
+	designation: string;
+	status: 'active' | 'disabled';
+	employees: number;
+	today: DashboardStatusCounts & { notMarked: number };
+	monthRate: number | null;
+};
+
 export type DashboardSummary = {
 	date: string;
+	range: DashboardRange;
 	totals: {
 		organizations: number | null;
 		locations: number;
@@ -11,8 +34,19 @@ export type DashboardSummary = {
 		activeEmployees: number;
 		unassignedEmployees: number | null;
 	};
-	today: { present: number; absent: number; notMarked: number };
-	trend: { date: string; present: number; absent: number }[];
+	today: DashboardStatusCounts & { notMarked: number; isSunday: boolean };
+	trend: (DashboardStatusCounts & { date: string })[];
+	month: DashboardStatusCounts & {
+		label: string;
+		fromDate: string;
+		toDate: string;
+		attendanceRate: number | null;
+		/** Salary figures are only sent to admins. */
+		paidDays: number | null;
+		wages: { currency: string; total: number }[] | null;
+	};
+	locations: DashboardLocation[] | null;
+	notMarkedToday: { id: string; name: string; designation: string; locationName: string }[] | null;
 	byDesignation: { name: string; value: number }[];
 	bySkillCategory: { name: string; value: number }[];
 	recentEmployees: {
@@ -26,9 +60,9 @@ export type DashboardSummary = {
 	}[];
 };
 
-export async function getDashboardSummary(signal?: AbortSignal) {
+export async function getDashboardSummary(range: DashboardRange, signal?: AbortSignal) {
 	const { data } = await api.get<DashboardSummary>('/dashboard/summary', {
-		params: { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+		params: { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, range },
 		signal,
 	});
 	return data;

@@ -50,12 +50,12 @@ router.get('/', list);
 router.post('/', create);
 router.post('/import', requireRole('admin'), parseEmployeeSheet, importFile);
 router.post('/assign', assign);
-router.post('/unassign', unassign);
+router.post('/unassign', requireRole('admin'), unassign);
 router.post('/transfer', requireRole('admin'), transfer);
 router.post('/appointment-letters/organization', parseAppointmentLetter, sendOrganizationAppointmentLetters);
 router.post('/:id/appointment-letter', parseAppointmentLetter, sendAppointmentLetter);
 router.get('/:id', get);
 router.patch('/:id', update);
-router.delete('/:id', remove);
+router.delete('/:id', requireRole('admin'), remove);
 
 module.exports = router;

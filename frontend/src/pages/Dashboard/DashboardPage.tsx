@@ -17,6 +17,7 @@ import DashboardNavbar from '../../components/layout/DashboardNavbar';
 import { AppShellSkeleton } from '../../components/ui';
 import DashboardSidebar from '../../components/layout/DashboardSidebar';
 import AttendanceWorkspacePage from '../Attendance/AttendanceWorkspacePage';
+import AttendanceSheetPage from '../Attendance/components/AttendanceSheetPage';
 import BankInvoicePage from '../BankInvoice/BankInvoicePage';
 import OrganizationsPage from '../Organizations/OrganizationsPage';
 import AdminPayrollPage from '../Payroll/AdminPayrollPage';
@@ -130,9 +131,11 @@ function DashboardPage({ role }: DashboardPageProps) {
             {activeTab === 'Dashboard' ? (
               <DashboardHome user={user} role={role} onNavigate={setActiveTab} />
             ) : activeTab === 'Employees' ? (
-              <EmployeesPage role={role} />
+              <EmployeesPage role={role} currentUserId={user.id || user._id} />
             ) : activeTab === 'Attendance' ? (
-              <AttendanceWorkspacePage />
+              <AttendanceWorkspacePage organizationId={user.id || user._id} />
+            ) : role === 'organization' && activeTab === 'Attendance sheet' && (user.id || user._id) ? (
+              <AttendanceSheetPage organizationId={(user.id || user._id) as string} />
             ) : role === 'admin' && activeTab === 'Organizations' ? (
               <OrganizationsPage />
             ) : role === 'admin' && activeTab === 'Payroll' ? (

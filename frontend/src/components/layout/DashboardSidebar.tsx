@@ -42,11 +42,18 @@ const BankIcon = createIcon({
   path: <path fill="currentColor" d="M12 2 2 7v2h20V7L12 2Zm-7 9v7h3v-7H5Zm5.5 0v7h3v-7h-3ZM16 11v7h3v-7h-3ZM2 20v2h20v-2H2Z" />,
 });
 
+const SheetIcon = createIcon({
+  displayName: 'SheetIcon',
+  viewBox: '0 0 24 24',
+  path: <path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5ZM7 11v2h10v-2H7Zm0 4v2h10v-2H7Zm3-4v6h1.5v-6H10Zm4 0v6h1.5v-6H14Z" />,
+});
+
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', icon: DashboardIcon, section: 'Workspace' },
   { label: 'Organizations', icon: BuildingIcon, roles: ['admin'], section: 'Workspace' },
   { label: 'Employees', icon: PeopleIcon, section: 'Workspace' },
   { label: 'Attendance', icon: CalendarIcon, roles: ['organization'], section: 'Workspace' },
+  { label: 'Attendance sheet', icon: SheetIcon, roles: ['organization'], section: 'Workspace' },
   { label: 'Payroll', icon: WalletIcon, roles: ['admin'], section: 'Administration' },
   { label: 'Bank invoice', icon: BankIcon, roles: ['admin'], section: 'Administration' },
   { label: 'Settings', icon: SettingsIcon, roles: ['admin'], section: 'Administration' },

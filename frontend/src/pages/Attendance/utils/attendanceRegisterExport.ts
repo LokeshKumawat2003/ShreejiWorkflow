@@ -30,20 +30,23 @@ function parentLine(row: AttendanceRegisterRow) {
   return row.parentName ? `S/O. ${row.parentName.toUpperCase()}` : '';
 }
 
-function fileBaseName(register: AttendanceRegister) {
+function fileBaseName(register: AttendanceRegister, prefix = 'attendance-register') {
   const slug = (register.location.name || 'location')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 40);
-  return `attendance-register-${slug || 'location'}-${register.month}`;
+  return `${prefix}-${slug || 'location'}-${register.month}`;
 }
 
 function dayNumbers(register: AttendanceRegister) {
   return Array.from({ length: register.daysInMonth }, (_, index) => index + 1);
 }
 
-export async function exportRegisterPdf(register: AttendanceRegister, action: PdfAction = 'download') {
+/** `plain` leaves out the statutory form reference, PO number and contractor signature block. */
+export type RegisterExportOptions = { filePrefix?: string; plain?: boolean };
+
+export async function exportRegisterPdf(register: AttendanceRegister, action: PdfAction = 'download', { filePrefix, plain = false }: RegisterExportOptions = {}) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -57,9 +60,11 @@ export async function exportRegisterPdf(register: AttendanceRegister, action: Pd
   document.setFont('helvetica', 'bold');
   document.setFontSize(14);
   document.text(TITLE, pageWidth / 2, 12, { align: 'center' });
-  document.setFont('helvetica', 'normal');
-  document.setFontSize(9);
-  document.text(SUBTITLE, pageWidth / 2, 17, { align: 'center' });
+  if (!plain) {
+    document.setFont('helvetica', 'normal');
+    document.setFontSize(9);
+    document.text(SUBTITLE, pageWidth / 2, 17, { align: 'center' });
+  }
   document.setFont('helvetica', 'bold');
   document.setFontSize(10);
   const work = workLine(register);
@@ -71,7 +76,7 @@ export async function exportRegisterPdf(register: AttendanceRegister, action: Pd
   document.setFontSize(9);
   document.text(contractorLine(register), margin, 30);
   document.text(periodLine(register), pageWidth - margin, 30, { align: 'right' });
-  document.text(loaLine(register), margin, 35);
+  if (!plain) document.text(loaLine(register), margin, 35);
   document.text(siteLine(register), pageWidth - margin, 35, { align: 'right' });
 
   const fixedWidth = 8 + 44 + 18 + 13;
@@ -136,17 +141,19 @@ export async function exportRegisterPdf(register: AttendanceRegister, action: Pd
     document.addPage();
     footerY = 30;
   }
-  document.setFont('helvetica', 'bold');
-  document.setFontSize(9);
-  document.text(`FOR:- ${register.contractor.signatory}`, margin + 4, footerY);
-  document.setFont('helvetica', 'normal');
-  document.setFontSize(8);
-  document.text('MANAGER/PROPRIETOR', margin + 4, footerY + 5);
+  if (!plain) {
+    document.setFont('helvetica', 'bold');
+    document.setFontSize(9);
+    document.text(`FOR:- ${register.contractor.signatory}`, margin + 4, footerY);
+    document.setFont('helvetica', 'normal');
+    document.setFontSize(8);
+    document.text('MANAGER/PROPRIETOR', margin + 4, footerY + 5);
+  }
 
-  finishPdf(document, `${fileBaseName(register)}.pdf`, action);
+  finishPdf(document, `${fileBaseName(register, filePrefix)}.pdf`, action);
 }
 
-export async function exportRegisterExcel(register: AttendanceRegister) {
+export async function exportRegisterExcel(register: AttendanceRegister, { filePrefix, plain = false }: RegisterExportOptions = {}) {
   const workbook = await createWorkbook();
   const days = dayNumbers(register);
   const lastColumn = 3 + days.length;
@@ -178,36 +185,38 @@ export async function exportRegisterExcel(register: AttendanceRegister) {
   totalRow[1] = 'Total Mandays';
   totalRow[lastColumn] = register.totalMandays;
 
-  const headerIndex = 6;
+  const singleRows = [TITLE, ...(plain ? [] : [SUBTITLE]), workLine(register)].map(singleRow);
+  const splitRows = [
+    splitRow(contractorLine(register), periodLine(register)),
+    splitRow(plain ? '' : loaLine(register), siteLine(register)),
+  ];
+  const headerIndex = singleRows.length + splitRows.length + 1;
   const totalIndex = headerIndex + 1 + body.length;
   const aoa = [
-    singleRow(TITLE),
-    singleRow(SUBTITLE),
-    singleRow(workLine(register)),
-    splitRow(contractorLine(register), periodLine(register)),
-    splitRow(loaLine(register), siteLine(register)),
+    ...singleRows,
+    ...splitRows,
     blankRow(),
     header,
     ...body,
     totalRow,
-    blankRow(),
-    blankRow(),
-    singleRow(`FOR:- ${register.contractor.signatory}`),
-    singleRow('MANAGER/PROPRIETOR'),
+    ...(plain ? [] : [
+      blankRow(),
+      blankRow(),
+      singleRow(`FOR:- ${register.contractor.signatory}`),
+      singleRow('MANAGER/PROPRIETOR'),
+    ]),
   ];
 
-  const sheet = addRowsSheet(workbook, 'Form XVI', aoa, [5, 38, 13, ...days.map(() => 3.5), 9]);
+  const sheet = addRowsSheet(workbook, plain ? 'Attendance' : 'Form XVI', aoa, [5, 38, 13, ...days.map(() => 3.5), 9]);
   const merge = (row: number, startColumn: number, endColumn: number) => {
     sheet.mergeCells(row + 1, startColumn + 1, row + 1, endColumn + 1);
   };
-  merge(0, 0, lastColumn);
-  merge(1, 0, lastColumn);
-  merge(2, 0, lastColumn);
-  merge(3, 0, splitColumn - 1);
-  merge(3, splitColumn, lastColumn);
-  merge(4, 0, splitColumn - 1);
-  merge(4, splitColumn, lastColumn);
+  singleRows.forEach((_, index) => merge(index, 0, lastColumn));
+  splitRows.forEach((_, offset) => {
+    merge(singleRows.length + offset, 0, splitColumn - 1);
+    merge(singleRows.length + offset, splitColumn, lastColumn);
+  });
   merge(totalIndex, 1, lastColumn - 1);
 
-  await downloadWorkbook(workbook, `${fileBaseName(register)}.xlsx`);
+  await downloadWorkbook(workbook, `${fileBaseName(register, filePrefix)}.xlsx`);
 }

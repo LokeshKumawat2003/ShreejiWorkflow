@@ -2,6 +2,8 @@ export type AttendancePoint = {
   label: string;
   present: number;
   absent: number;
+  halfDay?: number;
+  leave?: number;
 };
 
 export type DistributionItem = {

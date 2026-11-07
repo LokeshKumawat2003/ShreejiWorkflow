@@ -1,5 +1,5 @@
-import { AddIcon, AtSignIcon, CheckCircleIcon, RepeatIcon, SettingsIcon, TimeIcon, WarningIcon } from '@chakra-ui/icons';
-import { Alert, Avatar, Box, Grid, HStack, IconButton, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { AddIcon, AtSignIcon, CalendarIcon, CheckCircleIcon, InfoIcon, RepeatIcon, SettingsIcon, TimeIcon, WarningIcon } from '@chakra-ui/icons';
+import { Alert, Avatar, Box, Button, ButtonGroup, Grid, HStack, IconButton, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import AttendanceTrendChart from '../../../components/charts/AttendanceTrendChart';
 import DistributionChart from '../../../components/charts/DistributionChart';
@@ -12,12 +12,16 @@ import {
 	PageHeader,
 	PeopleIcon,
 	StatCard,
+	StatStrip,
 	StatusBadge,
+	WalletIcon,
 	type DataTableColumn,
 } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { getDashboardSummary, type DashboardSummary } from '../../../services/dashboardService';
+import { getDashboardSummary, type DashboardRange, type DashboardSummary } from '../../../services/dashboardService';
 import type { User, UserRole } from '../../../types';
+import LocationAttendanceCard from './LocationAttendanceCard';
+import NotMarkedTodayCard from './NotMarkedTodayCard';
 import TodayAttendanceCard from './TodayAttendanceCard';
 
 type DashboardHomeProps = {
@@ -38,6 +42,18 @@ function formatCreated(value: string) {
 	return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
 }
 
+function formatMoney({ currency, total }: { currency: string; total: number }) {
+	try {
+		return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(total);
+	} catch {
+		return `${currency} ${Math.round(total).toLocaleString()}`;
+	}
+}
+
+function formatDays(value: number) {
+	return Number.isInteger(value) ? value : value.toFixed(1);
+}
+
 function greeting() {
 	const hour = new Date().getHours();
 	if (hour < 12) return 'Good morning';
@@ -51,12 +67,13 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState('');
 	const [refreshToken, setRefreshToken] = useState(0);
+	const [range, setRange] = useState<DashboardRange>(7);
 
 	useEffect(() => {
 		const controller = new AbortController();
 		setIsLoading(true);
 		setError('');
-		void getDashboardSummary(controller.signal)
+		void getDashboardSummary(range, controller.signal)
 			.then(setSummary)
 			.catch((loadError: unknown) => {
 				if (!controller.signal.aborted) {
@@ -67,21 +84,51 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [refreshToken]);
+	}, [refreshToken, range]);
 
 	const trend = useMemo(
 		() => (summary?.trend || []).map((point) => ({
 			...point,
-			label: formatDay(point.date, { weekday: 'short', day: 'numeric' }),
+			label: formatDay(point.date, summary?.range === 30 ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric' }),
 		})),
 		[summary],
 	);
 
 	const totals = summary?.totals;
+	const today = summary?.today;
+	const month = summary?.month;
 	const todayLabel = summary ? formatDay(summary.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
 	const ratio = (part?: number | null, whole?: number | null) => (whole ? (part ?? 0) / whole : null);
-	const todayTotal = summary ? summary.today.present + summary.today.absent + summary.today.notMarked : 0;
+	const todayTotal = today ? today.present + today.absent + today.halfDay + today.leave + today.off + today.notMarked : 0;
+	const presentToday = today ? today.present + today.halfDay : 0;
+	const monthWorkingMarks = month ? month.present + month.absent + month.halfDay + month.leave : 0;
+	const monthItems = [
+		{
+			label: 'Attendance rate',
+			value: month ? (month.attendanceRate === null ? '—' : `${month.attendanceRate}%`) : null,
+			helper: 'Present out of marked working days',
+			color: 'green.500',
+			icon: <CheckCircleIcon />,
+			share: month?.attendanceRate == null ? null : month.attendanceRate / 100,
+		},
+		{ label: 'Present days', value: month?.present, helper: `${month?.halfDay ?? 0} half days`, color: 'brand.500', icon: <CalendarIcon />, share: ratio(month?.present, monthWorkingMarks) },
+		{ label: 'Absent days', value: month?.absent, helper: isAdmin ? `${month?.leave ?? 0} leave days` : 'Marked absent', color: 'red.500', icon: <WarningIcon />, share: ratio(month?.absent, monthWorkingMarks) },
+		...(isAdmin
+			? [
+				{ label: 'Paid days', value: month ? formatDays(month.paidDays ?? 0) : null, helper: 'Present, paid leave, half days', color: 'blue.500', icon: <InfoIcon /> },
+				{
+					label: 'Estimated wages',
+					value: month ? (month.wages?.length ? month.wages.map(formatMoney).join(' + ') : formatMoney({ currency: 'INR', total: 0 })) : null,
+					helper: 'Paid days × daily salary',
+					color: 'orange.400',
+					icon: <WalletIcon boxSize={5} />,
+				},
+			]
+			: [
+				{ label: 'Leave days', value: month?.leave, helper: `${month?.off ?? 0} weekly off / holiday`, color: 'blue.500', icon: <InfoIcon />, share: ratio(month?.leave, monthWorkingMarks) },
+			]),
+	];
 	const statCards = isAdmin
 		? [
 			{ label: 'Organizations', value: totals?.organizations ?? 0, color: 'brand.500', icon: <BuildingIcon boxSize={5} />, helper: 'Client organizations', tab: 'Organizations' },
@@ -90,10 +137,10 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 			{ label: 'Unassigned', value: totals?.unassignedEmployees ?? 0, color: 'orange.400', icon: <WarningIcon />, helper: 'Not placed yet', share: ratio(totals?.unassignedEmployees, totals?.employees), tab: 'Employees' },
 		]
 		: [
-			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'brand.500', icon: <PeopleIcon boxSize={5} />, helper: `of ${totals?.employees ?? 0} records`, share: ratio(totals?.activeEmployees, totals?.employees), tab: 'Employees' },
-			{ label: 'Locations', value: totals?.locations ?? 0, color: 'blue.500', icon: <MapPinIcon boxSize={5} />, helper: `${totals?.activeLocations ?? 0} active sites`, share: ratio(totals?.activeLocations, totals?.locations), tab: 'Attendance' },
-			{ label: 'Present today', value: summary?.today.present ?? 0, color: 'green.500', icon: <CheckCircleIcon />, helper: 'Marked present', share: ratio(summary?.today.present, todayTotal), tab: 'Attendance' },
-			{ label: 'Absent today', value: summary?.today.absent ?? 0, color: 'red.500', icon: <WarningIcon />, helper: `${summary?.today.notMarked ?? 0} not marked yet`, share: ratio(summary?.today.absent, todayTotal), tab: 'Attendance' },
+			{ label: 'Active employees', value: totals?.activeEmployees ?? 0, color: 'brand.500', icon: <PeopleIcon boxSize={5} />, helper: `of ${totals?.employees ?? 0} records · ${totals?.activeLocations ?? 0} sites`, share: ratio(totals?.activeEmployees, totals?.employees), tab: 'Employees' },
+			{ label: 'Present today', value: presentToday, color: 'green.500', icon: <CheckCircleIcon />, helper: today?.halfDay ? `incl. ${today.halfDay} half day` : 'Marked present', share: ratio(presentToday, todayTotal), tab: 'Attendance' },
+			{ label: 'Absent / leave', value: today ? today.absent + today.leave : 0, color: 'red.500', icon: <WarningIcon />, helper: `${today?.absent ?? 0} absent · ${today?.leave ?? 0} on leave`, share: ratio(today ? today.absent + today.leave : 0, todayTotal), tab: 'Attendance' },
+			{ label: 'Not marked', value: today?.notMarked ?? 0, color: 'orange.400', icon: <TimeIcon />, helper: today?.isSunday ? 'Sunday — weekly off' : 'Waiting for a mark today', share: ratio(today?.notMarked, todayTotal), tab: 'Attendance' },
 		];
 
 	const quickActions = isAdmin
@@ -104,8 +151,9 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 			{ label: 'Settings', description: 'Designations and master data', icon: <SettingsIcon />, tab: 'Settings' },
 		]
 		: [
-			{ label: 'Attendance', description: "Mark today's attendance", icon: <CheckCircleIcon />, tab: 'Attendance' },
-			{ label: 'Employees', description: 'View your employees', icon: <AtSignIcon />, tab: 'Employees' },
+			{ label: 'Register of Attendance', description: 'Monthly register per location', icon: <CalendarIcon />, tab: 'Attendance' },
+			{ label: 'Attendance history', description: 'Past attendance records', icon: <CheckCircleIcon />, tab: 'Attendance' },
+			{ label: 'Employees', description: 'View your employees and appointment letters', icon: <AtSignIcon />, tab: 'Employees' },
 		];
 
 	const recentColumns: DataTableColumn<RecentEmployee>[] = [
@@ -173,22 +221,57 @@ function DashboardHome({ user, role, onNavigate }: DashboardHomeProps) {
 				))}
 			</SimpleGrid>
 
+			<Stack spacing={3}>
+				<HStack justify="space-between" align="baseline">
+					<Text fontSize="sm" fontWeight="700" color="slate.700">This month{month ? ` · ${month.label}` : ''}</Text>
+					<Text fontSize="xs" color="slate.500">Up to today</Text>
+				</HStack>
+				<StatStrip items={monthItems} />
+			</Stack>
+
 			<Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={4}>
 				<AttendanceTrendChart
 					data={trend}
 					isLoading={isLoading && !summary}
 					hasError={Boolean(error) && !summary}
-					title="Attendance — last 7 days"
-					subtitle="Present and absent marks per day"
+					title={`Attendance — last ${range} days`}
+					subtitle="Present, half day, leave and absent marks per day"
+					actions={(
+						<ButtonGroup size="xs" isAttached variant="outline">
+							{([7, 30] as const).map((option) => (
+								<Button
+									key={option}
+									onClick={() => setRange(option)}
+									bg={range === option ? 'brand.500' : 'white'}
+									color={range === option ? 'white' : 'slate.600'}
+									borderColor={range === option ? 'brand.500' : 'slate.200'}
+									_hover={{ bg: range === option ? 'brand.600' : 'slate.50' }}
+								>
+									{option} days
+								</Button>
+							))}
+						</ButtonGroup>
+					)}
 				/>
-				<TodayAttendanceCard
-					present={summary?.today.present ?? 0}
-					absent={summary?.today.absent ?? 0}
-					notMarked={summary?.today.notMarked ?? 0}
-					dateLabel={todayLabel}
-					isLoading={isLoading && !summary}
-				/>
+				<TodayAttendanceCard counts={today ?? null} dateLabel={todayLabel} isLoading={isLoading && !summary} />
 			</Grid>
+
+			{!isAdmin ? (
+				<Grid templateColumns={{ base: '1fr', lg: '2fr 1fr' }} gap={4}>
+					<LocationAttendanceCard
+						locations={summary?.locations || []}
+						isSunday={Boolean(today?.isSunday)}
+						isLoading={isLoading && !summary}
+						onOpenAttendance={() => onNavigate('Attendance')}
+					/>
+					<NotMarkedTodayCard
+						employees={summary?.notMarkedToday || []}
+						total={today?.notMarked ?? 0}
+						isSunday={Boolean(today?.isSunday)}
+						isLoading={isLoading && !summary}
+					/>
+				</Grid>
+			) : null}
 
 			<Grid templateColumns={{ base: '1fr', md: '1fr 1fr', xl: '1fr 1fr 1fr' }} gap={4}>
 				<DistributionChart

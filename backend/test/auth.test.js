@@ -2396,10 +2396,10 @@ function queryResult(doc) {
   return Object.assign(Promise.resolve(doc), { lean: async () => doc });
 }
 
-test('attendance register is admin only and requires a month and location', async () => {
+test('attendance register requires a month and location', async () => {
   await assert.rejects(
     getAttendanceRegister({ id: '507f1f77bcf86cd799439011', role: 'organization' }, { month: '2026-10' }),
-    (error) => error.statusCode === 403,
+    (error) => error.statusCode === 400,
   );
   const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
   await assert.rejects(

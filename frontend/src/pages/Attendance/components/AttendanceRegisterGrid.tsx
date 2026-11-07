@@ -31,6 +31,7 @@ import AttendanceUploadDialog from './AttendanceUploadDialog';
 type AttendanceRegisterGridProps = {
   organizationId: string;
   locationId: string;
+  readOnly?: boolean;
 };
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -56,7 +57,7 @@ const markStyles = REGISTER_MARK_META;
 const LEGEND_MARKS: AttendanceRegisterMark[] = ['P', 'A', 'HD', 'L', 'CL', 'SL', 'PL', 'WO', 'H', ''];
 const LEAVE_MARKS = new Set<AttendanceRegisterMark>(['L', 'CL', 'SL', 'PL']);
 
-function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegisterGridProps) {
+function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }: AttendanceRegisterGridProps) {
   const toast = useToast();
   const today = currentLocalDate();
   const [month, setMonth] = useState(today.slice(0, 7));
@@ -247,19 +248,23 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
             </Box>
           </HStack>
           <HStack flexWrap="wrap" spacing={2}>
-            <Button
-              size="sm"
-              h="32px"
-              leftIcon={isEditing ? <CheckIcon boxSize={3} /> : <EditIcon />}
-              variant={isEditing ? 'solid' : 'outline'}
-              isDisabled={!summary?.employees}
-              onClick={() => setIsEditing((current) => !current)}
-            >
-              {isEditing ? 'Done editing' : 'Edit attendance'}
-            </Button>
-            <ActionButton tone="neutral" size="sm" leftIcon={<AttachmentIcon />} onClick={() => setIsUploadOpen(true)}>
-              Upload
-            </ActionButton>
+            {!readOnly && (
+              <>
+                <Button
+                  size="sm"
+                  h="32px"
+                  leftIcon={isEditing ? <CheckIcon boxSize={3} /> : <EditIcon />}
+                  variant={isEditing ? 'solid' : 'outline'}
+                  isDisabled={!summary?.employees}
+                  onClick={() => setIsEditing((current) => !current)}
+                >
+                  {isEditing ? 'Done editing' : 'Edit attendance'}
+                </Button>
+                <ActionButton tone="neutral" size="sm" leftIcon={<AttachmentIcon />} onClick={() => setIsUploadOpen(true)}>
+                  Upload
+                </ActionButton>
+              </>
+            )}
             <ActionButton
               tone="neutral"
               size="sm"
@@ -348,7 +353,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
                 ? editBrush === 'toggle'
                   ? 'Click a cell to switch Present / Absent'
                   : `Click a cell to mark it ${ATTENDANCE_STATUS_META[editBrush].label}`
-                : 'Click "Edit attendance" to make changes'}
+                : readOnly ? 'View only' : 'Click "Edit attendance" to make changes'}
             </Text>
             {isEditing ? (
               <Select
@@ -593,7 +598,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
         ) : null}
       </Box>
 
-      <AttendanceUploadDialog
+      {!readOnly && <AttendanceUploadDialog
         isOpen={isUploadOpen}
         date={month === today.slice(0, 7) ? today : `${month}-01`}
         organizationId={organizationId}
@@ -612,7 +617,7 @@ function AttendanceRegisterGrid({ organizationId, locationId }: AttendanceRegist
             position: 'top',
           });
         }}
-      />
+      />}
     </Stack>
   );
 }

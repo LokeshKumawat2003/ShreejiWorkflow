@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, RepeatIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, NotAllowedIcon, PhoneIcon, RepeatIcon, ViewIcon } from '@chakra-ui/icons';
 import { Box, HStack, Stack, Text } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import {
@@ -44,7 +44,8 @@ type EmployeeTableProps = {
   onPageChange: (page: number) => void;
   onView: (employee: Employee) => void;
   onEdit: (employee: Employee) => void;
-  onDelete: (employee: Employee) => void;
+  onDelete?: (employee: Employee) => void;
+  onViewLetter?: (employee: Employee) => void;
   onDownloadLetter?: (employee: Employee) => void;
   onPrintLetter?: (employee: Employee) => void;
   onMove?: (employee: Employee) => void;
@@ -88,6 +89,7 @@ function EmployeeTable({
   onView,
   onEdit,
   onDelete,
+  onViewLetter,
   onDownloadLetter,
   onPrintLetter,
   onMove,
@@ -137,6 +139,9 @@ function EmployeeTable({
           {role === 'admin' && (
             <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} onClick={() => onEdit(employee)} />
           )}
+          {onViewLetter && (
+            <IconAction label={`View appointment letter: ${employee.name}`} icon={<ViewIcon />} onClick={() => onViewLetter(employee)} />
+          )}
           {onDownloadLetter && (
             <IconAction label={`Appointment letter: ${employee.name}`} icon={<DownloadIcon />} tone="primary" onClick={() => onDownloadLetter(employee)} />
           )}
@@ -146,7 +151,9 @@ function EmployeeTable({
           {onMove && (
             <IconAction label={`Move ${employee.name} to another location`} icon={<RepeatIcon />} onClick={() => onMove(employee)} />
           )}
-          <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
+          {onDelete && (
+            <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
+          )}
         </HStack>
       ),
     },

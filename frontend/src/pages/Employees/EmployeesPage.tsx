@@ -1,8 +1,12 @@
 import { AddIcon, AttachmentIcon } from '@chakra-ui/icons';
 import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError } from '../../services/api';
-import type { Employee, UserRole } from '../../types';
+import { createAppointmentLetterPdf, downloadAppointmentLetters } from '../../services/appointmentLetterService';
+import { listOrganizationLocations } from '../../services/locationService';
+import type { Employee, OrganizationLocation, UserRole } from '../../types';
+import type { PdfAction } from '../../utils/pdfOutput';
+import AppointmentLetterPreviewDialog from './components/AppointmentLetterPreviewDialog';
 import AssignEmployeeDialog from './components/AssignEmployeeDialog';
 import DeleteEmployeeDialog from './components/DeleteEmployeeDialog';
 import EmployeeDetailsPage from './components/EmployeeDetailsPage';
@@ -13,13 +17,14 @@ import { useEmployees } from './hooks/useEmployees';
 import type { EmployeeInput } from '../../services/employeeService';
 
 type EmployeesPageProps = { role: UserRole; organizationId?: string };
-type OrganizationEmployeesPageProps = EmployeesPageProps & { organizationName?: string };
+type OrganizationEmployeesPageProps = EmployeesPageProps & { organizationName?: string; currentUserId?: string };
+type LetterAction = PdfAction | 'view';
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-function EmployeesPage({ role, organizationId, organizationName }: OrganizationEmployeesPageProps) {
+function EmployeesPage({ role, organizationId, organizationName, currentUserId }: OrganizationEmployeesPageProps) {
   const toast = useToast();
   const employees = useEmployees(organizationId, role === 'organization' || Boolean(organizationId));
   const formDialog = useDisclosure();
@@ -33,6 +38,60 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
   const [isSaving, setIsSaving] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [preview, setPreview] = useState<{ employee: Employee; url: string | null } | null>(null);
+  const locationsRef = useRef<Promise<OrganizationLocation[]> | null>(null);
+  const canUseLetters = role === 'organization' && Boolean(currentUserId);
+
+  function loadOwnLocations() {
+    if (!locationsRef.current && currentUserId) {
+      locationsRef.current = listOrganizationLocations(currentUserId, { limit: 100 })
+        .then((response) => response.locations)
+        .catch((error: unknown) => {
+          locationsRef.current = null;
+          throw error;
+        });
+    }
+    return locationsRef.current ?? Promise.resolve([]);
+  }
+
+  async function handleLetter(employee: Employee, action: LetterAction) {
+    if (action === 'view') {
+      setPreview((current) => {
+        if (current?.url) URL.revokeObjectURL(current.url);
+        return { employee, url: null };
+      });
+    }
+    try {
+      const location = employee.locationId ? (await loadOwnLocations()).find((item) => item.id === employee.locationId) : undefined;
+      if (!location) {
+        if (action === 'view') setPreview(null);
+        toast({ title: `${employee.name} is not placed at a location yet, so no appointment letter is available.`, status: 'warning', position: 'top' });
+        return;
+      }
+      if (action === 'view') {
+        const url = URL.createObjectURL(await createAppointmentLetterPdf(employee, location));
+        setPreview((current) => {
+          if (current?.employee.id !== employee.id || current.url) {
+            URL.revokeObjectURL(url);
+            return current;
+          }
+          return { employee, url };
+        });
+        return;
+      }
+      await downloadAppointmentLetters([employee], location, action);
+    } catch (error) {
+      if (action === 'view') setPreview(null);
+      toast({ title: getErrorMessage(error, 'Unable to generate the appointment letter.'), status: 'error', position: 'top' });
+    }
+  }
+
+  function closePreview() {
+    setPreview((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
 
   function openCreateDialog() {
     setFormEmployee(null);
@@ -101,13 +160,8 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
     if (!deletingEmployee) return;
     setIsDeleting(true);
     try {
-      if (role === 'organization') {
-        await employees.unassignMany([deletingEmployee.id], organizationId);
-        toast({ title: 'Employee removed from your organization; record kept', status: 'success', position: 'top' });
-      } else {
-        await employees.remove(deletingEmployee.id);
-        toast({ title: 'Employee deleted', status: 'success', position: 'top' });
-      }
+      await employees.remove(deletingEmployee.id);
+      toast({ title: 'Employee deleted', status: 'success', position: 'top' });
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to delete employee.'), status: 'error', position: 'top' });
     } finally {
@@ -126,6 +180,7 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
           role={role}
           onBack={() => setViewingEmployee(null)}
           onEdit={() => openEditDialog(viewingEmployee)}
+          onAppointmentLetter={canUseLetters ? (action) => void handleLetter(viewingEmployee, action) : undefined}
         />
       ) : (
         <Stack spacing={6}>
@@ -174,11 +229,14 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
             onPageChange={employees.setPage}
             onView={(employee) => void handleView(employee)}
             onEdit={openEditDialog}
-            deleteLabel={role === 'organization' ? 'Remove from organization' : 'Delete employee'}
-            onDelete={(employee) => {
+            deleteLabel="Delete employee"
+            onDelete={role === 'admin' ? (employee) => {
               setDeletingEmployee(employee);
               deleteDialog.onOpen();
-            }}
+            } : undefined}
+            onViewLetter={canUseLetters ? (employee) => void handleLetter(employee, 'view') : undefined}
+            onDownloadLetter={canUseLetters ? (employee) => void handleLetter(employee, 'download') : undefined}
+            onPrintLetter={canUseLetters ? (employee) => void handleLetter(employee, 'print') : undefined}
           />
         </Stack>
       )}
@@ -207,11 +265,22 @@ function EmployeesPage({ role, organizationId, organizationName }: OrganizationE
           onAssign={handleAssign}
         />
       )}
+      {canUseLetters && (
+        <AppointmentLetterPreviewDialog
+          isOpen={Boolean(preview)}
+          employeeName={preview?.employee.name || ''}
+          url={preview?.url ?? null}
+          onClose={closePreview}
+          onAction={(action) => {
+            if (preview) void handleLetter(preview.employee, action);
+          }}
+        />
+      )}
       <DeleteEmployeeDialog
         isOpen={deleteDialog.isOpen}
         employee={deletingEmployee}
         isDeleting={isDeleting}
-        action={role === 'organization' ? 'remove' : 'delete'}
+        action="delete"
         onClose={() => {
           setDeletingEmployee(null);
           deleteDialog.onClose();

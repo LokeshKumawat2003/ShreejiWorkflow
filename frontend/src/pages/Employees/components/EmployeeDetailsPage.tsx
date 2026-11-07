@@ -1,4 +1,4 @@
-import { CalendarIcon, ChevronLeftIcon, DownloadIcon, EditIcon, EmailIcon, InfoOutlineIcon, LockIcon, PhoneIcon } from '@chakra-ui/icons';
+import { CalendarIcon, ChevronLeftIcon, DownloadIcon, EditIcon, EmailIcon, InfoOutlineIcon, LockIcon, PhoneIcon, ViewIcon } from '@chakra-ui/icons';
 import {
 	Avatar,
 	Box,
@@ -22,6 +22,7 @@ type EmployeeDetailsPageProps = {
 	onBack: () => void;
 	onEdit: () => void;
 	onJoiningLetter?: (action: PdfAction) => void;
+	onAppointmentLetter?: (action: PdfAction | 'view') => void;
 	isPreparingLetter?: boolean;
 };
 
@@ -45,7 +46,7 @@ function formatMoney(value?: number) {
 	return typeof value === 'number' && Number.isFinite(value) ? currency.format(value) : '';
 }
 
-function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoiningLetter, isPreparingLetter = false }: EmployeeDetailsPageProps) {
+function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoiningLetter, onAppointmentLetter, isPreparingLetter = false }: EmployeeDetailsPageProps) {
 	const isAdmin = role === 'admin';
 	const { options: masterOptions } = useMasterDataOptions();
 	const dailyPay = Number(employee.dailySalary) || (Number(employee.basicPay) || 0) + (Number(employee.dearnessAllowance) || 0) + (Number(employee.otherAllowanceAmount) || 0);
@@ -114,6 +115,19 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 									Download joining letter
 								</ActionButton>
 								<ActionButton tone="neutral" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={isLoading || isPreparingLetter} onClick={() => onJoiningLetter('print')}>
+									Print
+								</ActionButton>
+							</HStack>
+						)}
+						{onAppointmentLetter && (
+							<HStack spacing={2} flexShrink={0} flexWrap="wrap">
+								<ActionButton tone="neutral" borderRadius="full" leftIcon={<ViewIcon />} isDisabled={isLoading} onClick={() => onAppointmentLetter('view')}>
+									View letter
+								</ActionButton>
+								<ActionButton borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={isLoading} onClick={() => onAppointmentLetter('download')}>
+									Download appointment letter
+								</ActionButton>
+								<ActionButton tone="neutral" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={isLoading} onClick={() => onAppointmentLetter('print')}>
 									Print
 								</ActionButton>
 							</HStack>

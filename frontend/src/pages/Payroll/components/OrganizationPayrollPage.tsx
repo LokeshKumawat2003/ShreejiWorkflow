@@ -57,15 +57,18 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     document.text(`Period: ${fromDate} to ${toDate}`, 14, 23);
     autoTable(document, {
       startY: 29,
-      head: [['Employee', 'Email', 'Daily salary', 'Present', 'Absent', 'Paid days', 'Pay']],
+      head: [['Employee', 'Email', 'Daily wage', 'Present', 'Absent', 'Paid days', 'Wages', 'Bonus', 'EPF + ESI', 'Net pay']],
       body: payroll.lines.map((line) => [
         line.employeeName,
         line.employeeEmail,
-        formatAmount(line.dailySalary, line.currency),
+        formatAmount(line.dailyWage ?? line.dailySalary, line.currency),
         line.presentDays,
         line.absentDays,
         line.paidDays,
-        formatAmount(line.grossPay, line.currency),
+        formatAmount(line.wages ?? line.grossPay, line.currency),
+        formatAmount(line.bonus ?? 0, line.currency),
+        formatAmount((line.epf ?? 0) + (line.esi ?? 0), line.currency),
+        formatAmount(line.netPay ?? line.grossPay, line.currency),
       ]),
       styles: { fontSize: 8, cellPadding: 2.5 },
       headStyles: { fillColor: [79, 70, 229] },
@@ -76,7 +79,7 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
     autoTable(document, {
       startY: finalY + 7,
       head: [['Currency', 'Total payroll']],
-      body: payroll.totals.map(({ currency, total }) => [currency, formatAmount(total, currency)]),
+      body: (payroll.netTotals ?? payroll.totals).map(({ currency, total }) => [currency, formatAmount(total, currency)]),
       styles: { fontSize: 9, cellPadding: 2.5 },
       headStyles: { fillColor: [79, 70, 229] },
       theme: 'grid',
@@ -93,11 +96,16 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
       { header: 'Department', width: 20, value: (line) => line.department },
       { header: 'Job title', width: 20, value: (line) => line.jobTitle },
       { header: 'Currency', width: 12, value: (line) => line.currency },
-      { header: 'Daily salary', width: 16, value: (line) => line.dailySalary },
+      { header: 'Daily wage', width: 16, value: (line) => line.dailyWage ?? line.dailySalary },
       { header: 'Present', width: 10, value: (line) => line.presentDays },
       { header: 'Absent', width: 10, value: (line) => line.absentDays },
       { header: 'Paid days', width: 12, value: (line) => line.paidDays },
-      { header: 'Gross pay', width: 16, value: (line) => line.grossPay },
+      { header: 'Wages', width: 14, value: (line) => line.wages ?? line.grossPay },
+      { header: 'Bonus', width: 12, value: (line) => line.bonus ?? 0 },
+      { header: 'Total wages', width: 14, value: (line) => line.totalWages ?? line.grossPay },
+      { header: 'EPF', width: 10, value: (line) => line.epf ?? 0 },
+      { header: 'ESI', width: 10, value: (line) => line.esi ?? 0 },
+      { header: 'Net payable', width: 16, value: (line) => line.netPay ?? line.grossPay },
     ], payroll.lines);
 
     addRowsSheet(workbook, 'Totals', [
@@ -105,7 +113,7 @@ function OrganizationPayrollPage({ organizationId, locationId }: OrganizationPay
       [`Period: ${fromDate} to ${toDate}`],
       [],
       ['Currency', 'Total payroll'],
-      ...payroll.totals.map(({ currency, total }) => [currency, total]),
+      ...(payroll.netTotals ?? payroll.totals).map(({ currency, total }) => [currency, total]),
     ], [18, 20]);
     await downloadWorkbook(workbook, `${getExportFilename(fromDate, toDate)}.xlsx`);
   }

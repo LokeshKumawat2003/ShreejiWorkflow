@@ -218,11 +218,16 @@ function AdminPayrollPage() {
       { header: 'Account holder', width: 24, value: (line) => line.bankAccountHolder },
       { header: 'Account number', width: 20, value: (line) => line.bankAccountNumber },
       { header: 'Routing / IFSC', width: 18, value: (line) => line.bankRoutingCode },
-      { header: 'Daily salary', width: 16, value: (line) => line.dailySalary },
+      { header: 'Daily wage', width: 16, value: (line) => line.dailyWage ?? line.dailySalary },
       { header: 'Present', width: 10, value: (line) => line.presentDays },
       { header: 'Absent', width: 10, value: (line) => line.absentDays },
       { header: 'Paid days', width: 12, value: (line) => line.paidDays },
-      { header: 'Gross pay', width: 16, value: (line) => line.grossPay },
+      { header: 'Wages', width: 14, value: (line) => line.wages ?? line.grossPay },
+      { header: 'Bonus', width: 12, value: (line) => line.bonus ?? 0 },
+      { header: 'Total wages', width: 14, value: (line) => line.totalWages ?? line.grossPay },
+      { header: 'EPF', width: 10, value: (line) => line.epf ?? 0 },
+      { header: 'ESI', width: 10, value: (line) => line.esi ?? 0 },
+      { header: 'Net payable', width: 16, value: (line) => line.netPay ?? line.grossPay },
       { header: 'Pay period', width: 26, value: () => payPeriod },
     ], payroll.lines);
 
@@ -232,7 +237,7 @@ function AdminPayrollPage() {
       ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected employees`],
       [],
       ['Currency', 'Total payable'],
-      ...payroll.totals.map(({ currency, total }) => [currency, total]),
+      ...(payroll.netTotals ?? payroll.totals).map(({ currency, total }) => [currency, total]),
     ], [24, 30]);
     await downloadWorkbook(workbook, `payroll-${payroll.fromDate}-to-${payroll.toDate}.xlsx`);
   }
@@ -248,6 +253,8 @@ function AdminPayrollPage() {
         title="Payroll"
         description="Run attendance-based payroll for any period and download salary slips."
       />
+
+      {payroll ? <PayrollSummary payroll={payroll} /> : null}
 
       <ContentCard
         noPadding
@@ -370,7 +377,6 @@ function AdminPayrollPage() {
 
       {payroll ? (
         <Stack spacing={5}>
-          <PayrollSummary payroll={payroll} />
           <ContentCard
             noPadding
             icon={<PeopleIcon boxSize={5} />}

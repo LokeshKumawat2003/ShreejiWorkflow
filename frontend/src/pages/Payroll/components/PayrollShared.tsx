@@ -115,7 +115,7 @@ export function PeriodFields({ fromDate, toDate, onChange }: PeriodFieldsProps) 
 
 export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null }) {
 	const { employees = 0, presentDays: present = 0, absentDays: absent = 0, paidDays = 0 } = payroll?.summary ?? {};
-	const totals = payroll?.totals ?? [];
+	const totals = payroll?.netTotals ?? payroll?.totals ?? [];
 	const ready = Boolean(payroll);
 
 	return (
@@ -131,7 +131,7 @@ export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null })
 				{
 					label: 'Total payable',
 					value: ready ? (totals.length ? totals.map(({ currency, total }) => formatAmount(total, currency)).join(' + ') : formatAmount(0)) : null,
-					helper: 'Gross pay for the period',
+					helper: payroll?.netTotals ? 'Net of EPF and ESI, incl. bonus' : 'Gross pay for the period',
 					color: 'green.500',
 					icon: <WalletIcon boxSize={5} />,
 				},
@@ -197,7 +197,7 @@ const payrollColumns: DataTableColumn<PayrollLine>[] = [
 		header: 'Daily rate',
 		align: 'right',
 		hideBelow: 'md',
-		render: (line) => <Text color="slate.700" fontWeight="500" whiteSpace="nowrap">{formatAmount(line.dailySalary, line.currency)}</Text>,
+		render: (line) => <Text color="slate.700" fontWeight="500" whiteSpace="nowrap">{formatAmount(line.dailyWage ?? line.dailySalary, line.currency)}</Text>,
 	},
 	{
 		key: 'attendance',
@@ -216,11 +216,35 @@ const payrollColumns: DataTableColumn<PayrollLine>[] = [
 		),
 	},
 	{
+		key: 'wages',
+		header: 'Wages',
+		align: 'right',
+		hideBelow: 'lg',
+		render: (line) => <Text color="slate.700" whiteSpace="nowrap">{formatAmount(line.wages ?? line.grossPay, line.currency)}</Text>,
+	},
+	{
+		key: 'bonus',
+		header: 'Bonus',
+		align: 'right',
+		hideBelow: 'lg',
+		render: (line) => <Text color="slate.700" whiteSpace="nowrap">{line.bonus ? `+ ${formatAmount(line.bonus, line.currency)}` : '—'}</Text>,
+	},
+	{
+		key: 'deductions',
+		header: 'EPF + ESI',
+		align: 'right',
+		hideBelow: 'lg',
+		render: (line) => {
+			const deductions = (line.epf ?? 0) + (line.esi ?? 0);
+			return <Text color="red.500" whiteSpace="nowrap">{deductions ? `− ${formatAmount(deductions, line.currency)}` : '—'}</Text>;
+		},
+	},
+	{
 		key: 'pay',
-		header: 'Payable',
+		header: 'Net payable',
 		align: 'right',
 		render: (line) => (
-			<Text fontWeight="800" color="slate.900" whiteSpace="nowrap">{formatAmount(line.grossPay, line.currency)}</Text>
+			<Text fontWeight="800" color="slate.900" whiteSpace="nowrap">{formatAmount(line.netPay ?? line.grossPay, line.currency)}</Text>
 		),
 	},
 ];
@@ -260,21 +284,25 @@ export function PayrollTable({ payroll, pageSize, onPageChange, isLoading, error
 							onPageChange={onPageChange}
 						/>
 					) : null}
-					<PayrollFormulaNote />
+					<PayrollFormulaNote rates={payroll?.rates} />
 				</>
 			)}
 		/>
 	);
 }
 
-export function PayrollFormulaNote({ children }: { children?: ReactNode }) {
+export function PayrollFormulaNote({ children, rates }: { children?: ReactNode; rates?: PayrollResponse['rates'] }) {
 	return (
 		<HStack justify="space-between" flexWrap="wrap" gap={2} px={{ base: 4, md: 5 }} py={3} bg="slate.50" borderTop="1px solid" borderColor="slate.100">
-			<HStack spacing={2} fontSize="xs" color="slate.500">
+			<HStack spacing={2} fontSize="xs" color="slate.500" flexWrap="wrap">
 				<Box as="span" px={2} py={0.5} borderRadius="md" bg="white" border="1px solid" borderColor="slate.200" fontWeight="700" color="slate.700">
-					Daily rate × present days
+					Daily rate × paid days
 				</Box>
-				<Text>Absent and unmarked days are unpaid</Text>
+				<Text>
+					{rates
+						? `+ Bonus ${rates.bonusRate}% − EPF ${rates.epfRate}%${rates.epfWageCeiling ? ` (on wages up to ${rates.epfWageCeiling})` : ''} − ESI ${rates.esiRate}% = net payable, same as the location wage register. Absent and unmarked days are unpaid.`
+						: 'Absent and unmarked days are unpaid'}
+				</Text>
 			</HStack>
 			{children}
 		</HStack>

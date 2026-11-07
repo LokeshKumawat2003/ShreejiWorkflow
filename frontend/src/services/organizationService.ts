@@ -18,6 +18,7 @@ export type UpdateOrganizationInput = {
   name: string;
   organizationName: string;
   email: string;
+  password?: string;
   status: 'active' | 'disabled';
   phone?: string;
   address?: string;

@@ -10,7 +10,7 @@ const {
   parseAttendanceSheet,
   updateAttendanceSymbols,
 } = require('../services/attendanceService');
-const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../services/payrollService');
+const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister } = require('../services/payrollService');
 
 async function list(req, res) {
   return res.json(await listAttendance(req.user, req.query));
@@ -26,7 +26,7 @@ async function history(req, res) {
 }
 
 async function payroll(req, res) {
-  return res.json(await calculatePayroll(req.user, { ...req.query, attendanceOnly: true }));
+  return res.json(await calculatePayrollWithDeductions(req.user, { ...req.query, attendanceOnly: true }));
 }
 
 async function wageRegister(req, res) {

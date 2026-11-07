@@ -139,6 +139,19 @@ async function calculatePayroll(user, options = {}) {
       paidDays,
       grossPay,
     };
+  }).map((line) => {
+    if (!options.wageRates) return line;
+    const row = wageRegisterRow(line, options.wageRates);
+    return {
+      ...line,
+      dailyWage: row.dailyWage,
+      wages: row.wages,
+      bonus: row.bonus,
+      totalWages: row.totalWages,
+      epf: row.epf,
+      esi: row.esi,
+      netPay: row.grossPayment,
+    };
   }).sort((left, right) => left.employeeName.localeCompare(right.employeeName));
 
   const selectedIds = parseEmployeeIds(options.employeeIds);
@@ -151,9 +164,11 @@ async function calculatePayroll(user, options = {}) {
   ));
 
   const totalsByCurrency = new Map();
+  const netTotalsByCurrency = new Map();
   const summary = { employees: matchingLines.length, presentDays: 0, absentDays: 0, paidDays: 0 };
   for (const line of matchingLines) {
     totalsByCurrency.set(line.currency, (totalsByCurrency.get(line.currency) || 0) + line.grossPay);
+    if (options.wageRates) netTotalsByCurrency.set(line.currency, (netTotalsByCurrency.get(line.currency) || 0) + line.netPay);
     summary.presentDays += line.presentDays;
     summary.absentDays += line.absentDays;
     summary.paidDays += line.paidDays;
@@ -169,6 +184,10 @@ async function calculatePayroll(user, options = {}) {
       currency,
       total: Math.round((total + Number.EPSILON) * 100) / 100,
     })),
+    ...(options.wageRates ? {
+      rates: options.wageRates,
+      netTotals: [...netTotalsByCurrency.entries()].map(([currency, total]) => ({ currency, total })),
+    } : {}),
   };
 
   if (options.page === undefined) return result;
@@ -191,6 +210,21 @@ function round2(value) {
 function rate(settings, field) {
   const value = Number(settings[field]);
   return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function wageRates(settings) {
+  return {
+    bonusRate: rate(settings, 'bonusRate'),
+    epfRate: rate(settings, 'epfRate'),
+    epfWageCeiling: rate(settings, 'epfWageCeiling'),
+    esiRate: rate(settings, 'esiRate'),
+  };
+}
+
+/** Payroll with the same bonus, EPF, ESI and net pay as the location FORM XVII register. */
+async function calculatePayrollWithDeductions(user, options = {}) {
+  const settings = await getDocumentSettings('wageRegister');
+  return calculatePayroll(user, { ...options, wageRates: wageRates(settings) });
 }
 
 /** Builds one FORM XVII row; deductions stay unrounded so the net matches the paper register. */
@@ -241,12 +275,7 @@ async function calculateWageRegister(user, options = {}) {
   ]);
   if (!location) throw httpError(404, 'Location not found for this organization.');
 
-  const rates = {
-    bonusRate: rate(settings, 'bonusRate'),
-    epfRate: rate(settings, 'epfRate'),
-    epfWageCeiling: rate(settings, 'epfWageCeiling'),
-    esiRate: rate(settings, 'esiRate'),
-  };
+  const rates = wageRates(settings);
   const nameCounts = new Map();
   for (const line of payroll.lines) {
     const key = line.employeeName.trim().toLowerCase();
@@ -337,12 +366,7 @@ async function calculateBankPayments(user, options = {}) {
     getDocumentSettings('bankLetter'),
   ]);
   if (options.locationId && locations.length === 0) throw httpError(404, 'Location not found for this organization.');
-  const rates = {
-    bonusRate: rate(wageSettings, 'bonusRate'),
-    epfRate: rate(wageSettings, 'epfRate'),
-    epfWageCeiling: rate(wageSettings, 'epfWageCeiling'),
-    esiRate: rate(wageSettings, 'esiRate'),
-  };
+  const rates = wageRates(wageSettings);
   const organizationNames = new Map(organizations.map((organization) => [String(organization._id), organization.organizationName || '']));
 
   // Same employees and amounts as each location's FORM XVII register (column N).
@@ -414,4 +438,4 @@ async function calculateBankPayments(user, options = {}) {
   return { ...result, rows: rows.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: rows.length, totalPages } };
 }
 
-module.exports = { calculateBankPayments, calculatePayroll, calculateWageRegister, wageRegisterRow };
+module.exports = { calculateBankPayments, calculatePayroll, calculatePayrollWithDeductions, calculateWageRegister, wageRegisterRow };

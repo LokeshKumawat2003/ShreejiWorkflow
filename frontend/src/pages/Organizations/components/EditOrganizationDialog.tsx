@@ -17,8 +17,8 @@ function EditOrganizationDialog({ isOpen, isSaving, organization, onClose, onSav
       isSaving={isSaving}
       organization={organization}
       onClose={onClose}
-      onSubmit={async ({ password: _password, ...input }) => {
-        const saved = await onSave(input);
+      onSubmit={async ({ password, ...input }) => {
+        const saved = await onSave(password ? { ...input, password } : input);
         if (saved) onClose();
         return saved;
       }}

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { once } = require('node:events');
 const test = require('node:test');
+const bcrypt = require('bcryptjs');
 const { createApp } = require('../src/app');
 const { requireRole } = require('../src/middleware/auth');
 const Attendance = require('../src/models/Attendance');
@@ -289,6 +290,32 @@ test('organization updates preserve optional profile details when omitted', asyn
     assert.equal(result.about, currentOrganization.about);
     assert.equal(result.website, currentOrganization.website);
     assert.equal(result.industry, currentOrganization.industry);
+  } finally {
+    User.findOneAndUpdate = originalFindOneAndUpdate;
+  }
+});
+
+test('organization updates hash a new password and sign out existing sessions', async () => {
+  const originalFindOneAndUpdate = User.findOneAndUpdate;
+  let capturedUpdate;
+  User.findOneAndUpdate = async (_filter, update) => {
+    capturedUpdate = update;
+    return { id: '507f1f77bcf86cd799439011', role: 'organization', status: 'active', ...update.$set };
+  };
+
+  try {
+    const input = { name: 'Owner', organizationName: 'Example Org', email: 'owner@example.com' };
+    await updateOrganization('507f1f77bcf86cd799439011', { ...input, password: '1234567890' });
+    assert.notEqual(capturedUpdate.$set.password, '1234567890');
+    assert.equal(await bcrypt.compare('1234567890', capturedUpdate.$set.password), true);
+    assert.ok(capturedUpdate.$set.passwordChangedAt instanceof Date);
+    assert.deepEqual(Object.keys(capturedUpdate.$unset).sort(), ['passwordResetExpires', 'passwordResetTokenHash']);
+
+    await updateOrganization('507f1f77bcf86cd799439011', { ...input, password: '' });
+    assert.equal(capturedUpdate.$set.password, undefined);
+    assert.equal(capturedUpdate.$unset, undefined);
+
+    await assert.rejects(updateOrganization('507f1f77bcf86cd799439011', { ...input, password: 'short' }), { statusCode: 400 });
   } finally {
     User.findOneAndUpdate = originalFindOneAndUpdate;
   }

@@ -90,8 +90,8 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
       showError('Enter a valid login email address.');
       return;
     }
-    if (!isEditing && password.length < 8) {
-      showError('The temporary password must be at least 8 characters.');
+    if ((!isEditing || password) && password.length < 8) {
+      showError(isEditing ? 'The new password must be at least 8 characters.' : 'The temporary password must be at least 8 characters.');
       return;
     }
     if (!isValidPhone(phone)) {
@@ -145,35 +145,36 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
                 <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                   <FormInput label="Account holder name" isRequired autoFocus autoComplete="name" maxLength={100} value={name} onChange={(event) => setName(event.target.value)} />
                   <FormInput label="Login email" isRequired type="email" autoComplete="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} />
-                  {isEditing ? null : (
-                    <FormControl isRequired>
-                      <FormLabel {...fieldLabelStyles}>Temporary password</FormLabel>
-                      <InputGroup>
-                        <Input
-                          h="44px"
-                          {...fieldStyles}
-                          type={showPassword ? 'text' : 'password'}
-                          autoComplete="new-password"
-                          minLength={8}
-                          maxLength={128}
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
+                  <FormControl isRequired={!isEditing}>
+                    <FormLabel {...fieldLabelStyles}>{isEditing ? 'New password' : 'Temporary password'}</FormLabel>
+                    <InputGroup>
+                      <Input
+                        h="44px"
+                        {...fieldStyles}
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        minLength={8}
+                        maxLength={128}
+                        placeholder={isEditing ? 'Leave blank to keep the current password' : undefined}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                      <InputRightElement h="44px">
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          aria-label={showPassword ? 'Hide password' : 'Show password'}
+                          icon={showPassword ? <ViewOffIcon /> : <ViewIcon />}
+                          onClick={() => setShowPassword((current) => !current)}
                         />
-                        <InputRightElement h="44px">
-                          <IconButton
-                            size="sm"
-                            variant="ghost"
-                            aria-label={showPassword ? 'Hide password' : 'Show password'}
-                            icon={showPassword ? <ViewOffIcon /> : <ViewIcon />}
-                            onClick={() => setShowPassword((current) => !current)}
-                          />
-                        </InputRightElement>
-                      </InputGroup>
-                      <FormHelperText fontSize="xs" color={password && password.length < 8 ? 'red.500' : 'slate.500'}>
-                        At least 8 characters. Share it with the organization securely.
-                      </FormHelperText>
-                    </FormControl>
-                  )}
+                      </InputRightElement>
+                    </InputGroup>
+                    <FormHelperText fontSize="xs" color={password && password.length < 8 ? 'red.500' : 'slate.500'}>
+                      {isEditing
+                        ? 'Optional. At least 8 characters. The organization is signed out and must use the new password.'
+                        : 'At least 8 characters. Share it with the organization securely.'}
+                    </FormHelperText>
+                  </FormControl>
                   <FormSelect
                     label="Account status"
                     isRequired

@@ -122,6 +122,13 @@ export type PayrollLine = {
   otherLeaveDays?: number;
   paidDays: number;
   grossPay: number;
+  dailyWage?: number;
+  wages?: number;
+  bonus?: number;
+  totalWages?: number;
+  epf?: number;
+  esi?: number;
+  netPay?: number;
 };
 
 export type PayrollResponse = {
@@ -130,6 +137,8 @@ export type PayrollResponse = {
   paidStatuses: AttendanceStatus[];
   lines: PayrollLine[];
   totals: { currency: string; total: number }[];
+  netTotals?: { currency: string; total: number }[];
+  rates?: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number };
   summary: { employees: number; presentDays: number; absentDays: number; paidDays: number };
   pagination?: { page: number; limit: number; total: number; totalPages: number };
 };

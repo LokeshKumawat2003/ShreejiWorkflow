@@ -1,3 +1,4 @@
+const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
@@ -160,10 +161,20 @@ async function updateOrganization(id, input) {
   }
 
   const updates = { name, organizationName, email, ...details };
+  const removals = {};
   if (status !== undefined) updates.status = status;
+  if (input.password !== undefined && input.password !== '') {
+    if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
+      throw httpError(400, 'Password must be between 8 and 128 characters long.');
+    }
+    updates.password = await bcrypt.hash(input.password, 12);
+    updates.passwordChangedAt = new Date();
+    removals.passwordResetTokenHash = '';
+    removals.passwordResetExpires = '';
+  }
   const organization = await User.findOneAndUpdate(
     { _id: id, role: 'organization' },
-    { $set: updates },
+    Object.keys(removals).length ? { $set: updates, $unset: removals } : { $set: updates },
     { new: true, runValidators: true },
   );
   if (!organization) {

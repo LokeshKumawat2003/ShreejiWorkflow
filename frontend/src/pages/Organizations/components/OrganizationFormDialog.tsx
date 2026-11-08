@@ -23,6 +23,7 @@ import {
 } from '@chakra-ui/react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ActionButton, FormInput, FormSection, FormSelect, FormTextarea } from '../../../components/ui';
+import MasterDataSelect from '../../../components/ui/MasterDataSelect';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
 import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { CreateOrganizationInput } from '../../../services/organizationService';
@@ -58,6 +59,8 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
   const [about, setAbout] = useState('');
   const [website, setWebsite] = useState('');
   const [industry, setIndustry] = useState('');
+  const [governmentType, setGovernmentType] = useState('');
+  const [area, setArea] = useState('');
   const [status, setStatus] = useState<OrganizationStatus>('active');
   const [posts, setPosts] = useState<OrganizationPost[]>([]);
   const [formError, setFormError] = useState('');
@@ -75,6 +78,8 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
     setAbout(organization?.about || '');
     setWebsite(organization?.website || '');
     setIndustry(organization?.industry || '');
+    setGovernmentType(organization?.governmentType || '');
+    setArea(organization?.area || '');
     setStatus(organization?.status === 'disabled' ? 'disabled' : 'active');
     setPosts((organization?.posts || []).map((post) => ({ workName: post.workName, designations: [...post.designations] })));
     setFormError('');
@@ -108,6 +113,14 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
       showError('Enter a valid website, for example example.com, or leave it blank.');
       return;
     }
+    if (!governmentType) {
+      showError('Select the government type. Employee salaries are calculated from it.');
+      return;
+    }
+    if (!area) {
+      showError(`Select the area under ${governmentType}. Employee salaries are calculated from it.`);
+      return;
+    }
     const emptyPost = posts.find((post) => post.designations.length === 0);
     if (emptyPost) {
       showError(`Select at least one designation for "${emptyPost.workName}", or untick it.`);
@@ -127,6 +140,8 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
       about: about.trim(),
       website: websiteUrl,
       industry: industry.trim(),
+      governmentType,
+      area,
       posts,
     });
   }
@@ -200,6 +215,34 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
                 <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
                   <FormInput label="Organization name" isRequired autoComplete="organization" maxLength={120} value={organizationName} onChange={(event) => setOrganizationName(event.target.value)} />
                   <FormInput label="Industry" maxLength={100} placeholder="Hospitality, facility services..." value={industry} onChange={(event) => setIndustry(event.target.value)} />
+                  <FormControl isRequired>
+                    <FormLabel {...fieldLabelStyles}>Government type</FormLabel>
+                    <MasterDataSelect
+                      h="44px"
+                      {...fieldStyles}
+                      items={masterOptions.governmentType}
+                      valueKey="name"
+                      placeholder={isLoadingMasterData ? 'Loading…' : 'Select government type'}
+                      value={governmentType}
+                      onChange={setGovernmentType}
+                    />
+                    <FormHelperText fontSize="xs">State or Central wage schedule.</FormHelperText>
+                  </FormControl>
+                  {governmentType ? (
+                    <FormControl isRequired>
+                      <FormLabel {...fieldLabelStyles}>Area under {governmentType}</FormLabel>
+                      <MasterDataSelect
+                        h="44px"
+                        {...fieldStyles}
+                        items={masterOptions.area}
+                        valueKey="name"
+                        placeholder={isLoadingMasterData ? 'Loading…' : 'Select area'}
+                        value={area}
+                        onChange={setArea}
+                      />
+                      <FormHelperText fontSize="xs">Employees here get the skill category rate for {governmentType} in this area (Settings → Master data).</FormHelperText>
+                    </FormControl>
+                  ) : null}
                   <FormInput label="Phone number" type="tel" autoComplete="tel" maxLength={30} placeholder="+91 98765 43210" value={phone} onChange={(event) => setPhone(event.target.value)} />
                   <FormInput
                     label="Website (optional)"

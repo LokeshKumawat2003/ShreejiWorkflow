@@ -186,7 +186,7 @@ async function importEmployees(user, file, body = {}) {
 		const name = cellString(values.name);
 		try {
 			const input = toEmployeeInput(values, employmentTypeCodes);
-			const employee = await createEmployee(user, { ...input, organizationId, timeZone: body.timeZone });
+			const employee = await createEmployee(user, { ...input, organizationId, timeZone: body.timeZone }, { allowManualPay: true });
 			created.push({ row: rowNumber, id: employee.id, name: employee.name });
 		} catch (error) {
 			failed.push({ row: rowNumber, name, message: rowErrorMessage(error) });

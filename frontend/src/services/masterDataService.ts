@@ -1,11 +1,15 @@
 import api from './api';
-import type { MasterDataItem, MasterDataType } from '../types';
+import type { MasterDataItem, MasterDataType, SkillRate } from '../types';
 
 export type MasterDataInput = {
 	type: MasterDataType;
 	name: string;
 	status: MasterDataItem['status'];
 	designations?: string[];
+	rates?: SkillRate[];
+	effectiveFrom?: string;
+	effectiveTo?: string;
+	timeZone?: string;
 };
 
 export type MasterDataListParams = {
@@ -29,7 +33,17 @@ export const MASTER_DATA_LABELS: Record<MasterDataType, { title: string; singula
 	skillCategory: {
 		title: 'Category of skill',
 		singular: 'category of skill',
-		description: 'Skill levels used in the attendance register and payroll.',
+		description: 'Skill levels with a fixed daily basic pay for each government type and area. Employees get the rate of their organization\'s government type and area.',
+	},
+	governmentType: {
+		title: 'Government type',
+		singular: 'government type',
+		description: 'Wage schedules such as State or Central. Each organization picks one, together with an area.',
+	},
+	area: {
+		title: 'Area',
+		singular: 'area',
+		description: 'Where the organization works: A inside city, B mid city, C out of city. Each category of skill has a rate per government type and area.',
 	},
 	workName: {
 		title: 'Work name',

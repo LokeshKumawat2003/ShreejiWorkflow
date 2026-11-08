@@ -10,6 +10,8 @@ export type User = {
   about?: string;
   website?: string;
   industry?: string;
+  governmentType?: string;
+  area?: string;
   posts?: OrganizationPost[];
   email: string;
   role: UserRole;
@@ -36,7 +38,20 @@ export type OrganizationLocation = {
   createdAt: string;
 };
 
-export type MasterDataType = 'designation' | 'employmentType' | 'skillCategory' | 'workName';
+export type MasterDataType = 'designation' | 'employmentType' | 'skillCategory' | 'workName' | 'governmentType' | 'area';
+
+export type SkillRate = {
+  governmentType: string;
+  area: string;
+  salary: number;
+};
+
+export type SkillRateHistoryEntry = {
+  rates: SkillRate[];
+  effectiveFrom: string;
+  effectiveTo: string;
+  changedAt: string;
+};
 
 export type MasterDataItem = {
   id: string;
@@ -45,6 +60,10 @@ export type MasterDataItem = {
   code: string;
   status: 'active' | 'disabled';
   designations?: string[];
+  rates?: SkillRate[];
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  rateHistory?: SkillRateHistoryEntry[];
   usageCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -58,6 +77,8 @@ export type Employee = {
   locationId?: string;
   locationAssignedAt?: string | null;
   organizationName: string;
+  organizationGovernmentType?: string;
+  organizationArea?: string;
   name: string;
   email: string;
   dateOfBirth: string;

@@ -17,6 +17,8 @@ const userSchema = new mongoose.Schema(
     about: { type: String, trim: true, maxlength: 1000, default: '' },
     website: { type: String, trim: true, maxlength: 200, default: '' },
     industry: { type: String, trim: true, maxlength: 100, default: '' },
+    governmentType: { type: String, trim: true, maxlength: 100, default: '' },
+    area: { type: String, trim: true, maxlength: 100, default: '' },
     posts: {
       type: [
         {

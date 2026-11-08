@@ -12,6 +12,8 @@ export type CreateOrganizationInput = {
   about?: string;
   website?: string;
   industry?: string;
+  governmentType?: string;
+  area?: string;
   posts?: OrganizationPost[];
 };
 
@@ -26,6 +28,8 @@ export type UpdateOrganizationInput = {
   about?: string;
   website?: string;
   industry?: string;
+  governmentType?: string;
+  area?: string;
   posts?: OrganizationPost[];
 };
 

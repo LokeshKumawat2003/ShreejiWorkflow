@@ -31,7 +31,8 @@ import MasterDataSelect from '../../../components/ui/MasterDataSelect';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
 import useMasterDataOptions, { findMasterItem } from '../../../hooks/useMasterDataOptions';
 import type { EmployeeInput } from '../../../services/employeeService';
-import type { Employee, EmployeeStatus } from '../../../types';
+import { getOrganization } from '../../../services/organizationService';
+import type { Employee, EmployeeStatus, User } from '../../../types';
 import { isValidPhone } from '../../../utils/formValidation';
 import AssignPostDialog, { type PostSelection } from './AssignPostDialog';
 
@@ -41,6 +42,7 @@ type EmployeeFormDialogProps = {
   employee: Employee | null;
   requiredDesignation?: string;
   allowPostAssignment?: boolean;
+  organizationId?: string;
   onClose: () => void;
   onSave: (input: EmployeeInput, post: PostSelection | null) => Promise<boolean>;
 };
@@ -106,6 +108,7 @@ function EmployeeFormDialog({
   employee,
   requiredDesignation,
   allowPostAssignment = false,
+  organizationId,
   onClose,
   onSave,
 }: EmployeeFormDialogProps) {
@@ -127,9 +130,9 @@ function EmployeeFormDialog({
   const [employmentType, setEmploymentType] = useState('');
   const { options: masterOptions, isLoading: isLoadingMasterData } = useMasterDataOptions(isOpen);
   const [skillCategory, setSkillCategory] = useState('');
+  const [contextOrganization, setContextOrganization] = useState<User | null>(null);
   const [dateOfJoining, setDateOfJoining] = useState('');
   const [currency, setCurrency] = useState('INR');
-  const [basicPay, setBasicPay] = useState('0');
   const [dearnessAllowance, setDearnessAllowance] = useState('0');
   const [otherAllowanceAmount, setOtherAllowanceAmount] = useState('');
   const [otherAllowances, setOtherAllowances] = useState('');
@@ -149,10 +152,52 @@ function EmployeeFormDialog({
   const bankValues = [bankName, bankBranch, bankAccountHolder, bankAccountNumber, bankRoutingCode];
   const hasBankDetails = bankValues.some((value) => value.trim().length > 0);
   const currencyOptions = CURRENCIES.includes(currency) ? CURRENCIES : [currency, ...CURRENCIES];
-  const basicPayAmount = basicPay.trim() ? Number(basicPay) : 0;
+  const selectedSkill = findMasterItem(masterOptions.skillCategory, skillCategory);
+  const usesContextOrganization = !post && !employee?.organizationId && Boolean(organizationId);
+  const salaryOrganization = post
+    ? { name: post.organizationName, governmentType: post.governmentType, area: post.area }
+    : employee?.organizationId
+      ? { name: employee.organizationName, governmentType: employee.organizationGovernmentType || '', area: employee.organizationArea || '' }
+      : usesContextOrganization && contextOrganization
+        ? { name: contextOrganization.organizationName || '', governmentType: contextOrganization.governmentType || '', area: contextOrganization.area || '' }
+        : null;
+  const isLoadingOrganization = usesContextOrganization && !contextOrganization;
+  const governmentType = salaryOrganization?.governmentType || '';
+  const area = salaryOrganization?.area || '';
+  const salarySchedule = governmentType && area ? `${governmentType} · ${area}` : '';
+  const selectedRate = salarySchedule
+    ? (selectedSkill?.rates || []).find((rate) => rate.governmentType.toLowerCase() === governmentType.toLowerCase() && rate.area.toLowerCase() === area.toLowerCase())
+    : undefined;
+  const categorySalary = selectedRate ? selectedRate.salary : null;
+  const basicPayAmount = categorySalary ?? 0;
   const dearnessAllowanceAmount = dearnessAllowance.trim() ? Number(dearnessAllowance) : 0;
   const otherAllowanceValue = otherAllowanceAmount.trim() ? Number(otherAllowanceAmount) : 0;
   const dailySalaryAmount = Math.round(((Number(basicPayAmount) || 0) + (Number(dearnessAllowanceAmount) || 0) + (Number(otherAllowanceValue) || 0)) * 100) / 100;
+  const salaryIssue = !selectedSkill || isLoadingOrganization
+    ? ''
+    : !salaryOrganization
+      ? 'Assign a post first. The salary depends on the organization\'s government type and area.'
+      : !salarySchedule
+        ? `Set the government type and area of ${salaryOrganization.name} first (Organizations → Edit).`
+        : !selectedRate
+          ? `No salary is set for ${selectedSkill.name} under ${salarySchedule}. Add it in Settings → Master data → Category of skill.`
+          : '';
+
+  useEffect(() => {
+    if (!isOpen || !usesContextOrganization || !organizationId) return undefined;
+    let isCurrent = true;
+    setContextOrganization(null);
+    void getOrganization(organizationId)
+      .then((organization) => {
+        if (isCurrent) setContextOrganization(organization);
+      })
+      .catch(() => {
+        if (isCurrent) setContextOrganization({ email: '', role: 'organization', organizationName: 'this organization' });
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [isOpen, organizationId, usesContextOrganization]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -172,8 +217,6 @@ function EmployeeFormDialog({
     setSkillCategory(employee?.skillCategory || '');
     setDateOfJoining(employee?.dateOfJoining || '');
     setCurrency(normalizeCurrency(employee?.currency));
-    const hasPayBreakdown = Boolean(employee?.basicPay || employee?.dearnessAllowance || employee?.otherAllowanceAmount);
-    setBasicPay(String(hasPayBreakdown ? employee?.basicPay ?? 0 : employee?.dailySalary ?? 0));
     setDearnessAllowance(String(employee?.dearnessAllowance ?? 0));
     setOtherAllowanceAmount(employee?.otherAllowanceAmount ? String(employee.otherAllowanceAmount) : '');
     setOtherAllowances(employee?.otherAllowances || '');
@@ -208,6 +251,18 @@ function EmployeeFormDialog({
 
     if (!isValidPhone(cleanPhone)) {
       showError('Enter a valid phone number with at least 7 digits.');
+      return;
+    }
+    if (!isLoadingMasterData && !selectedSkill) {
+      showError('Select the category of skill. The basic pay comes from it.');
+      return;
+    }
+    if (isLoadingOrganization) {
+      showError('Loading the organization\'s government type. Try again in a moment.');
+      return;
+    }
+    if (!isLoadingMasterData && salaryIssue) {
+      showError(salaryIssue);
       return;
     }
     if (![dailySalaryAmount, basicPayAmount, dearnessAllowanceAmount, otherAllowanceValue].every(isValidAmount)) {
@@ -340,7 +395,7 @@ function EmployeeFormDialog({
                       onChange={setEmploymentType}
                     />
                   </FormControl>
-                  <FormControl>
+                  <FormControl isRequired>
                     <FormLabel {...fieldLabelStyles}>Category of skill</FormLabel>
                     <MasterDataSelect
                       h="44px"
@@ -351,7 +406,24 @@ function EmployeeFormDialog({
                       value={skillCategory}
                       onChange={setSkillCategory}
                     />
+                    {selectedSkill && !isLoadingOrganization ? (
+                      <FormHelperText fontSize="xs" color={selectedRate ? 'green.600' : 'orange.500'} fontWeight="600">
+                        {selectedRate
+                          ? `Daily salary: ₹${dailySalaryAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${salarySchedule} rate ₹${selectedRate.salary.toLocaleString('en-IN', { maximumFractionDigits: 2 })} + allowances)`
+                          : salaryIssue}
+                      </FormHelperText>
+                    ) : null}
                   </FormControl>
+                  <FormInput
+                    label="Government type · Area"
+                    value={salarySchedule}
+                    placeholder={isLoadingOrganization ? 'Loading…' : salaryOrganization ? 'Not set on the organization' : 'Assign a post first'}
+                    isReadOnly
+                    tabIndex={-1}
+                    bg="slate.100"
+                    cursor="default"
+                    helperText={salaryOrganization ? `From ${salaryOrganization.name}.` : 'Comes from the organization of the post.'}
+                  />
                   <FormInput label="Date of joining" type="date" value={dateOfJoining} onChange={(event) => setDateOfJoining(event.target.value)} />
                   <FormControl isRequired>
                     <FormLabel {...fieldLabelStyles}>Account status</FormLabel>
@@ -409,7 +481,18 @@ function EmployeeFormDialog({
 
               <FormSection title="Salary & wages" description="The daily rate is used for payroll, salary slips and the appointment letter.">
                 <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
-                  <FormInput label="Wages / Basic pay" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={basicPay} onChange={(event) => setBasicPay(event.target.value)} />
+                  <FormInput
+                    label="Wages / Basic pay"
+                    value={categorySalary === null ? '' : categorySalary}
+                    placeholder={selectedSkill ? 'No rate yet' : 'Select category of skill'}
+                    isReadOnly
+                    tabIndex={-1}
+                    bg="slate.100"
+                    cursor="default"
+                    helperText={selectedRate && selectedSkill
+                      ? `Fixed for ${selectedSkill.name} · ${salarySchedule} in master data.`
+                      : 'Comes from the category of skill and the organization\'s government type and area.'}
+                  />
                   <FormInput label="Dearness allowance" type="number" inputMode="decimal" min={0} max={MAX_AMOUNT} step="0.01" value={dearnessAllowance} onChange={(event) => setDearnessAllowance(event.target.value)} />
                   <FormInput
                     label="Other allowance"

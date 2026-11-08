@@ -13,15 +13,24 @@ import {
 	ModalOverlay,
 	SimpleGrid,
 	Stack,
+	Tag,
 	Text,
+	Wrap,
 } from '@chakra-ui/react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ActionButton, FormInput, FormSelect } from '../../../components/ui';
 import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import { MASTER_DATA_LABELS } from '../../../services/masterDataService';
-import type { MasterDataItem, MasterDataType } from '../../../types';
+import type { MasterDataItem, MasterDataType, SkillRate } from '../../../types';
 
-export type MasterDataFormInput = { name: string; status: MasterDataItem['status']; designations?: string[] };
+export type MasterDataFormInput = {
+	name: string;
+	status: MasterDataItem['status'];
+	designations?: string[];
+	rates?: SkillRate[];
+	effectiveFrom?: string;
+	effectiveTo?: string;
+};
 
 type MasterDataFormDialogProps = {
 	isOpen: boolean;
@@ -38,7 +47,37 @@ const PLACEHOLDERS: Record<MasterDataType, string> = {
 	employmentType: 'e.g. Daily wage',
 	skillCategory: 'e.g. Highly skilled',
 	workName: 'e.g. Electrical work',
+	governmentType: 'e.g. Municipal',
+	area: 'e.g. D - Remote area',
 };
+
+const RATE_KEY_SEPARATOR = '|';
+
+function todayDate() {
+	const now = new Date();
+	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function displayDate(value?: string) {
+	return value ? value.split('-').reverse().join('-') : '';
+}
+
+function rateKey(governmentType: string, area: string) {
+	return `${governmentType}${RATE_KEY_SEPARATOR}${area}`;
+}
+
+function mergeNames(active: MasterDataItem[], saved: string[]) {
+	const names = active.map((entry) => entry.name);
+	for (const name of saved) {
+		if (!names.some((entry) => entry.toLowerCase() === name.toLowerCase())) names.push(name);
+	}
+	return names;
+}
+
+function isValidSalary(value: string) {
+	const amount = Number(value);
+	return value.trim() !== '' && Number.isFinite(amount) && amount >= 0 && Math.abs(Math.round(amount * 100) / 100 - amount) <= 1e-8;
+}
 
 const STATUS_OPTIONS = [
 	{ value: 'active', label: 'Active: shown in dropdowns' },
@@ -53,8 +92,19 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 	const [name, setName] = useState('');
 	const [status, setStatus] = useState<MasterDataItem['status']>('active');
 	const [designations, setDesignations] = useState<string[]>([]);
+	const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
+	const [effectiveFrom, setEffectiveFrom] = useState('');
+	const [effectiveTo, setEffectiveTo] = useState('');
+	const isDateRangeValid = !effectiveFrom || !effectiveTo || effectiveTo >= effectiveFrom;
 	const isWorkName = type === 'workName';
-	const { options, isLoading: isLoadingDesignations } = useMasterDataOptions(isOpen && isWorkName);
+	const isSkillCategory = type === 'skillCategory';
+	const { options, isLoading: isLoadingDesignations } = useMasterDataOptions(isOpen && (isWorkName || isSkillCategory));
+	const governmentTypes = mergeNames(options.governmentType, (item?.rates || []).map((rate) => rate.governmentType));
+	const areas = mergeNames(options.area, (item?.rates || []).map((rate) => rate.area));
+	const filledRates = governmentTypes.flatMap((governmentType) => areas
+		.filter((area) => (rateInputs[rateKey(governmentType, area)] || '').trim() !== '')
+		.map((area) => ({ governmentType, area, key: rateKey(governmentType, area) })));
+	const areRatesValid = filledRates.length > 0 && filledRates.every(({ key }) => isValidSalary(rateInputs[key]));
 	const label = MASTER_DATA_LABELS[type];
 	const activeDesignations = options.designation;
 	const inactiveSelected = designations.filter((value) => !activeDesignations.some((entry) => entry.name.toLowerCase() === value.toLowerCase()));
@@ -65,6 +115,9 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 		setName(item?.name || '');
 		setStatus(item?.status || 'active');
 		setDesignations([...(item?.designations || [])]);
+		setRateInputs(Object.fromEntries((item?.rates || []).map((rate) => [rateKey(rate.governmentType, rate.area), String(rate.salary)])));
+		setEffectiveFrom(item ? item.effectiveFrom || '' : todayDate());
+		setEffectiveTo(item?.effectiveTo || '');
 	}, [isOpen, item]);
 
 	function toggleDesignation(value: string, isChecked: boolean) {
@@ -81,7 +134,18 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 
 	function handleSubmit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		onSave({ name: name.trim(), status, ...(isWorkName ? { designations } : {}) });
+		onSave({
+			name: name.trim(),
+			status,
+			...(isWorkName ? { designations } : {}),
+			...(isSkillCategory
+				? {
+					rates: filledRates.map(({ governmentType, area, key }) => ({ governmentType, area, salary: Number(rateInputs[key]) })),
+					effectiveFrom,
+					effectiveTo,
+				}
+				: {}),
+		});
 	}
 
 	const usageHint = item?.usageCount
@@ -89,7 +153,7 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 		: undefined;
 
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} closeOnEsc={!isSaving} closeOnOverlayClick={!isSaving} isCentered size={isWorkName ? 'xl' : 'md'} scrollBehavior="inside">
+		<Modal isOpen={isOpen} onClose={onClose} closeOnEsc={!isSaving} closeOnOverlayClick={!isSaving} isCentered size={isWorkName || isSkillCategory ? 'xl' : 'md'} scrollBehavior="inside">
 			<ModalOverlay bg="blackAlpha.600" backdropFilter="blur(3px)" />
 			<ModalContent borderRadius="xl" overflow="hidden" boxShadow="0 24px 64px rgba(15, 23, 42, 0.2)">
 				<ModalHeader pb={3} pr={12} borderBottom="1px solid" borderColor="slate.100">
@@ -116,6 +180,94 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 								placeholder={PLACEHOLDERS[type]}
 								helperText={usageHint}
 							/>
+							{isSkillCategory ? (
+								<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3}>
+									<FormInput
+										label="Valid from"
+										type="date"
+										value={effectiveFrom}
+										max={effectiveTo || undefined}
+										helperText={item ? 'Set to today automatically when you change the salaries.' : 'Optional. Leave blank for no start date.'}
+										onChange={(event) => setEffectiveFrom(event.target.value)}
+									/>
+									<FormInput
+										label="Valid to"
+										type="date"
+										value={effectiveTo}
+										min={effectiveFrom || undefined}
+										isInvalid={!isDateRangeValid}
+										helperText={isDateRangeValid ? 'Optional. Leave blank if it has no end date.' : 'Must be on or after Valid from.'}
+										onChange={(event) => setEffectiveTo(event.target.value)}
+									/>
+								</SimpleGrid>
+							) : null}
+							{isSkillCategory ? (
+								<Box>
+									<Text mb={1} fontSize="sm" fontWeight="600" color="slate.700">
+										Fixed salary per government type and area (daily basic pay) <Text as="span" color="red.500">*</Text>
+									</Text>
+									<Text mb={3} fontSize="xs" color="slate.500">
+										Leave a box blank if this skill has no rate there.
+										{item ? ' When you change a salary, the current rates are kept in the history with today as their end date, and the new rates start today.' : ''}
+										{item?.usageCount ? ' Employees with this skill are updated to the new rates.' : ''}
+									</Text>
+									{isLoadingDesignations ? (
+										<Text fontSize="sm" color="slate.500">Loading government types and areas…</Text>
+									) : governmentTypes.length === 0 || areas.length === 0 ? (
+										<Text fontSize="sm" color="slate.500">Add government types and areas in their tabs first.</Text>
+									) : (
+										<Stack spacing={3}>
+											{governmentTypes.map((governmentType) => (
+												<Box key={governmentType} p={3} border="1px solid" borderColor="slate.200" borderRadius="md" bg="slate.50">
+													<Text mb={2} fontSize="sm" fontWeight="700" color="slate.800">{governmentType}</Text>
+													<SimpleGrid columns={{ base: 1, sm: 3 }} spacing={3}>
+														{areas.map((area) => {
+															const key = rateKey(governmentType, area);
+															const value = rateInputs[key] || '';
+															return (
+																<FormInput
+																	key={key}
+																	label={area}
+																	type="number"
+																	inputMode="decimal"
+																	min={0}
+																	step="0.01"
+																	placeholder="e.g. 650"
+																	bg="white"
+																	value={value}
+																	isInvalid={value.trim() !== '' && !isValidSalary(value)}
+																	onChange={(event) => setRateInputs((current) => ({ ...current, [key]: event.target.value }))}
+																/>
+															);
+														})}
+													</SimpleGrid>
+												</Box>
+											))}
+										</Stack>
+									)}
+								</Box>
+							) : null}
+							{isSkillCategory && item?.rateHistory?.length ? (
+								<Box>
+									<Text mb={2} fontSize="sm" fontWeight="600" color="slate.700">Previous rates</Text>
+									<Stack spacing={2} maxH="220px" overflowY="auto">
+										{[...item.rateHistory].reverse().map((entry) => (
+											<Box key={`${entry.changedAt}-${entry.effectiveTo}`} p={3} border="1px solid" borderColor="slate.200" borderRadius="md">
+												<Text fontSize="xs" fontWeight="700" color="slate.600">
+													{displayDate(entry.effectiveFrom) || 'Any time'} – {displayDate(entry.effectiveTo) || 'No end'}
+												</Text>
+												<Wrap mt={1.5} spacing={1.5}>
+													{entry.rates.map((rate) => (
+														<Tag key={`${rate.governmentType}|${rate.area}`} size="sm" borderRadius="full">
+															{rate.governmentType} · {rate.area.split(' - ')[0]}: ₹{rate.salary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+														</Tag>
+													))}
+												</Wrap>
+											</Box>
+										))}
+									</Stack>
+								</Box>
+							) : null}
 							{isWorkName ? (
 								<Box>
 									<HStack mb={2} justify="space-between">
@@ -169,7 +321,7 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 						type="submit"
 						form="master-data-form"
 						isLoading={isSaving}
-						isDisabled={!name.trim() || (isWorkName && designations.length === 0)}
+						isDisabled={!name.trim() || (isWorkName && designations.length === 0) || (isSkillCategory && (!areRatesValid || !isDateRangeValid))}
 					>
 						{item ? 'Save changes' : `Add ${label.singular}`}
 					</ActionButton>

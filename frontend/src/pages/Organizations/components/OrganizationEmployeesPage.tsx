@@ -203,6 +203,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
         isSaving={isSaving}
         employee={formEmployee}
         requiredDesignation={!formEmployee ? location.designation : undefined}
+        organizationId={organizationId}
         onClose={() => {
           formDialog.onClose();
           setFormEmployee(null);

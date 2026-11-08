@@ -31,6 +31,8 @@ import type { OrganizationLocation, User } from '../../../types';
 export type PostSelection = {
   organizationId: string;
   organizationName: string;
+  governmentType: string;
+  area: string;
   locationId: string;
   locationName: string;
   workName: string;
@@ -139,6 +141,8 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
     onSelect({
       organizationId: organization.id || organization._id || '',
       organizationName: organization.organizationName || organization.name || '',
+      governmentType: organization.governmentType || '',
+      area: organization.area || '',
       locationId: location?.id || '',
       locationName: location?.name || '',
       workName: location?.workName || '',
@@ -207,7 +211,12 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
                         _hover={{ borderColor: 'brand.300', bg: 'brand.50' }}
                         onClick={() => chooseOrganization(item)}
                       >
-                        <Text fontSize="sm" fontWeight="600" color="slate.900">{item.organizationName}</Text>
+                        <HStack spacing={2} flexWrap="wrap">
+                          <Text fontSize="sm" fontWeight="600" color="slate.900">{item.organizationName}</Text>
+                          <Badge colorScheme={item.governmentType && item.area ? 'purple' : 'orange'} variant="subtle" textTransform="none">
+                            {item.governmentType && item.area ? `${item.governmentType} · ${item.area}` : 'Government type / area not set'}
+                          </Badge>
+                        </HStack>
                         <HStack mt={1} spacing={1.5} flexWrap="wrap">
                           {workNames.length > 0
                             ? workNames.map((workName) => <Badge key={workName} colorScheme="brand" textTransform="none">{workName}</Badge>)

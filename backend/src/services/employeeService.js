@@ -7,6 +7,7 @@ const { httpError } = require('../utils/httpError');
 const { normalizeEmail } = require('../utils/user');
 const { escapeRegex, validateEmail } = require('../utils/validation');
 const { resolveMasterValue } = require('./masterDataService');
+const { dailySalaryFor, findSkillRate, recalculateEmployeeSalaries, requireSalarySchedule } = require('./salaryService');
 const { currentDateInTimeZone } = require('./attendanceService');
 
 const PAGE_SIZE = 10;
@@ -30,6 +31,8 @@ function publicEmployee(employee, role = 'organization') {
 		locationId: locationId ? String(locationId) : '',
 		locationAssignedAt: value.locationAssignedAt || null,
 		organizationName: organization?.organizationName || value.organizationName || '',
+		organizationGovernmentType: organization?.governmentType || '',
+		organizationArea: organization?.area || '',
 		name: value.name,
 		email: value.email,
 		dateOfBirth: value.dateOfBirth || '',
@@ -113,6 +116,22 @@ async function resolveEmployeeMasterFields(fields, current = null) {
 		if (current && String(current[field] || '').toLowerCase() === value.toLowerCase()) continue;
 		fields[field] = await resolveMasterValue(field, value, { store });
 	}
+}
+
+const PAY_FIELDS = ['skillCategory', 'organizationId', 'basicPay', 'dearnessAllowance', 'otherAllowanceAmount', 'dailySalary'];
+
+/** Basic pay comes from the master data rate of the employee's category of skill for their organization's government type. */
+async function applySkillCategorySalary(fields, organizationId, current = null) {
+	const skillCategory = fields.skillCategory !== undefined ? fields.skillCategory : current?.skillCategory;
+	if (!skillCategory) return;
+	const basicPay = await findSkillRate(skillCategory, organizationId);
+	if (basicPay === null) return;
+	fields.basicPay = basicPay;
+	fields.dailySalary = dailySalaryFor(
+		basicPay,
+		fields.dearnessAllowance ?? current?.dearnessAllowance ?? 0,
+		fields.otherAllowanceAmount ?? current?.otherAllowanceAmount ?? 0,
+	);
 }
 
 function validateEmployeeInput(input, { partial = false } = {}) {
@@ -316,7 +335,7 @@ async function listEmployees(user, options = {}) {
 		oldest: { createdAt: 1, _id: 1 },
 	}[sortOrder];
 	const employees = await Employee.find(filter)
-		.populate('organizationId', 'organizationName')
+		.populate('organizationId', 'organizationName governmentType area')
 		.sort(sort)
 		.skip((page - 1) * limit)
 		.limit(limit);
@@ -336,12 +355,14 @@ async function listEmployees(user, options = {}) {
 	};
 }
 
-async function createEmployee(user, input = {}) {
+/** `allowManualPay` keeps the submitted basic pay for employees without an organization (Excel import). */
+async function createEmployee(user, input = {}, { allowManualPay = false } = {}) {
 	const fields = validateEmployeeInput(input);
 	const organizationId = await resolveOrganizationId(user, input);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
 	await validateEmployeeLocationDesignation(locationId, fields.designation);
 	await resolveEmployeeMasterFields(fields);
+	if (organizationId || !allowManualPay) await applySkillCategorySalary(fields, organizationId);
 	const employee = await Employee.create({
 		...fields,
 		...(fields.status === 'disabled' ? { disabledOn: currentDateInTimeZone(input.timeZone || 'UTC') } : {}),
@@ -349,7 +370,7 @@ async function createEmployee(user, input = {}) {
 		locationId,
 		locationAssignedAt: locationId ? new Date() : null,
 	});
-	await employee.populate('organizationId', 'organizationName');
+	await employee.populate('organizationId', 'organizationName governmentType area');
 	return publicEmployee(employee, user.role);
 }
 
@@ -357,7 +378,7 @@ async function getEmployee(user, id) {
 	if (!mongoose.isValidObjectId(id)) throw httpError(400, 'Invalid employee id.');
 	const filter = { _id: id, ...organizationScope(user) };
 	if (user.role === 'organization') filter.status = 'active';
-	const employee = await Employee.findOne(filter).populate('organizationId', 'organizationName');
+	const employee = await Employee.findOne(filter).populate('organizationId', 'organizationName governmentType area');
 	if (!employee) throw httpError(404, 'Employee not found.');
 	return publicEmployee(employee, user.role);
 }
@@ -398,6 +419,11 @@ async function updateEmployee(user, id, input = {}) {
 		if (!current) throw httpError(404, 'Employee not found.');
 		await resolveEmployeeMasterFields(fields, current);
 	}
+	if (PAY_FIELDS.some((field) => fields[field] !== undefined)) {
+		const current = await Employee.findById(id).select('organizationId skillCategory dearnessAllowance otherAllowanceAmount');
+		if (!current) throw httpError(404, 'Employee not found.');
+		await applySkillCategorySalary(fields, fields.organizationId || current.organizationId, current);
+	}
 	if (fields.status !== undefined) {
 		const current = await Employee.findById(id).select('status');
 		if (!current) throw httpError(404, 'Employee not found.');
@@ -408,7 +434,7 @@ async function updateEmployee(user, id, input = {}) {
 		{ _id: id },
 		{ $set: fields },
 		{ new: true, runValidators: true },
-	).populate('organizationId', 'organizationName');
+	).populate('organizationId', 'organizationName governmentType area');
 	if (!employee) throw httpError(404, 'Employee not found.');
 	return publicEmployee(employee, user.role);
 }
@@ -424,6 +450,7 @@ async function assignEmployees(user, input = {}) {
 
 	const organization = await User.findOne({ _id: organizationId, role: 'organization' });
 	if (!organization) throw httpError(404, 'Organization not found.');
+	requireSalarySchedule(organization);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
 	let designationFilter;
 	if (locationId) {
@@ -462,7 +489,8 @@ async function assignEmployees(user, input = {}) {
 			...(locationId ? { locationId, locationAssignedAt: new Date() } : {}),
 		},
 	});
-	const assigned = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName');
+	await recalculateEmployeeSalaries({ _id: { $in: employeeIds } });
+	const assigned = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName governmentType area');
 	return assigned.map((employee) => publicEmployee(employee, user.role));
 }
 
@@ -478,6 +506,7 @@ async function transferEmployees(user, input = {}) {
 
 	const organization = await User.findOne({ _id: organizationId, role: 'organization' });
 	if (!organization) throw httpError(404, 'Organization not found.');
+	requireSalarySchedule(organization);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
 	const location = await Location.findById(locationId).select('designation status');
 	if (location.status !== 'active') throw httpError(400, 'Employees can only be moved to an active location.');
@@ -506,7 +535,8 @@ async function transferEmployees(user, input = {}) {
 		{ _id: { $in: employeeIds } },
 		{ $set: { organizationId, locationId, locationAssignedAt: new Date() } },
 	);
-	const moved = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName');
+	await recalculateEmployeeSalaries({ _id: { $in: employeeIds } });
+	const moved = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName governmentType area');
 	return moved.map((employee) => publicEmployee(employee, user.role));
 }
 

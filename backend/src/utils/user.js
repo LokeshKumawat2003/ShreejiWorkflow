@@ -12,6 +12,8 @@ function publicUser(user) {
     about: user.about || '',
     website: user.website || '',
     industry: user.industry || '',
+    governmentType: user.governmentType || '',
+    area: user.area || '',
     posts: (user.posts || []).map(({ workName, designations }) => ({ workName, designations: [...(designations || [])] })),
     email: user.email,
     role: user.role,

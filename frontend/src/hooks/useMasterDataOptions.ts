@@ -4,7 +4,7 @@ import type { MasterDataItem, MasterDataType } from '../types';
 
 export type MasterDataOptions = Record<MasterDataType, MasterDataItem[]>;
 
-const EMPTY_OPTIONS: MasterDataOptions = { designation: [], employmentType: [], skillCategory: [], workName: [] };
+const EMPTY_OPTIONS: MasterDataOptions = { designation: [], employmentType: [], skillCategory: [], workName: [], governmentType: [], area: [] };
 
 function useMasterDataOptions(isEnabled = true) {
 	const [options, setOptions] = useState<MasterDataOptions>(EMPTY_OPTIONS);
@@ -19,8 +19,8 @@ function useMasterDataOptions(isEnabled = true) {
 		setError('');
 		void listMasterData({ status: 'active' }, controller.signal)
 			.then((items) => {
-				const grouped: MasterDataOptions = { designation: [], employmentType: [], skillCategory: [], workName: [] };
-				for (const item of items) grouped[item.type].push(item);
+				const grouped: MasterDataOptions = { designation: [], employmentType: [], skillCategory: [], workName: [], governmentType: [], area: [] };
+				for (const item of items) grouped[item.type]?.push(item);
 				setOptions(grouped);
 				setIsLoaded(true);
 			})

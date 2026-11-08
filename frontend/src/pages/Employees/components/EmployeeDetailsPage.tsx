@@ -166,6 +166,8 @@ function EmployeeDetailsPage({ employee, isLoading, role, onBack, onEdit, onJoin
 						<Detail label="Designation" value={employee.designation} capitalize />
 						<Detail label="Type of employment" value={masterLabel(masterOptions.employmentType, employee.employmentType)} />
 						<Detail label="Category of skill" value={employee.skillCategory} capitalize />
+						<Detail label="Government type" value={employee.organizationGovernmentType} />
+						<Detail label="Area" value={employee.organizationArea} />
 						<Detail label="Date of joining" value={formatDate(employee.dateOfJoining)} />
 						{isAdmin && <Detail label="Organization" value={employee.organizationName} />}
 						<Detail label="Account status" value={<StatusBadge status={employee.status} />} />

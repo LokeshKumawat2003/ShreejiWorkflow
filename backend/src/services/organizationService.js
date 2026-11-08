@@ -4,7 +4,8 @@ const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail, publicUser } = require('../utils/user');
 const { escapeRegex, validateEmail } = require('../utils/validation');
-const { findWorkName } = require('./masterDataService');
+const { findWorkName, resolveMasterValue } = require('./masterDataService');
+const { recalculateEmployeeSalaries } = require('./salaryService');
 
 const MAX_POSTS = 50;
 const MAX_POST_DESIGNATIONS = 100;
@@ -49,6 +50,19 @@ async function getOrganizationPosts(input, currentPosts = []) {
     posts.push({ workName, designations });
   }
   return posts;
+}
+
+// The government type and area already saved on the organization stay valid even if disabled later.
+async function getSalaryScheduleValue(type, value, current = '') {
+  const name = normalizeText(value);
+  if (!name) return '';
+  if (current && current.toLowerCase() === name.toLowerCase()) return current;
+  return resolveMasterValue(type, name);
+}
+
+function requireAreaWithGovernmentType(governmentType, area) {
+  if (governmentType && !area) throw httpError(400, 'Select the area (A, B or C) for this government type.');
+  if (area && !governmentType) throw httpError(400, 'Select the government type before the area.');
 }
 
 function getOrganizationDetails(input, partial = false) {
@@ -103,8 +117,11 @@ async function createOrganization(input) {
   }
 
   const posts = input.posts === undefined ? [] : await getOrganizationPosts(input.posts);
+  const governmentType = await getSalaryScheduleValue('governmentType', input.governmentType);
+  const area = await getSalaryScheduleValue('area', input.area);
+  requireAreaWithGovernmentType(governmentType, area);
 
-  const user = await User.create({ name, organizationName, email, password, role: 'organization', status, posts, ...details });
+  const user = await User.create({ name, organizationName, email, password, role: 'organization', status, posts, governmentType, area, ...details });
   return { organization: publicUser(user) };
 }
 
@@ -214,11 +231,16 @@ async function updateOrganization(id, input) {
   const updates = { name, organizationName, email, ...details };
   const removals = {};
   if (status !== undefined) updates.status = status;
-  if (input.posts !== undefined) {
-    const current = await User.findOne({ _id: id, role: 'organization' }).select('posts');
-    if (!current) throw httpError(404, 'Organization not found.');
-    updates.posts = await getOrganizationPosts(input.posts, current.posts);
+  const current = await User.findOne({ _id: id, role: 'organization' }).select('posts governmentType area');
+  if (!current) throw httpError(404, 'Organization not found.');
+  if (input.posts !== undefined) updates.posts = await getOrganizationPosts(input.posts, current.posts);
+  if (input.governmentType !== undefined) {
+    updates.governmentType = await getSalaryScheduleValue('governmentType', input.governmentType, current.governmentType);
   }
+  if (input.area !== undefined) updates.area = await getSalaryScheduleValue('area', input.area, current.area);
+  const scheduleChanged = (updates.governmentType ?? current.governmentType ?? '') !== (current.governmentType || '')
+    || (updates.area ?? current.area ?? '') !== (current.area || '');
+  if (scheduleChanged) requireAreaWithGovernmentType(updates.governmentType ?? current.governmentType, updates.area ?? current.area);
   if (input.password !== undefined && input.password !== '') {
     if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
       throw httpError(400, 'Password must be between 8 and 128 characters long.');
@@ -236,6 +258,7 @@ async function updateOrganization(id, input) {
   if (!organization) {
     throw httpError(404, 'Organization not found.');
   }
+  if (scheduleChanged) await recalculateEmployeeSalaries({ organizationId: organization._id });
   return publicUser(organization);
 }
 

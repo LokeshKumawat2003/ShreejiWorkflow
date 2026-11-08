@@ -258,6 +258,7 @@ function EmployeesPage({ role, organizationId, organizationName, currentUserId }
         isSaving={isSaving}
         employee={formEmployee}
         allowPostAssignment={role === 'admin' && !organizationId}
+        organizationId={organizationId}
         onClose={closeFormDialog}
         onSave={handleSave}
       />

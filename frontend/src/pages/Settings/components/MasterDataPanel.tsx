@@ -40,6 +40,10 @@ const STATUS_OPTIONS = [
 	{ value: 'disabled', label: 'Inactive' },
 ];
 
+function displayDate(value?: string) {
+	return value ? value.split('-').reverse().join('-') : '';
+}
+
 function errorMessage(error: unknown, fallback: string) {
 	return error instanceof ApiError ? error.message : fallback;
 }
@@ -111,7 +115,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		setIsSaving(true);
 		setFormError('');
 		try {
-			if (editingItem) await updateMasterData(editingItem.id, input);
+			if (editingItem) await updateMasterData(editingItem.id, { ...input, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 			else await createMasterData({ type, ...input });
 			toast({ title: editingItem ? `${label.title} updated` : `${label.title} added`, status: 'success', position: 'top' });
 			setIsFormOpen(false);
@@ -162,6 +166,35 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				</>
 			),
 		},
+		...(type === 'skillCategory' ? [{
+			key: 'rates',
+			header: 'Fixed salary / day by government type and area',
+			render: (item: MasterDataItem) => (
+				item.rates?.length
+					? (
+						<Wrap spacing={1.5} maxW="460px">
+							{item.rates.map((rate) => (
+								<Tag key={`${rate.governmentType}|${rate.area}`} size="sm" colorScheme="green" borderRadius="full">
+									{rate.governmentType} · {rate.area.split(' - ')[0]}: ₹{rate.salary.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+								</Tag>
+							))}
+						</Wrap>
+					)
+					: <Text color="orange.500" fontSize="sm">Not set</Text>
+			),
+		}, {
+			key: 'validity',
+			header: 'Valid period',
+			render: (item: MasterDataItem) => (
+				item.effectiveFrom || item.effectiveTo
+					? (
+						<Text fontSize="sm" color="slate.700" whiteSpace="nowrap">
+							{displayDate(item.effectiveFrom) || 'Any time'} – {displayDate(item.effectiveTo) || 'No end'}
+						</Text>
+					)
+					: <Text fontSize="sm" color="slate.400">Not set</Text>
+			),
+		}] : []),
 		...(type === 'workName' ? [{
 			key: 'designations',
 			header: 'Designations',

@@ -215,6 +215,8 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
               <Detail label="Login email" value={organization.email} />
               <Detail label="Phone number" value={organization.phone} />
               <Detail label="Industry" value={organization.industry} />
+              <Detail label="Government type" value={organization.governmentType} />
+              <Detail label="Area" value={organization.area} />
               <Detail label="Website" value={organization.website} />
               <Detail label="Address" value={organization.address} multiline />
               <Detail label="About the organization" value={organization.about} multiline />

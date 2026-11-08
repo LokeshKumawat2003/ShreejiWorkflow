@@ -8,11 +8,13 @@ import type { Employee, OrganizationLocation, UserRole } from '../../types';
 import type { PdfAction } from '../../utils/pdfOutput';
 import AppointmentLetterPreviewDialog from './components/AppointmentLetterPreviewDialog';
 import AssignEmployeeDialog from './components/AssignEmployeeDialog';
+import type { PostSelection } from './components/AssignPostDialog';
 import DeleteEmployeeDialog from './components/DeleteEmployeeDialog';
 import EmployeeDetailsPage from './components/EmployeeDetailsPage';
 import EmployeeFormDialog from './components/EmployeeFormDialog';
 import EmployeeImportDialog from './components/EmployeeImportDialog';
 import EmployeeTable from './components/EmployeeTable';
+import { useAppointmentLetterDelivery } from './hooks/useAppointmentLetterDelivery';
 import { useEmployees } from './hooks/useEmployees';
 import type { EmployeeInput } from '../../services/employeeService';
 
@@ -26,6 +28,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function EmployeesPage({ role, organizationId, organizationName, currentUserId }: OrganizationEmployeesPageProps) {
   const toast = useToast();
+  const deliverAppointmentLetters = useAppointmentLetterDelivery();
   const employees = useEmployees(organizationId, role === 'organization' || Boolean(organizationId));
   const formDialog = useDisclosure();
   const assignmentDialog = useDisclosure();
@@ -108,17 +111,26 @@ function EmployeesPage({ role, organizationId, organizationName, currentUserId }
     setFormEmployee(null);
   }
 
-  async function handleSave(input: EmployeeInput): Promise<boolean> {
+  async function handleSave(input: EmployeeInput, post: PostSelection | null): Promise<boolean> {
     setIsSaving(true);
     try {
+      const previousLocationId = formEmployee?.locationId || '';
+      let savedEmployee: Employee;
       if (formEmployee) {
-        const updatedEmployee = await employees.update(formEmployee.id, input);
-        setViewingEmployee((current) => current?.id === updatedEmployee.id ? updatedEmployee : current);
-        toast({ title: 'Employee updated', status: 'success', position: 'top' });
+        savedEmployee = await employees.update(formEmployee.id, input);
+        setViewingEmployee((current) => current?.id === savedEmployee.id ? savedEmployee : current);
       } else {
-        await employees.create(input);
-        toast({ title: 'Employee added', status: 'success', position: 'top' });
+        savedEmployee = await employees.create(input);
       }
+      const place = post ? [post.organizationName, post.locationName].filter(Boolean).join(' · ') : '';
+      const isNewPlacement = Boolean(post?.location) && savedEmployee.locationId === post?.location?.id && previousLocationId !== post?.location?.id;
+      toast({
+        title: `${formEmployee ? 'Employee updated' : 'Employee added'}${place ? ` and assigned to ${place}` : ''}`,
+        description: isNewPlacement ? 'Preparing the appointment letter…' : undefined,
+        status: 'success',
+        position: 'top',
+      });
+      if (isNewPlacement && post?.location) void deliverAppointmentLetters([savedEmployee], post.location);
       return true;
     } catch (error) {
       toast({ title: getErrorMessage(error, 'Unable to save employee.'), status: 'error', position: 'top' });
@@ -245,6 +257,7 @@ function EmployeesPage({ role, organizationId, organizationName, currentUserId }
         isOpen={formDialog.isOpen}
         isSaving={isSaving}
         employee={formEmployee}
+        allowPostAssignment={role === 'admin' && !organizationId}
         onClose={closeFormDialog}
         onSave={handleSave}
       />

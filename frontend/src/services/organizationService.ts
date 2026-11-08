@@ -1,5 +1,5 @@
 import api from './api';
-import type { User } from '../types';
+import type { OrganizationPost, User } from '../types';
 
 export type CreateOrganizationInput = {
   name: string;
@@ -12,6 +12,7 @@ export type CreateOrganizationInput = {
   about?: string;
   website?: string;
   industry?: string;
+  posts?: OrganizationPost[];
 };
 
 export type UpdateOrganizationInput = {
@@ -25,6 +26,7 @@ export type UpdateOrganizationInput = {
   about?: string;
   website?: string;
   industry?: string;
+  posts?: OrganizationPost[];
 };
 
 type OrganizationListResponse = {
@@ -49,6 +51,7 @@ export type OrganizationListParams = {
   sort: 'name-asc' | 'name-desc' | 'newest' | 'oldest';
   page: number;
   limit: number;
+  designation?: string;
 };
 
 type OrganizationResponse = {

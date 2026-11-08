@@ -24,9 +24,11 @@ import {
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ActionButton, FormInput, FormSection, FormSelect, FormTextarea } from '../../../components/ui';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
+import useMasterDataOptions from '../../../hooks/useMasterDataOptions';
 import type { CreateOrganizationInput } from '../../../services/organizationService';
-import type { User } from '../../../types';
+import type { OrganizationPost, User } from '../../../types';
 import { isValidEmail, isValidPhone, normalizeWebsite } from '../../../utils/formValidation';
+import OrganizationPostsEditor from './OrganizationPostsEditor';
 
 type OrganizationStatus = 'active' | 'disabled';
 
@@ -57,7 +59,9 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
   const [website, setWebsite] = useState('');
   const [industry, setIndustry] = useState('');
   const [status, setStatus] = useState<OrganizationStatus>('active');
+  const [posts, setPosts] = useState<OrganizationPost[]>([]);
   const [formError, setFormError] = useState('');
+  const { options: masterOptions, isLoading: isLoadingMasterData } = useMasterDataOptions(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -72,6 +76,7 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
     setWebsite(organization?.website || '');
     setIndustry(organization?.industry || '');
     setStatus(organization?.status === 'disabled' ? 'disabled' : 'active');
+    setPosts((organization?.posts || []).map((post) => ({ workName: post.workName, designations: [...post.designations] })));
     setFormError('');
   }, [isOpen, organization]);
 
@@ -103,6 +108,11 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
       showError('Enter a valid website, for example example.com, or leave it blank.');
       return;
     }
+    const emptyPost = posts.find((post) => post.designations.length === 0);
+    if (emptyPost) {
+      showError(`Select at least one designation for "${emptyPost.workName}", or untick it.`);
+      return;
+    }
     setFormError('');
     if (websiteUrl !== website) setWebsite(websiteUrl);
 
@@ -117,6 +127,7 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
       about: about.trim(),
       website: websiteUrl,
       industry: industry.trim(),
+      posts,
     });
   }
 
@@ -205,6 +216,15 @@ function OrganizationFormDialog({ isOpen, isSaving, organization, onClose, onSub
                   <FormTextarea label="Address" rows={3} resize="vertical" maxLength={500} placeholder="Street, city, district, postal code" value={address} onChange={(event) => setAddress(event.target.value)} />
                   <FormTextarea label="About the organization" rows={3} resize="vertical" maxLength={1000} placeholder="A short description of the organization" value={about} onChange={(event) => setAbout(event.target.value)} />
                 </Stack>
+              </FormSection>
+
+              <FormSection title="Posts" description="Work names this organization needs and the designations it hires under each. Employees are matched to these posts by designation.">
+                <OrganizationPostsEditor
+                  posts={posts}
+                  workNames={masterOptions.workName}
+                  isLoading={isLoadingMasterData}
+                  onChange={setPosts}
+                />
               </FormSection>
             </Stack>
           </form>

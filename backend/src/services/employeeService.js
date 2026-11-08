@@ -381,6 +381,11 @@ async function updateEmployee(user, id, input = {}) {
 		if (!employee) throw httpError(404, 'Employee not found.');
 		const organizationId = fields.organizationId || employee.organizationId;
 		fields.locationId = await resolveLocationId(input.locationId, organizationId);
+		if (String(fields.locationId || '') !== String(employee.locationId || '')) {
+			fields.locationAssignedAt = fields.locationId ? new Date() : null;
+		}
+	} else if (fields.locationId === null) {
+		fields.locationAssignedAt = null;
 	}
 	if (fields.designation !== undefined) {
 		const employee = await Employee.findById(id).select('locationId');

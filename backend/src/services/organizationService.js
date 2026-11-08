@@ -4,6 +4,52 @@ const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail, publicUser } = require('../utils/user');
 const { escapeRegex, validateEmail } = require('../utils/validation');
+const { findWorkName } = require('./masterDataService');
+
+const MAX_POSTS = 50;
+const MAX_POST_DESIGNATIONS = 100;
+
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+}
+
+// Work names and designations already saved on the organization stay valid even if they were
+// disabled or removed from the work name in master data later.
+async function getOrganizationPosts(input, currentPosts = []) {
+  if (!Array.isArray(input)) throw httpError(400, 'Posts must be a list.');
+  if (input.length > MAX_POSTS) throw httpError(400, `An organization can have at most ${MAX_POSTS} work names.`);
+
+  const currentByWorkName = new Map(currentPosts.map((post) => [post.workName.toLowerCase(), post]));
+  const posts = [];
+  for (const post of input) {
+    const requestedName = normalizeText(post?.workName);
+    if (!requestedName) throw httpError(400, 'Every post needs a work name.');
+    if (posts.some((item) => item.workName.toLowerCase() === requestedName.toLowerCase())) {
+      throw httpError(400, `The work name "${requestedName}" is selected more than once.`);
+    }
+
+    const current = currentByWorkName.get(requestedName.toLowerCase());
+    const master = await findWorkName(requestedName);
+    if (!current && (!master || master.status === 'disabled')) {
+      throw httpError(400, `Select a valid work name from Settings → Master data ("${requestedName}" is not available).`);
+    }
+    const workName = master?.name || current.workName;
+    const allowed = new Map();
+    for (const name of [...(current?.designations || []), ...(master?.designations || [])]) allowed.set(name.toLowerCase(), name);
+
+    const submitted = Array.isArray(post.designations) ? post.designations : [];
+    if (submitted.length > MAX_POST_DESIGNATIONS) throw httpError(400, `Select at most ${MAX_POST_DESIGNATIONS} designations for "${workName}".`);
+    const designations = [];
+    for (const value of submitted) {
+      const designation = allowed.get(normalizeText(value).toLowerCase());
+      if (!designation) throw httpError(400, `"${normalizeText(value)}" is not a designation of the work name "${workName}".`);
+      if (!designations.includes(designation)) designations.push(designation);
+    }
+    if (designations.length === 0) throw httpError(400, `Select at least one designation for "${workName}".`);
+    posts.push({ workName, designations });
+  }
+  return posts;
+}
 
 function getOrganizationDetails(input, partial = false) {
   const details = {};
@@ -56,7 +102,9 @@ async function createOrganization(input) {
     throw httpError(400, 'Status must be active or disabled.');
   }
 
-  const user = await User.create({ name, organizationName, email, password, role: 'organization', status, ...details });
+  const posts = input.posts === undefined ? [] : await getOrganizationPosts(input.posts);
+
+  const user = await User.create({ name, organizationName, email, password, role: 'organization', status, posts, ...details });
   return { organization: publicUser(user) };
 }
 
@@ -73,6 +121,9 @@ async function listOrganizations(options = {}) {
   const filter = { role: 'organization' };
 
   if (status !== 'all') filter.status = status;
+
+  const designation = typeof options.designation === 'string' ? options.designation.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
+  if (designation) filter['posts.designations'] = new RegExp(`^${escapeRegex(designation)}$`, 'i');
 
   if (normalizedSearch) {
     const pattern = new RegExp(escapeRegex(normalizedSearch), 'i');
@@ -163,6 +214,11 @@ async function updateOrganization(id, input) {
   const updates = { name, organizationName, email, ...details };
   const removals = {};
   if (status !== undefined) updates.status = status;
+  if (input.posts !== undefined) {
+    const current = await User.findOne({ _id: id, role: 'organization' }).select('posts');
+    if (!current) throw httpError(404, 'Organization not found.');
+    updates.posts = await getOrganizationPosts(input.posts, current.posts);
+  }
   if (input.password !== undefined && input.password !== '') {
     if (typeof input.password !== 'string' || input.password.length < 8 || input.password.length > 128) {
       throw httpError(400, 'Password must be between 8 and 128 characters long.');

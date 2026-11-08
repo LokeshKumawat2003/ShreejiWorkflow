@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const MasterData = require('../models/MasterData');
+const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 
@@ -12,7 +13,10 @@ const TYPE_LABELS = {
 	designation: 'designation',
 	employmentType: 'type of employment',
 	skillCategory: 'category of skill',
+	workName: 'work name',
 };
+
+const MAX_WORK_NAME_DESIGNATIONS = 100;
 
 // Employees store the name for designation and skill category (locations store the designation code),
 // so those codes must stay equal to the lowercased name. Employment type stores the code itself.
@@ -45,6 +49,7 @@ function publicMasterData(item, usageCount) {
 		name: value.name,
 		code: value.code,
 		status: value.status,
+		...(value.type === 'workName' ? { designations: [...(value.designations || [])] } : {}),
 		...(usageCount === undefined ? {} : { usageCount }),
 		createdAt: value.createdAt,
 		updatedAt: value.updatedAt,
@@ -67,12 +72,15 @@ async function ensureDefaultMasterData() {
 async function countUsage(item) {
 	const namePattern = new RegExp(`^${escapeRegex(item.name)}$`, 'i');
 	if (item.type === 'designation') {
-		const [employees, locations] = await Promise.all([
+		const [employees, locations, organizations, workNames] = await Promise.all([
 			Employee.countDocuments({ designation: namePattern }),
 			Location.countDocuments({ designation: namePattern }),
+			User.countDocuments({ role: 'organization', 'posts.designations': namePattern }),
+			MasterData.countDocuments({ type: 'workName', designations: namePattern }),
 		]);
-		return employees + locations;
+		return employees + locations + organizations + workNames;
 	}
+	if (item.type === 'workName') return User.countDocuments({ role: 'organization', 'posts.workName': namePattern });
 	if (item.type === 'skillCategory') return Employee.countDocuments({ skillCategory: namePattern });
 	return Employee.countDocuments({ employmentType: item.code });
 }
@@ -92,6 +100,22 @@ function validateName(value) {
 function validateStatus(value) {
 	if (!['active', 'disabled'].includes(value)) throw httpError(400, 'Status must be active or disabled.');
 	return value;
+}
+
+async function validateWorkNameDesignations(value, current = []) {
+	if (!Array.isArray(value)) throw httpError(400, 'Designations must be a list.');
+	if (value.length > MAX_WORK_NAME_DESIGNATIONS) throw httpError(400, `A work name can have at most ${MAX_WORK_NAME_DESIGNATIONS} designations.`);
+	const existing = new Map(current.map((name) => [name.toLowerCase(), name]));
+	const designations = [];
+	for (const entry of value) {
+		const name = normalizeName(entry);
+		if (!name) continue;
+		// Designations already on this work name stay valid even if disabled later.
+		const resolved = existing.get(name.toLowerCase()) || await resolveMasterValue('designation', name);
+		if (!designations.some((item) => item.toLowerCase() === resolved.toLowerCase())) designations.push(resolved);
+	}
+	if (designations.length === 0) throw httpError(400, 'Select at least one designation for this work name.');
+	return designations;
 }
 
 async function listMasterData(user, options = {}) {
@@ -140,7 +164,8 @@ async function createMasterData(user, input = {}) {
 	if (await MasterData.exists({ type, code })) {
 		throw httpError(409, `This ${TYPE_LABELS[type]} already exists.`);
 	}
-	const item = await MasterData.create({ type, name, code, status });
+	const designations = type === 'workName' ? await validateWorkNameDesignations(input.designations ?? []) : undefined;
+	const item = await MasterData.create({ type, name, code, status, ...(designations ? { designations } : {}) });
 	return publicMasterData(item, 0);
 }
 
@@ -165,12 +190,33 @@ async function updateMasterData(user, id, input = {}) {
 		}
 	}
 	if (input.status !== undefined) item.status = validateStatus(input.status);
+	if (item.type === 'workName' && input.designations !== undefined) {
+		item.designations = await validateWorkNameDesignations(input.designations, item.designations || []);
+	}
 	await item.save();
 	if (usageCount > 0 && item.name !== previousName && item.type !== 'employmentType') {
 		const previousPattern = new RegExp(`^${escapeRegex(previousName)}$`, 'i');
-		await Employee.updateMany({ [item.type]: previousPattern }, { $set: { [item.type]: item.name } });
+		if (item.type === 'workName') {
+			await User.updateMany(
+				{ role: 'organization', 'posts.workName': previousPattern },
+				{ $set: { 'posts.$[post].workName': item.name } },
+				{ arrayFilters: [{ 'post.workName': previousPattern }] },
+			);
+		} else {
+			await Employee.updateMany({ [item.type]: previousPattern }, { $set: { [item.type]: item.name } });
+		}
 		if (item.type === 'designation') {
 			await Location.updateMany({ designation: previousPattern }, { $set: { designation: item.name } });
+			await User.updateMany(
+				{ role: 'organization', 'posts.designations': previousPattern },
+				{ $set: { 'posts.$[].designations.$[designation]': item.name } },
+				{ arrayFilters: [{ designation: previousPattern }] },
+			);
+			await MasterData.updateMany(
+				{ type: 'workName', designations: previousPattern },
+				{ $set: { 'designations.$[designation]': item.name } },
+				{ arrayFilters: [{ designation: previousPattern }] },
+			);
 		}
 	}
 	return publicMasterData(item, usageCount);
@@ -199,10 +245,15 @@ async function resolveMasterValue(type, value, { store = 'name' } = {}) {
 	return store === 'code' ? item.code : item.name;
 }
 
+async function findWorkName(value) {
+	return MasterData.findOne({ type: 'workName', code: codeFor('workName', normalizeName(value)) }).lean();
+}
+
 module.exports = {
 	createMasterData,
 	deleteMasterData,
 	ensureDefaultMasterData,
+	findWorkName,
 	listMasterData,
 	resolveMasterValue,
 	updateMasterData,

@@ -3,8 +3,7 @@ import { useDisclosure, useToast } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import { ActionButton } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { createAppointmentLetterPdf, createCombinedAppointmentLettersPdf, downloadAppointmentLetters } from '../../../services/appointmentLetterService';
-import { emailAppointmentLetter, emailOrganizationAppointmentLetters } from '../../../services/employeeService';
+import { downloadAppointmentLetters } from '../../../services/appointmentLetterService';
 import type { PdfAction } from '../../../utils/pdfOutput';
 import type { OrganizationLocation } from '../../../types';
 import type { Employee } from '../../../types';
@@ -12,6 +11,7 @@ import type { EmployeeInput } from '../../../services/employeeService';
 import AssignEmployeeDialog from '../../Employees/components/AssignEmployeeDialog';
 import EmployeeDetailsPage from '../../Employees/components/EmployeeDetailsPage';
 import EmployeeFormDialog from '../../Employees/components/EmployeeFormDialog';
+import { useAppointmentLetterDelivery } from '../../Employees/hooks/useAppointmentLetterDelivery';
 import { useEmployees } from '../../Employees/hooks/useEmployees';
 import MoveEmployeeDialog from './MoveEmployeeDialog';
 import RemoveOrganizationEmployeeDialog from './RemoveOrganizationEmployeeDialog';
@@ -28,20 +28,9 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
 
-async function sendAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
-  return Promise.allSettled(employees.map(async (employee) => {
-    const pdf = await createAppointmentLetterPdf(employee, location);
-    await emailAppointmentLetter(employee.id, location.id, pdf);
-  }));
-}
-
-async function sendOrganizationAppointmentLetters(employees: Employee[], location: OrganizationLocation) {
-  const pdf = await createCombinedAppointmentLettersPdf(employees, location);
-  if (pdf) await emailOrganizationAppointmentLetters(location.id, pdf);
-}
-
 function OrganizationEmployeesPage({ organizationId, organizationName, location, onViewingChange }: OrganizationEmployeesPageProps) {
   const toast = useToast();
+  const deliverAppointmentLetters = useAppointmentLetterDelivery();
   const employees = useEmployees(organizationId, true, location.id);
   const formDialog = useDisclosure();
   const assignmentDialog = useDisclosure();
@@ -101,30 +90,6 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     } catch (error) {
       setViewingEmployee(null);
       toast({ title: getErrorMessage(error, 'Unable to load employee details.'), status: 'error', position: 'top' });
-    }
-  }
-
-  async function deliverAppointmentLetters(letterEmployees: Employee[], letterLocation: OrganizationLocation) {
-    const [emailResults, organizationResult] = await Promise.all([
-      sendAppointmentLetters(letterEmployees, letterLocation),
-      sendOrganizationAppointmentLetters(letterEmployees, letterLocation).then(() => undefined, (error: unknown) => ({ error })),
-    ]);
-    const organizationEmailError = organizationResult?.error;
-    const failedEmails = emailResults.filter((result) => result.status === 'rejected');
-    if (failedEmails.length === 0 && !organizationEmailError) {
-      toast({
-        title: letterEmployees.length === 1 ? 'Appointment letter emailed to employee and organization' : 'Appointment letters emailed to employees and organization',
-        status: 'success',
-        position: 'top',
-      });
-      return;
-    }
-    if (failedEmails.length > 0) {
-      const message = getErrorMessage(failedEmails[0].reason, 'Appointment letters could not be emailed.');
-      toast({ title: failedEmails.length === letterEmployees.length ? message : `${failedEmails.length} appointment letter${failedEmails.length === 1 ? '' : 's'} could not be emailed: ${message}`, status: 'error', position: 'top' });
-    }
-    if (organizationEmailError) {
-      toast({ title: getErrorMessage(organizationEmailError, 'Appointment letters could not be emailed to the organization.'), status: 'error', position: 'top' });
     }
   }
 

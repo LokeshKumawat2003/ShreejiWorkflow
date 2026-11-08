@@ -12,6 +12,7 @@ function publicUser(user) {
     about: user.about || '',
     website: user.website || '',
     industry: user.industry || '',
+    posts: (user.posts || []).map(({ workName, designations }) => ({ workName, designations: [...(designations || [])] })),
     email: user.email,
     role: user.role,
     status: user.status,

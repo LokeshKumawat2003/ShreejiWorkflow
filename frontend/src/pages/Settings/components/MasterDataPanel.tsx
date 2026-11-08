@@ -1,5 +1,5 @@
 import { AddIcon, DeleteIcon, EditIcon } from '@chakra-ui/icons';
-import { HStack, Switch, Text, useToast } from '@chakra-ui/react';
+import { HStack, Switch, Tag, Text, useToast, Wrap } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
 import {
 	ActionButton,
@@ -23,7 +23,7 @@ import {
 	updateMasterData,
 } from '../../../services/masterDataService';
 import type { MasterDataItem, MasterDataType } from '../../../types';
-import MasterDataFormDialog from './MasterDataFormDialog';
+import MasterDataFormDialog, { type MasterDataFormInput } from './MasterDataFormDialog';
 
 type MasterDataPanelProps = {
 	type: MasterDataType;
@@ -107,7 +107,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		setIsFormOpen(true);
 	}
 
-	async function saveItem(input: { name: string; status: MasterDataItem['status'] }) {
+	async function saveItem(input: MasterDataFormInput) {
 		setIsSaving(true);
 		setFormError('');
 		try {
@@ -162,6 +162,17 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 				</>
 			),
 		},
+		...(type === 'workName' ? [{
+			key: 'designations',
+			header: 'Designations',
+			render: (item: MasterDataItem) => (
+				<Wrap spacing={1.5} maxW="420px">
+					{(item.designations || []).map((designation) => (
+						<Tag key={designation} size="sm" colorScheme="brand" borderRadius="full">{designation}</Tag>
+					))}
+				</Wrap>
+			),
+		}] : []),
 		{
 			key: 'usage',
 			header: 'Used by',

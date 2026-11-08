@@ -13,6 +13,7 @@ async function list(req, res) {
     sort: req.query.sort,
     page: req.query.page,
     limit: req.query.limit,
+    designation: req.query.designation,
   });
   return res.json(result);
 }

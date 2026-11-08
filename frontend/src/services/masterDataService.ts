@@ -5,6 +5,7 @@ export type MasterDataInput = {
 	type: MasterDataType;
 	name: string;
 	status: MasterDataItem['status'];
+	designations?: string[];
 };
 
 export type MasterDataListParams = {
@@ -29,6 +30,11 @@ export const MASTER_DATA_LABELS: Record<MasterDataType, { title: string; singula
 		title: 'Category of skill',
 		singular: 'category of skill',
 		description: 'Skill levels used in the attendance register and payroll.',
+	},
+	workName: {
+		title: 'Work name',
+		singular: 'work name',
+		description: 'Types of work with the designations under each. Organizations pick their posts from these.',
 	},
 };
 

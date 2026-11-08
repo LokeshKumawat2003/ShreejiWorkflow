@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const MASTER_DATA_TYPES = ['designation', 'employmentType', 'skillCategory'];
+const MASTER_DATA_TYPES = ['designation', 'employmentType', 'skillCategory', 'workName'];
 
 const masterDataSchema = new mongoose.Schema(
   {
@@ -8,6 +8,7 @@ const masterDataSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true, maxlength: 100 },
     code: { type: String, required: true, trim: true, lowercase: true, maxlength: 100 },
     status: { type: String, enum: ['active', 'disabled'], default: 'active' },
+    designations: { type: [{ type: String, trim: true, maxlength: 100 }], default: undefined },
   },
   { timestamps: true },
 );

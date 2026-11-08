@@ -10,7 +10,7 @@ import MasterDataPanel from './components/MasterDataPanel';
 import SalarySlipSettingsPanel from './components/SalarySlipSettingsPanel';
 import WageRegisterSettingsPanel from './components/WageRegisterSettingsPanel';
 
-const MASTER_DATA_TYPES: MasterDataType[] = ['designation', 'employmentType', 'skillCategory'];
+const MASTER_DATA_TYPES: MasterDataType[] = ['designation', 'workName', 'employmentType', 'skillCategory'];
 
 const pillTab = {
 	h: '40px',

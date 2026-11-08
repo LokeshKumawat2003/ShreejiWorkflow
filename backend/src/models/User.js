@@ -17,6 +17,16 @@ const userSchema = new mongoose.Schema(
     about: { type: String, trim: true, maxlength: 1000, default: '' },
     website: { type: String, trim: true, maxlength: 200, default: '' },
     industry: { type: String, trim: true, maxlength: 100, default: '' },
+    posts: {
+      type: [
+        {
+          _id: false,
+          workName: { type: String, required: true, trim: true, maxlength: 120 },
+          designations: { type: [{ type: String, trim: true, maxlength: 100 }], default: [] },
+        },
+      ],
+      default: [],
+    },
     email: {
       type: String,
       required: true,

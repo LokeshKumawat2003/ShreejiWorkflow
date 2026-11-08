@@ -10,12 +10,18 @@ export type User = {
   about?: string;
   website?: string;
   industry?: string;
+  posts?: OrganizationPost[];
   email: string;
   role: UserRole;
   status?: string;
   createdAt?: string;
   department?: string;
   avatarUrl?: string;
+};
+
+export type OrganizationPost = {
+  workName: string;
+  designations: string[];
 };
 
 export type OrganizationLocation = {
@@ -30,7 +36,7 @@ export type OrganizationLocation = {
   createdAt: string;
 };
 
-export type MasterDataType = 'designation' | 'employmentType' | 'skillCategory';
+export type MasterDataType = 'designation' | 'employmentType' | 'skillCategory' | 'workName';
 
 export type MasterDataItem = {
   id: string;
@@ -38,6 +44,7 @@ export type MasterDataItem = {
   name: string;
   code: string;
   status: 'active' | 'disabled';
+  designations?: string[];
   usageCount?: number;
   createdAt: string;
   updatedAt: string;

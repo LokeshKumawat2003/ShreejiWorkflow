@@ -3,6 +3,7 @@ import {
   Alert,
   AlertIcon,
   Box,
+  Button,
   FormControl,
   FormHelperText,
   FormLabel,
@@ -20,6 +21,7 @@ import {
   Switch,
   Text,
   Textarea,
+  useDisclosure,
 } from '@chakra-ui/react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import ActionButton from '../../../components/ui/ActionButton';
@@ -31,14 +33,16 @@ import useMasterDataOptions, { findMasterItem } from '../../../hooks/useMasterDa
 import type { EmployeeInput } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';
 import { isValidPhone } from '../../../utils/formValidation';
+import AssignPostDialog, { type PostSelection } from './AssignPostDialog';
 
 type EmployeeFormDialogProps = {
   isOpen: boolean;
   isSaving: boolean;
   employee: Employee | null;
   requiredDesignation?: string;
+  allowPostAssignment?: boolean;
   onClose: () => void;
-  onSave: (input: EmployeeInput) => Promise<boolean>;
+  onSave: (input: EmployeeInput, post: PostSelection | null) => Promise<boolean>;
 };
 
 const CURRENCIES = ['INR', 'NPR', 'USD', 'AED', 'EUR', 'GBP'];
@@ -101,10 +105,13 @@ function EmployeeFormDialog({
   isSaving,
   employee,
   requiredDesignation,
+  allowPostAssignment = false,
   onClose,
   onSave,
 }: EmployeeFormDialogProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const postDialog = useDisclosure();
+  const [post, setPost] = useState<PostSelection | null>(null);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -181,8 +188,14 @@ function EmployeeFormDialog({
     setBankAccountNumber(employee?.bankAccountNumber || '');
     setBankRoutingCode(employee?.bankRoutingCode || '');
     setStatus(employee?.status || 'active');
+    setPost(null);
     setFormError('');
   }, [employee, isOpen, requiredDesignation]);
+
+  function changeDesignation(value: string) {
+    setDesignation(value);
+    if (post && value.toLowerCase() !== designation.toLowerCase()) setPost(null);
+  }
 
   function showError(message: string) {
     setFormError(message);
@@ -252,11 +265,13 @@ function EmployeeFormDialog({
       bankAccountNumber,
       bankRoutingCode,
       status,
+      ...(post ? { organizationId: post.organizationId, locationId: post.locationId } : {}),
     };
-    if (await onSave(input)) onClose();
+    if (await onSave(input, post)) onClose();
   }
 
   return (
+    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -309,7 +324,7 @@ function EmployeeFormDialog({
                       placeholder={isLoadingMasterData ? 'Loading…' : 'Select designation'}
                       isDisabled={Boolean(requiredDesignation)}
                       value={designation}
-                      onChange={setDesignation}
+                      onChange={changeDesignation}
                     />
                     {requiredDesignation ? <FormHelperText fontSize="xs">Set by the location.</FormHelperText> : null}
                   </FormControl>
@@ -345,6 +360,50 @@ function EmployeeFormDialog({
                       <option value="disabled">Inactive</option>
                     </Select>
                   </FormControl>
+                  {allowPostAssignment ? (
+                    <FormControl gridColumn={{ md: 'span 2', lg: 'span 3' }}>
+                      <FormLabel {...fieldLabelStyles}>Post</FormLabel>
+                      <HStack
+                        justify="space-between"
+                        flexWrap="wrap"
+                        gap={3}
+                        px={3}
+                        py={2.5}
+                        border="1px solid"
+                        borderColor={post ? 'brand.200' : 'slate.200'}
+                        bg={post ? 'brand.50' : 'white'}
+                        borderRadius="md"
+                      >
+                        <Box minW={0}>
+                          {post ? (
+                            <>
+                              <Text fontSize="sm" fontWeight="600" color="slate.900">{post.organizationName}</Text>
+                              <Text fontSize="xs" color="slate.500">
+                                {post.locationId ? `${post.workName} · ${post.locationName}` : 'Organization only, location to be chosen later'}
+                              </Text>
+                            </>
+                          ) : employee?.organizationName ? (
+                            <>
+                              <Text fontSize="sm" fontWeight="600" color="slate.900">{employee.organizationName}</Text>
+                              <Text fontSize="xs" color="slate.500">{employee.locationId ? 'Placed at a location' : 'No location yet'}</Text>
+                            </>
+                          ) : (
+                            <Text fontSize="sm" color="slate.500">
+                              {designation ? 'Not assigned to an organization yet.' : 'Select a designation first to see matching posts.'}
+                            </Text>
+                          )}
+                        </Box>
+                        <HStack spacing={2}>
+                          {post ? (
+                            <Button size="sm" variant="ghost" onClick={() => setPost(null)}>Clear</Button>
+                          ) : null}
+                          <Button size="sm" colorScheme="brand" variant="outline" isDisabled={!designation} onClick={postDialog.onOpen}>
+                            {post || employee?.organizationName ? 'Change post' : 'Assign post'}
+                          </Button>
+                        </HStack>
+                      </HStack>
+                    </FormControl>
+                  ) : null}
                 </SimpleGrid>
               </FormSection>
 
@@ -458,6 +517,15 @@ function EmployeeFormDialog({
         </ModalFooter>
       </ModalContent>
     </Modal>
+    {allowPostAssignment ? (
+      <AssignPostDialog
+        isOpen={postDialog.isOpen}
+        designation={designation}
+        onClose={postDialog.onClose}
+        onSelect={setPost}
+      />
+    ) : null}
+    </>
   );
 }
 

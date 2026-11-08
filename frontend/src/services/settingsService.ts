@@ -37,6 +37,7 @@ export type WageRegisterSettings = {
 	epfRate: string;
 	epfWageCeiling: string;
 	esiRate: string;
+	esiWageCeiling: string;
 	signatoryCompany: string;
 	signatoryTitle: string;
 	signatureImage: string;
@@ -108,8 +109,9 @@ export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {
 	note: 'Payment will be made as per central Govt. Minimum wages act. W.e.f-01-04-2026 ( "C" Class City )',
 	bonusRate: '8.33',
 	epfRate: '12',
-	epfWageCeiling: '15000',
+	epfWageCeiling: '25000',
 	esiRate: '0.75',
+	esiWageCeiling: '21000',
 	signatoryCompany: 'FOR:-SHREEJI CARETAKER COMPANY',
 	signatoryTitle: 'Proprietor / Manager',
 	signatureImage: '',

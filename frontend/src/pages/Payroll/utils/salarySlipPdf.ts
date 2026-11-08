@@ -10,6 +10,7 @@ export type SalarySlipRates = {
   epfRate: number;
   epfWageCeiling: number;
   esiRate: number;
+  esiWageCeiling: number;
 };
 
 function rateOf(value: string | undefined) {
@@ -100,7 +101,8 @@ export function buildSalarySlip(line: PayrollLine, monthYear: string, rates: Sal
   const totalAddition = round2(basic + bonus + washingAllowance + conveyance);
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(basic, rates.epfWageCeiling) : basic;
   const providentFund = line.epfoApplicable ? Math.round(epfBase * (rates.epfRate / 100)) : 0;
-  const esi = line.esicApplicable ? Math.round(basic * (rates.esiRate / 100)) : 0;
+  const esiBase = rates.esiWageCeiling > 0 ? Math.min(basic, rates.esiWageCeiling) : basic;
+  const esi = line.esicApplicable ? Math.round(esiBase * (rates.esiRate / 100)) : 0;
   const foodCharge = 0;
   const houseRent = 0;
   const totalDeduction = round2(providentFund + esi + foodCharge + houseRent);
@@ -146,6 +148,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     epfRate: rateOf(register.epfRate),
     epfWageCeiling: rateOf(register.epfWageCeiling),
     esiRate: rateOf(register.esiRate),
+    esiWageCeiling: rateOf(register.esiWageCeiling),
   };
   const signature = await loadSignatureImage(company.signatureImage);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });

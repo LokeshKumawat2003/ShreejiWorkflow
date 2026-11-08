@@ -316,7 +316,7 @@ export function PayrollFormulaNote({ children, rates }: { children?: ReactNode; 
 				</Box>
 				<Text>
 					{rates
-						? `+ Bonus ${rates.bonusRate}% − EPF ${rates.epfRate}%${rates.epfWageCeiling ? ` (on wages up to ${rates.epfWageCeiling})` : ''} − ESI ${rates.esiRate}% = net payable, same as the location wage register. Absent and unmarked days are unpaid.`
+						? `+ Bonus ${rates.bonusRate}% − EPF ${rates.epfRate}%${rates.epfWageCeiling ? ` (on wages up to ${rates.epfWageCeiling})` : ''} − ESI ${rates.esiRate}%${rates.esiWageCeiling ? ` (on wages up to ${rates.esiWageCeiling})` : ''} = net payable, same as the location wage register. Absent and unmarked days are unpaid.`
 						: 'Absent and unmarked days are unpaid'}
 				</Text>
 			</HStack>

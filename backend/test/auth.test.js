@@ -28,7 +28,7 @@ const {
 } = require('../src/services/attendanceService');
 const { detectSheetPeriod, interpretMark, matchExtractedEmployee, parseSheetMatrix, parseSheetMatrixMonth, pdfPagesToMatrix } = require('../src/services/attendanceSheetParser');
 const { summarizeAttendance } = require('../src/utils/attendanceStatus');
-const { calculateBankPayments, calculatePayroll, calculateWageRegister } = require('../src/services/payrollService');
+const { calculateBankPayments, calculatePayroll, calculateWageRegister, wageRegisterRow } = require('../src/services/payrollService');
 const { createOrganization, updateOrganization } = require('../src/services/organizationService');
 const { createToken, register, verifyToken } = require('../src/services/authService');
 const { createLocation, deleteLocation, listLocations, updateLocation, validateLocationInput } = require('../src/services/locationService');
@@ -1551,8 +1551,8 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
   const organizationId = '507f1f77bcf86cd799439011';
   const locationId = '507f1f77bcf86cd799439099';
   const paper = [
-    ['A Pralad Chettri', 'Skilled', 26, 781, 20045],
-    ['B Gobinda Chettri', 'Semi-Skilled', 25, 650, 15682],
+    ['A Pralad Chettri', 'Skilled', 26, 781, 19408],
+    ['B Gobinda Chettri', 'Semi-Skilled', 25, 650, 15532],
     ['C Ram Bahadur Chettri', 'Un-skilled', 24, 556, 12754],
     ['D Mani Kumar Chettri', 'Un-skilled', 26, 556, 13817],
     ['E Om Kumari Rai', 'Un-skilled', 26, 556, 13817],
@@ -1590,7 +1590,7 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
     assert.deepEqual(register.rows.map((row) => row.grossPayment), paper.map((row) => row[4]));
     assert.equal(register.rows[0].bonus, 1691.49);
     assert.equal(register.rows[0].totalWages, 21997.49);
-    assert.equal(register.rows[0].epf, 1800);
+    assert.equal(register.rows[0].epf, 2437);
     assert.equal(register.rows[0].esi, 152);
     assert.deepEqual(register.totals, {
       employees: 8,
@@ -1598,17 +1598,23 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
       wages: 121624,
       bonus: 10131,
       totalWages: 131755,
-      epf: 13808,
+      epf: 14595,
       esi: 912,
-      grossPayment: 117035,
+      grossPayment: 116248,
     });
+    const capped = wageRegisterRow(
+      { dailySalary: 1500, paidDays: 26, epfoApplicable: true, esicApplicable: true },
+      register.rates,
+    );
+    assert.equal(capped.epf, 3000);
+    assert.equal(capped.esi, 158);
 
     const paged = await calculateWageRegister(
       { id: organizationId, role: 'organization' },
       { organizationId, locationId, month: '2026-08', page: '2', limit: '5' },
     );
     assert.deepEqual(paged.rows.map((row) => row.serial), [6, 7, 8]);
-    assert.equal(paged.totals.grossPayment, 117035);
+    assert.equal(paged.totals.grossPayment, 116248);
   } finally {
     Location.findOne = originals.locationFindOne;
     Employee.find = originals.employeeFind;
@@ -1658,14 +1664,14 @@ test('bank payments list wage register employees with their column N amount and 
     assert.equal(result.referencePrefix, 'SCC/PNB-NEFT/ SEP-2026/');
     assert.equal(result.letter.accountNumber, '409100C100000077');
     assert.deepEqual(result.rows.map((row) => [row.employeeName, row.amount, row.missingBankDetails]), [
-      ['Nehpal Singh', 20045, false],
+      ['Nehpal Singh', 19408, false],
       ['Pawan Kumar', 7041, true],
     ]);
     assert.equal(result.rows[0].accountNumber, '03770110094938');
     assert.equal(result.rows[0].ifsc, 'UCBA0000377');
     assert.equal(result.rows[0].locationName, 'AMC Horticulture Work');
     assert.equal(result.rows[0].organizationName, 'Powergrid');
-    assert.deepEqual(result.summary, { employees: 2, total: 27086, missingBankDetails: 1, banks: 1 });
+    assert.deepEqual(result.summary, { employees: 2, total: 26449, missingBankDetails: 1, banks: 1 });
 
     const searched = await calculateBankPayments({ id: 'admin', role: 'admin' }, { month: '2026-09', search: 'ucba', page: '1', limit: '10' });
     assert.deepEqual(searched.rows.map((row) => row.employeeName), ['Nehpal Singh']);

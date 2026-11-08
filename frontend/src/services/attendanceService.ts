@@ -138,7 +138,7 @@ export type PayrollResponse = {
   lines: PayrollLine[];
   totals: { currency: string; total: number }[];
   netTotals?: { currency: string; total: number }[];
-  rates?: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number };
+  rates?: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number; esiWageCeiling: number };
   summary: { employees: number; presentDays: number; absentDays: number; paidDays: number };
   pagination?: { page: number; limit: number; total: number; totalPages: number };
 };
@@ -212,7 +212,7 @@ export type WageRegisterResponse = {
     address: string;
     opNumber: string;
   };
-  rates: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number };
+  rates: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number; esiWageCeiling: number };
   rows: WageRegisterRow[];
   totals: Omit<WageRegisterRow, 'serial' | 'employeeId' | 'employeeName' | 'parentName' | 'showParentName' | 'post' | 'dailyWage'> & { employees: number };
   pagination: { page: number; limit: number; total: number; totalPages: number };

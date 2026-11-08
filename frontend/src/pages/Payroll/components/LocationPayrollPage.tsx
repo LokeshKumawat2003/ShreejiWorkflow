@@ -313,7 +313,8 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 										<InfoOutlineIcon mt="2px" />
 										<Text>
 											Wages = days × daily wage · Bonus {register.rates.bonusRate}% · EPF {register.rates.epfRate}%
-											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}% · Net = total wages − EPF − ESI.
+											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}%
+											{register.rates.esiWageCeiling ? ` (on wages up to ${register.rates.esiWageCeiling})` : ''} · Net = total wages − EPF − ESI.
 											The Excel and PDF downloads use the FORM XVII layout; edit it in Settings → Wage register.
 										</Text>
 									</HStack>

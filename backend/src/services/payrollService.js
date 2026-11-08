@@ -218,6 +218,7 @@ function wageRates(settings) {
     epfRate: rate(settings, 'epfRate'),
     epfWageCeiling: rate(settings, 'epfWageCeiling'),
     esiRate: rate(settings, 'esiRate'),
+    esiWageCeiling: rate(settings, 'esiWageCeiling'),
   };
 }
 
@@ -236,7 +237,8 @@ function wageRegisterRow(line, rates) {
   const totalWages = wages + bonus;
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
   const epf = line.epfoApplicable ? epfBase * (rates.epfRate / 100) : 0;
-  const esi = line.esicApplicable ? wages * (rates.esiRate / 100) : 0;
+  const esiBase = rates.esiWageCeiling > 0 ? Math.min(wages, rates.esiWageCeiling) : wages;
+  const esi = line.esicApplicable ? esiBase * (rates.esiRate / 100) : 0;
   return {
     employeeId: line.employeeId,
     employeeName: line.employeeName,

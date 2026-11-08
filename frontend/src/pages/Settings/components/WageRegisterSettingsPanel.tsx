@@ -70,7 +70,8 @@ function WageRegisterSettingsPanel() {
 					<FormInput label="Bonus rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.bonusRate} helperText="Column H = Wages × rate" onChange={(event) => setField('bonusRate', event.target.value)} />
 					<FormInput label="ESI rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.esiRate} helperText="Column L, for ESIC applicable employees" onChange={(event) => setField('esiRate', event.target.value)} />
 					<FormInput label="EPF rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.epfRate} helperText="Column K, for EPFO applicable employees" onChange={(event) => setField('epfRate', event.target.value)} />
-					<FormInput label="EPF wage ceiling" inputMode="numeric" maxLength={12} value={values.epfWageCeiling} helperText="EPF is charged on wages up to this amount. Leave blank for no limit." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
+					<FormInput label="EPF wage ceiling" inputMode="numeric" maxLength={12} value={values.epfWageCeiling} helperText="EPF is charged on wages up to this amount; above it EPF stays fixed. Leave blank for no limit." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
+					<FormInput label="ESI wage ceiling" inputMode="numeric" maxLength={12} value={values.esiWageCeiling} helperText="ESI is charged on wages up to this amount; above it ESI stays fixed. Leave blank for no limit." onChange={(event) => setField('esiWageCeiling', event.target.value)} />
 				</SimpleGrid>
 			</FormSection>
 			<FormSection title="Signature">

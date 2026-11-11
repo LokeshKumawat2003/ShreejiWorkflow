@@ -11,6 +11,7 @@
     "seed:full": "node src/scripts/seed-full-demo.js",
     "seed:transfer": "node src/scripts/seed-transfer-demo.js",
     "seed:malikhera": "node src/scripts/seed-malikhera.js",
+    "seed:months": "node src/scripts/seed-three-months.js",
     "test": "node --test"
   },
   "keywords": [],

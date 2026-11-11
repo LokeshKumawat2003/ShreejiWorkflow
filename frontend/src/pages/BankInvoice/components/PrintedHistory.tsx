@@ -1,13 +1,15 @@
 import { CloseIcon, DownloadIcon } from '@chakra-ui/icons';
 import { Box, Button, HStack, Popover, PopoverArrow, PopoverBody, PopoverContent, PopoverTrigger, Stack, Text } from '@chakra-ui/react';
-import { useState } from 'react';
-import { ConfirmDialog, DataTable, IconAction, PrintIcon, StatusBadge, type DataTableColumn } from '../../../components/ui';
+import { useMemo, useState } from 'react';
+import { ConfirmDialog, DataTable, IconAction, PrintIcon, StatusBadge, TableFooter, type DataTableColumn } from '../../../components/ui';
 import type { BankInvoiceActivity, BankInvoiceBatch } from '../../../services/attendanceService';
 import { formatAmount } from '../../Payroll/components/PayrollShared';
 import { formatLetterDate } from '../utils/bankLetterExport';
 import { printedOn } from './LocationPicker';
 
 type ReprintKind = 'pdf' | 'excel' | 'print';
+
+const HISTORY_PAGE_SIZE = 10;
 
 type PrintedHistoryProps = {
 	batches: BankInvoiceBatch[];
@@ -69,45 +71,51 @@ function ActivityLog({ activity }: { activity: BankInvoiceActivity[] }) {
 	);
 }
 
-function locationSummary(batch: BankInvoiceBatch) {
-	const organizations = new Set(batch.locations.map((location) => location.organizationName));
-	return `${batch.locations.length} location${batch.locations.length === 1 ? '' : 's'} · ${organizations.size} organization${organizations.size === 1 ? '' : 's'}`;
-}
+type HistoryRow = {
+	key: string;
+	batch: BankInvoiceBatch;
+	location: BankInvoiceBatch['locations'][number];
+};
 
 function PrintedHistory({ batches, isLoading, error, busyId, onReprint, onCancel }: PrintedHistoryProps) {
 	const [confirming, setConfirming] = useState<BankInvoiceBatch | null>(null);
 	const [isCancelling, setIsCancelling] = useState(false);
+	const [page, setPage] = useState(1);
+	const rows = useMemo<HistoryRow[]>(() => batches.flatMap((batch) => batch.locations.map((location) => ({
+		key: `${batch.id}:${location.locationId}`,
+		batch,
+		location,
+	}))), [batches]);
+	const totalPages = Math.max(1, Math.ceil(rows.length / HISTORY_PAGE_SIZE));
+	const currentPage = Math.min(page, totalPages);
+	const pageRows = rows.slice((currentPage - 1) * HISTORY_PAGE_SIZE, currentPage * HISTORY_PAGE_SIZE);
 
-	const columns: DataTableColumn<BankInvoiceBatch>[] = [
+	const columns: DataTableColumn<HistoryRow>[] = [
+		{
+			key: 'location',
+			header: 'Location',
+			render: ({ location }) => (
+				<Box minW="180px">
+					<Text fontWeight="700" color="slate.900" noOfLines={1}>{location.locationName}</Text>
+					<Text fontSize="xs" color="slate.500">{location.employees} employee{location.employees === 1 ? '' : 's'}</Text>
+				</Box>
+			),
+		},
+		{
+			key: 'organization',
+			header: 'Organization',
+			render: ({ location }) => (
+				<Text fontSize="sm" color="slate.700" noOfLines={1} minW="140px">{location.organizationName || '—'}</Text>
+			),
+		},
 		{
 			key: 'reference',
-			header: 'Reference',
-			render: (batch) => (
+			header: 'Letter',
+			render: ({ batch }) => (
 				<Box>
-					<Text fontWeight="700" color="slate.900" whiteSpace="nowrap">{batch.reference}</Text>
-					<Text fontSize="xs" color="slate.500">Printed {printedOn(batch.createdAt)}</Text>
-				</Box>
-			),
-		},
-		{
-			key: 'letter',
-			header: 'Letter date / cheque',
-			hideBelow: 'md',
-			render: (batch) => (
-				<Box>
-					<Text fontSize="sm" color="slate.800">{formatLetterDate(batch.letterDate)}</Text>
-					<Text fontSize="xs" color="slate.500">CH. NO: {batch.chequeNumber || '—'}</Text>
-				</Box>
-			),
-		},
-		{
-			key: 'locations',
-			header: 'Locations',
-			render: (batch) => (
-				<Box maxW="360px">
-					<Text fontSize="sm" color="slate.800">{locationSummary(batch)}</Text>
-					<Text fontSize="xs" color="slate.500" noOfLines={2}>
-						{batch.locations.map((location) => `${location.organizationName} – ${location.locationName}`).join(', ')}
+					<Text fontSize="sm" fontWeight="600" color="slate.800" whiteSpace="nowrap">{batch.reference}</Text>
+					<Text fontSize="xs" color="slate.500" whiteSpace="nowrap">
+						{formatLetterDate(batch.letterDate)} · CH. NO: {batch.chequeNumber || '—'}
 					</Text>
 				</Box>
 			),
@@ -116,37 +124,32 @@ function PrintedHistory({ batches, isLoading, error, busyId, onReprint, onCancel
 			key: 'amount',
 			header: 'Amount',
 			align: 'right',
-			render: (batch) => (
-				<Box>
-					<Text fontWeight="800" color="slate.900" whiteSpace="nowrap">{formatAmount(batch.total)}</Text>
-					<Text fontSize="xs" color="slate.500">{batch.employees} employees</Text>
-				</Box>
-			),
+			render: ({ location }) => <Text fontWeight="800" color="slate.900" whiteSpace="nowrap">{formatAmount(location.total)}</Text>,
 		},
 		{
 			key: 'activity',
 			header: 'Activity',
-			render: (batch) => <ActivityLog activity={batch.activity ?? []} />,
+			render: ({ batch }) => <ActivityLog activity={batch.activity ?? []} />,
 		},
 		{
 			key: 'status',
 			header: 'Status',
 			hideBelow: 'lg',
-			render: (batch) => (batch.status === 'printed'
-				? <StatusBadge tone="success" label="Printed" />
+			render: ({ batch }) => (batch.status === 'printed'
+				? <StatusBadge tone="success" label={`Printed ${printedOn(batch.createdAt)}`} />
 				: <StatusBadge tone="neutral" label="Cancelled" />),
 		},
 		{
 			key: 'actions',
 			header: '',
 			align: 'right',
-			render: (batch) => (
+			render: ({ batch }) => (
 				<HStack spacing={1.5} justify="flex-end">
 					<IconAction label="Reprint PDF" icon={<DownloadIcon />} isDisabled={Boolean(busyId)} isLoading={busyId === `${batch.id}:pdf`} onClick={() => onReprint(batch, 'pdf')} />
 					<IconAction label="Reprint Excel" icon={<Text fontSize="10px" fontWeight="800">XLS</Text>} isDisabled={Boolean(busyId)} isLoading={busyId === `${batch.id}:excel`} onClick={() => onReprint(batch, 'excel')} />
 					<IconAction label="Print again" icon={<PrintIcon boxSize={4} />} isDisabled={Boolean(busyId)} isLoading={busyId === `${batch.id}:print`} onClick={() => onReprint(batch, 'print')} />
 					{batch.status === 'printed' ? (
-						<IconAction label="Cancel letter (locations become pending again)" tone="danger" icon={<CloseIcon boxSize={2.5} />} isDisabled={Boolean(busyId)} onClick={() => setConfirming(batch)} />
+						<IconAction label={batch.locations.length > 1 ? `Cancel letter ${batch.reference} (all ${batch.locations.length} locations on it become pending again)` : 'Cancel letter (location becomes pending again)'} tone="danger" icon={<CloseIcon boxSize={2.5} />} isDisabled={Boolean(busyId)} onClick={() => setConfirming(batch)} />
 					) : null}
 				</HStack>
 			),
@@ -157,18 +160,29 @@ function PrintedHistory({ batches, isLoading, error, busyId, onReprint, onCancel
 		<>
 			<DataTable
 				columns={columns}
-				rows={batches}
-				rowKey={(batch) => batch.id}
+				rows={pageRows}
+				rowKey={(row) => row.key}
 				size="sm"
 				isLoading={isLoading}
 				error={error}
 				emptyTitle="No letters printed this month"
 				emptyDescription="Letters you print from the selected locations show up here."
+				footer={rows.length > HISTORY_PAGE_SIZE ? (
+					<TableFooter
+						page={currentPage}
+						pageSize={HISTORY_PAGE_SIZE}
+						total={rows.length}
+						totalPages={totalPages}
+						noun="locations"
+						isDisabled={isLoading}
+						onPageChange={setPage}
+					/>
+				) : undefined}
 			/>
 			<ConfirmDialog
 				isOpen={Boolean(confirming)}
 				title="Cancel this bank letter?"
-				description={confirming ? `${confirming.reference} will be marked cancelled and its ${confirming.locations.length} location${confirming.locations.length === 1 ? '' : 's'} will show as pending again for this month.` : ''}
+				description={confirming ? `${confirming.reference} will be marked cancelled. These locations will show as pending again for this month: ${confirming.locations.map((location) => location.locationName).join(', ')}.` : ''}
 				confirmLabel="Cancel letter"
 				isLoading={isCancelling}
 				onClose={() => setConfirming(null)}

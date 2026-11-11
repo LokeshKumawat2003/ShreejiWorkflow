@@ -1,12 +1,14 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { Alert, Box, Button, ButtonGroup, Checkbox, Collapse, Flex, HStack, IconButton, Skeleton, Stack, Text } from '@chakra-ui/react';
-import { useMemo, useState } from 'react';
-import { EmptyState, SearchInput, StatusBadge } from '../../../components/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { EmptyState, SearchInput, StatusBadge, TableFooter } from '../../../components/ui';
 import type { BankInvoiceLocation, BankInvoiceLocationsResponse, BankInvoiceOrganization } from '../../../services/attendanceService';
 import { formatAmount } from '../../Payroll/components/PayrollShared';
 import { formatLetterDate } from '../utils/bankLetterExport';
 
 type View = 'pending' | 'printed' | 'all';
+
+const ORGANIZATIONS_PER_PAGE = 5;
 
 type LocationPickerProps = {
 	data: BankInvoiceLocationsResponse | null;
@@ -53,6 +55,15 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 			})
 			.filter((organization) => organization.locations.length > 0);
 	}, [data, search, view]);
+
+	const [page, setPage] = useState(1);
+	const totalPages = Math.max(1, Math.ceil(groups.length / ORGANIZATIONS_PER_PAGE));
+	const currentPage = Math.min(page, totalPages);
+	const pageGroups = groups.slice((currentPage - 1) * ORGANIZATIONS_PER_PAGE, currentPage * ORGANIZATIONS_PER_PAGE);
+
+	useEffect(() => {
+		setPage(1);
+	}, [search, view, data?.month]);
 
 	const selectedTotal = useMemo(() => (data?.organizations ?? [])
 		.flatMap((organization) => organization.locations)
@@ -117,8 +128,8 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 					description={view === 'pending' ? 'Every location with payments this month is already on a printed letter.' : undefined}
 				/>
 			) : (
-				<Stack spacing={2} maxH="420px" overflowY="auto" pr={1}>
-					{groups.map((organization) => {
+				<Stack spacing={2}>
+					{pageGroups.map((organization) => {
 						const selectable = organization.locations.filter(isSelectable).map((location) => location.locationId);
 						const selectedCount = selectable.filter((id) => selectedSet.has(id)).length;
 						const isOpen = !collapsed.has(organization.organizationId);
@@ -201,6 +212,19 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 					})}
 				</Stack>
 			)}
+
+			{groups.length > ORGANIZATIONS_PER_PAGE ? (
+				<Box mx={{ base: -4, md: -5 }}>
+					<TableFooter
+						page={currentPage}
+						pageSize={ORGANIZATIONS_PER_PAGE}
+						total={groups.length}
+						totalPages={totalPages}
+						noun="organizations"
+						onPageChange={setPage}
+					/>
+				</Box>
+			) : null}
 
 			<HStack justify="space-between" fontSize="sm" color="slate.600" flexWrap="wrap">
 				<Text>

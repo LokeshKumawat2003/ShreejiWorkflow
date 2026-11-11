@@ -1,42 +1,41 @@
-import { CheckIcon, DownloadIcon, InfoOutlineIcon } from '@chakra-ui/icons';
-import { Alert, Box, Button, Flex, HStack, SimpleGrid, Skeleton, Stack, Text, useToast } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { DownloadIcon } from '@chakra-ui/icons';
+import { Alert, Box, Button, HStack, Stack, Text, useToast } from '@chakra-ui/react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActionButton,
   ContentCard,
-  EmptyState,
   FilterBar,
   FilterField,
-  FilterSelect,
+  FilterInput,
+  MapPinIcon,
   PageHeader,
   PeopleIcon,
   PrintIcon,
-  SearchInput,
-  TableFooter,
   WalletIcon,
 } from '../../components/ui';
 import { ApiError } from '../../services/api';
-import type { PayrollResponse } from '../../services/attendanceService';
-import { listEmployees } from '../../services/employeeService';
-import { listOrganizations } from '../../services/organizationService';
-import type { Employee, User } from '../../types';
+import {
+  cancelPayrollRun,
+  createPayrollRun,
+  getLocationsPayroll,
+  getPayrollRun,
+  getPayrollRunLocations,
+  listPayrollRuns,
+  logPayrollRunActivity,
+  type BankInvoiceBatch,
+  type BankInvoiceLocationsResponse,
+  type LocationsPayrollResponse,
+} from '../../services/attendanceService';
 import { addRowsSheet, addTableSheet, createWorkbook, downloadWorkbook } from '../../utils/excelOutput';
-import { PayrollSummary, PayrollTable, PeriodFields, periodLabel, thisMonthRange } from './components/PayrollShared';
-import { usePayroll, type PayrollQuery } from './hooks/usePayroll';
+import LocationPicker, { isSelectable } from '../BankInvoice/components/LocationPicker';
+import PrintedHistory from '../BankInvoice/components/PrintedHistory';
+import { PayrollSummary, PayrollTable, type PayrollSelection } from './components/PayrollShared';
+import { PAYROLL_PAGE_SIZE } from './hooks/usePayroll';
 import { downloadSalarySlipsPdf } from './utils/salarySlipPdf';
 
-const EMPLOYEE_PAGE_SIZE = 9;
+type ExportKind = 'pdf' | 'excel' | 'print';
 
 type EmployeeScope = 'all' | 'selected';
-
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.message : fallback;
-}
-
-function initialsOf(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return `${parts[0]?.[0] || ''}${parts.length > 1 ? parts[parts.length - 1][0] : ''}`.toUpperCase() || '?';
-}
 
 function ScopeToggle({ scope, onChange }: { scope: EmployeeScope; onChange: (scope: EmployeeScope) => void }) {
   return (
@@ -66,402 +65,352 @@ function ScopeToggle({ scope, onChange }: { scope: EmployeeScope; onChange: (sco
   );
 }
 
-function EmployeeChoice({ employee, isSelected, onToggle }: { employee: Employee; isSelected: boolean; onToggle: () => void }) {
-  return (
-    <HStack
-      as="button"
-      type="button"
-      onClick={onToggle}
-      aria-pressed={isSelected}
-      spacing={3}
-      w="100%"
-      p={3}
-      textAlign="left"
-      bg={isSelected ? 'brand.50' : 'white'}
-      border="1px solid"
-      borderColor={isSelected ? 'brand.300' : 'slate.200'}
-      borderRadius="12px"
-      boxShadow={isSelected ? '0 0 0 3px rgba(79, 70, 229, 0.12)' : 'none'}
-      transition="all 0.15s ease"
-      _hover={{ borderColor: isSelected ? 'brand.400' : 'slate.300', boxShadow: isSelected ? '0 0 0 3px rgba(79, 70, 229, 0.18)' : 'sm' }}
-      _focusVisible={{ outline: 'none', boxShadow: '0 0 0 3px rgba(79, 70, 229, 0.3)' }}
-    >
-      <Box
-        display="grid"
-        placeItems="center"
-        flexShrink={0}
-        w="38px"
-        h="38px"
-        borderRadius="10px"
-        bg={isSelected ? 'brand.500' : 'slate.100'}
-        color={isSelected ? 'white' : 'slate.600'}
-        fontSize="12px"
-        fontWeight="800"
-        transition="all 0.15s ease"
-      >
-        {isSelected ? <CheckIcon boxSize={3.5} /> : initialsOf(employee.name)}
-      </Box>
-      <Box minW={0} flex="1">
-        <Text fontSize="sm" fontWeight="700" color="slate.900" noOfLines={1}>{employee.name}</Text>
-        <Text fontSize="xs" color="slate.500" noOfLines={1}>
-          {[employee.designation, employee.organizationName].filter(Boolean).join(' · ') || employee.email}
-        </Text>
-      </Box>
-    </HStack>
-  );
+function monthValue(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+async function exportExcel(payroll: LocationsPayrollResponse, reference: string) {
+  const workbook = await createWorkbook();
+  const payPeriod = `${payroll.fromDate} to ${payroll.toDate}`;
+  addTableSheet(workbook, 'Payroll', [
+    { header: 'Employee', width: 24, value: (line) => line.employeeName },
+    { header: 'Organization', width: 24, value: (line) => line.organizationName },
+    { header: 'Location', width: 24, value: (line) => line.locationName || '' },
+    { header: 'Designation', width: 18, value: (line) => line.designation || '' },
+    { header: 'Bank name', width: 20, value: (line) => line.bankName },
+    { header: 'Branch', width: 18, value: (line) => line.bankBranch },
+    { header: 'Account holder', width: 24, value: (line) => line.bankAccountHolder },
+    { header: 'Account number', width: 20, value: (line) => line.bankAccountNumber },
+    { header: 'IFSC', width: 16, value: (line) => line.bankRoutingCode },
+    { header: 'Daily wage', width: 14, value: (line) => line.dailyWage ?? line.dailySalary },
+    { header: 'Present', width: 10, value: (line) => line.presentDays },
+    { header: 'Half days', width: 10, value: (line) => line.halfDays ?? 0 },
+    { header: 'Absent', width: 10, value: (line) => line.absentDays },
+    { header: 'Paid days', width: 12, value: (line) => line.paidDays },
+    { header: 'Wages', width: 14, value: (line) => line.wages ?? line.grossPay },
+    { header: 'Bonus', width: 12, value: (line) => line.bonus ?? 0 },
+    { header: 'Total wages', width: 14, value: (line) => line.totalWages ?? line.grossPay },
+    { header: 'EPF', width: 10, value: (line) => line.epf ?? 0 },
+    { header: 'ESI', width: 10, value: (line) => line.esi ?? 0 },
+    { header: 'Net payable', width: 16, value: (line) => line.netPay ?? line.grossPay },
+  ], payroll.lines);
+
+  addRowsSheet(workbook, 'Totals', [
+    ['Reference', reference],
+    ['Pay period', payPeriod],
+    ['Employees', payroll.summary.employees],
+    [],
+    ['Currency', 'Total payable'],
+    ...(payroll.netTotals ?? payroll.totals).map(({ currency, total }) => [currency, total]),
+  ], [24, 30]);
+  await downloadWorkbook(workbook, `payroll-${payroll.month}.xlsx`);
+}
+
+async function makeExport(kind: ExportKind, payroll: LocationsPayrollResponse, reference: string) {
+  if (kind === 'excel') await exportExcel(payroll, reference);
+  else await downloadSalarySlipsPdf(payroll.lines, payroll.fromDate, payroll.toDate, kind === 'print' ? 'print' : 'download');
 }
 
 function AdminPayrollPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeSearch, setEmployeeSearch] = useState('');
-  const [employeePage, setEmployeePage] = useState(1);
-  const [employeeTotal, setEmployeeTotal] = useState(0);
-  const [employeeTotalPages, setEmployeeTotalPages] = useState(1);
-  const [isLoadingEmployees, setIsLoadingEmployees] = useState(false);
-  const [employeeError, setEmployeeError] = useState('');
-  const [organizations, setOrganizations] = useState<User[]>([]);
-  const [organizationId, setOrganizationId] = useState('');
-  const [payrollOrganizationName, setPayrollOrganizationName] = useState('');
-  const [scope, setScope] = useState<EmployeeScope>('all');
-  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
   const toast = useToast();
-  const [{ fromDate, toDate }, setRange] = useState(thisMonthRange);
-  const [runQuery, setRunQuery] = useState<PayrollQuery | null>(null);
-  const [runCount, setRunCount] = useState(0);
-  const [payrollScope, setPayrollScope] = useState<EmployeeScope>('all');
-  const [isExporting, setIsExporting] = useState<'slips' | 'excel' | 'print' | null>(null);
-  const payrollState = usePayroll(runQuery, runCount);
-  const { payroll } = payrollState;
-  const isGenerating = payrollState.isLoading && !payroll;
-  const generationError = payrollState.error;
-  const invalidDateRange = !fromDate || !toDate || fromDate > toDate;
-  const canGenerate = !invalidDateRange && !isLoadingEmployees && (scope === 'all' || selectedEmployeeIds.length > 0);
-
-  const organizationName = (id: string) => {
-    const organization = organizations.find((item) => item.id === id);
-    return organization ? organization.organizationName || organization.name || organization.email : '';
-  };
-  const selectedOrganizationName = organizationName(organizationId);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void listOrganizations({ search: '', status: 'all', sort: 'name-asc', page: 1, limit: 100 }, controller.signal)
-      .then((result) => setOrganizations(result.organizations.filter((organization) => organization.id)))
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, []);
+  const [month, setMonth] = useState(() => monthValue(new Date()));
+  const [selected, setSelected] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [payroll, setPayroll] = useState<LocationsPayrollResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [locationsData, setLocationsData] = useState<BankInvoiceLocationsResponse | null>(null);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsError, setLocationsError] = useState('');
+  const [batches, setBatches] = useState<BankInvoiceBatch[]>([]);
+  const [batchesLoading, setBatchesLoading] = useState(true);
+  const [batchesError, setBatchesError] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [exporting, setExporting] = useState<ExportKind | null>(null);
+  const [busyBatch, setBusyBatch] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [employeeScope, setEmployeeScope] = useState<EmployeeScope>('all');
+  const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
+    setSelected([]);
+  }, [month]);
+
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}$/.test(month)) return undefined;
     const controller = new AbortController();
-    setIsLoadingEmployees(true);
-    setEmployeeError('');
-    void listEmployees({
-      search: employeeSearch,
-      status: 'all',
-      sort: 'name-asc',
-      page: employeePage,
-      limit: EMPLOYEE_PAGE_SIZE,
-      assignedOnly: true,
-      ...(organizationId ? { organizationId } : {}),
-    }, controller.signal)
+    setLocationsLoading(true);
+    setLocationsError('');
+    setBatchesLoading(true);
+    setBatchesError('');
+    void getPayrollRunLocations(month, controller.signal)
       .then((result) => {
-        if (controller.signal.aborted) return;
-        setEmployees(result.employees);
-        setEmployeeTotal(result.pagination.total);
-        setEmployeeTotalPages(result.pagination.totalPages);
+        setLocationsData(result);
+        const selectable = new Set(result.organizations.flatMap((organization) => organization.locations).filter(isSelectable).map((location) => location.locationId));
+        setSelected((current) => {
+          const kept = current.filter((id) => selectable.has(id));
+          return kept.length === current.length ? current : kept;
+        });
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) setEmployeeError(errorMessage(error, 'Unable to load employees.'));
+        if (controller.signal.aborted) return;
+        setLocationsData(null);
+        setLocationsError(errorMessage(error, 'Unable to load locations.'));
       })
       .finally(() => {
-        if (!controller.signal.aborted) setIsLoadingEmployees(false);
+        if (!controller.signal.aborted) setLocationsLoading(false);
+      });
+    void listPayrollRuns(month, controller.signal)
+      .then(setBatches)
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setBatches([]);
+        setBatchesError(errorMessage(error, 'Unable to load payroll history.'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBatchesLoading(false);
       });
     return () => controller.abort();
-  }, [employeeSearch, employeePage, organizationId]);
+  }, [month, refreshKey]);
 
-  function changeOrganization(next: string) {
-    setOrganizationId(next);
-    setEmployeePage(1);
-    setSelectedEmployeeIds([]);
-    setRunQuery(null);
-  }
+  const selectionKey = useMemo(() => [...selected].sort().join(','), [selected]);
 
-  function changeScope(next: EmployeeScope) {
-    setScope(next);
-    setRunQuery(null);
-  }
+  useEffect(() => {
+    setPage(1);
+    setSelectedEmployees(new Set());
+  }, [selectionKey, month]);
 
-  function toggleEmployee(employeeId: string) {
-    setSelectedEmployeeIds((current) => (
-      current.includes(employeeId) ? current.filter((id) => id !== employeeId) : [...current, employeeId]
-    ));
-    setRunQuery(null);
-  }
-
-  const allOnPageSelected = employees.length > 0 && employees.every((employee) => selectedEmployeeIds.includes(employee.id));
-
-  function togglePage() {
-    const pageIds = employees.map((employee) => employee.id);
-    setSelectedEmployeeIds((current) => (
-      allOnPageSelected
-        ? current.filter((id) => !pageIds.includes(id))
-        : [...new Set([...current, ...pageIds])]
-    ));
-    setRunQuery(null);
-  }
-
-  function generatePayroll() {
-    if (!canGenerate) return;
-    setRunQuery({
-      fromDate,
-      toDate,
-      ...(organizationId ? { organizationId } : {}),
-      ...(scope === 'selected' ? { employeeIds: selectedEmployeeIds } : {}),
-    });
-    setRunCount((current) => current + 1);
-    setPayrollScope(scope);
-    setPayrollOrganizationName(selectedOrganizationName);
-  }
-
-  async function runExport(kind: 'slips' | 'excel' | 'print') {
-    setIsExporting(kind);
-    try {
-      const fullPayroll = await payrollState.fetchAll();
-      if (kind === 'slips' || kind === 'print') {
-        await downloadSalarySlipsPdf(fullPayroll.lines, fullPayroll.fromDate, fullPayroll.toDate, kind === 'print' ? 'print' : 'download');
+  const selection: PayrollSelection = {
+    selectedIds: selectedEmployees,
+    onToggle: (employeeId) => setSelectedEmployees((current) => {
+      const next = new Set(current);
+      if (next.has(employeeId)) next.delete(employeeId);
+      else next.add(employeeId);
+      return next;
+    }),
+    onTogglePage: (employeeIds, checked) => setSelectedEmployees((current) => {
+      const next = new Set(current);
+      for (const id of employeeIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
       }
-      else await exportExcel(fullPayroll);
+      return next;
+    }),
+  };
+  const choosing = employeeScope === 'selected';
+
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}$/.test(month) || !selectionKey) {
+      setPayroll(null);
+      setLoadError('');
+      setIsLoading(false);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setIsLoading(true);
+    setLoadError('');
+    void getLocationsPayroll({ month, locationIds: selectionKey.split(','), page, limit: PAYROLL_PAGE_SIZE }, controller.signal)
+      .then((result) => {
+        setPayroll(result);
+        if (result.pagination && result.pagination.page !== page) setPage(result.pagination.page);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setPayroll(null);
+        setLoadError(errorMessage(error, 'Unable to load payroll.'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+    return () => controller.abort();
+  }, [month, page, selectionKey]);
+
+  const canExport = selected.length > 0 && Boolean(payroll) && (payroll?.summary.employees ?? 0) > 0 && !isLoading && !exporting
+    && (!choosing || selectedEmployees.size > 0);
+
+  async function runExport(kind: ExportKind) {
+    setExporting(kind);
+    try {
+      const result = await createPayrollRun({
+        month,
+        locationIds: selected,
+        format: kind,
+        ...(choosing ? { employeeIds: [...selectedEmployees] } : {}),
+      });
+      setSelected([]);
+      setRefreshKey((key) => key + 1);
+      toast({
+        title: `${result.batch.reference} saved`,
+        description: result.batch.partial
+          ? `${result.batch.employees} selected employee${result.batch.employees === 1 ? '' : 's'} exported. Their locations stay pending because not everyone was included.`
+          : `${result.batch.locations.length} location${result.batch.locations.length === 1 ? '' : 's'} marked as printed for ${result.payroll.periodLabel}.`,
+        status: 'success',
+        position: 'top',
+      });
+      await makeExport(kind, result.payroll, result.batch.reference);
     } catch (error) {
       toast({ title: errorMessage(error, 'Unable to export payroll.'), status: 'error', position: 'top' });
+      if (error instanceof ApiError && error.status === 409) setRefreshKey((key) => key + 1);
     } finally {
-      setIsExporting(null);
+      setExporting(null);
     }
   }
 
-  async function exportExcel(payroll: PayrollResponse) {
-    const workbook = await createWorkbook();
-    const payPeriod = `${payroll.fromDate} to ${payroll.toDate}`;
-    addTableSheet(workbook, 'Payroll', [
-      { header: 'Employee', width: 24, value: (line) => line.employeeName },
-      { header: 'Email', width: 30, value: (line) => line.employeeEmail },
-      { header: 'Organization', width: 24, value: (line) => line.organizationName || 'All organizations' },
-      { header: 'Currency', width: 12, value: (line) => line.currency },
-      { header: 'Bank name', width: 20, value: (line) => line.bankName },
-      { header: 'Branch', width: 18, value: (line) => line.bankBranch },
-      { header: 'Account holder', width: 24, value: (line) => line.bankAccountHolder },
-      { header: 'Account number', width: 20, value: (line) => line.bankAccountNumber },
-      { header: 'Routing / IFSC', width: 18, value: (line) => line.bankRoutingCode },
-      { header: 'Daily wage', width: 16, value: (line) => line.dailyWage ?? line.dailySalary },
-      { header: 'Present', width: 10, value: (line) => line.presentDays },
-      { header: 'Absent', width: 10, value: (line) => line.absentDays },
-      { header: 'Paid days', width: 12, value: (line) => line.paidDays },
-      { header: 'Wages', width: 14, value: (line) => line.wages ?? line.grossPay },
-      { header: 'Bonus', width: 12, value: (line) => line.bonus ?? 0 },
-      { header: 'Total wages', width: 14, value: (line) => line.totalWages ?? line.grossPay },
-      { header: 'EPF', width: 10, value: (line) => line.epf ?? 0 },
-      { header: 'ESI', width: 10, value: (line) => line.esi ?? 0 },
-      { header: 'Net payable', width: 16, value: (line) => line.netPay ?? line.grossPay },
-      { header: 'Pay period', width: 26, value: () => payPeriod },
-    ], payroll.lines);
-
-    addRowsSheet(workbook, 'Totals', [
-      ['Organization scope', payrollOrganizationName || 'All organizations'],
-      ['Pay period', payPeriod],
-      ['Employee scope', payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected employees`],
-      [],
-      ['Currency', 'Total payable'],
-      ...(payroll.netTotals ?? payroll.totals).map(({ currency, total }) => [currency, total]),
-    ], [24, 30]);
-    await downloadWorkbook(workbook, `payroll-${payroll.fromDate}-to-${payroll.toDate}.xlsx`);
+  async function reprint(batch: BankInvoiceBatch, kind: ExportKind) {
+    setBusyBatch(`${batch.id}:${kind}`);
+    try {
+      const result = await getPayrollRun(batch.id);
+      await makeExport(kind, result.payroll, result.batch.reference);
+      const updated = await logPayrollRunActivity(batch.id, kind);
+      setBatches((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+    } catch (error) {
+      toast({ title: errorMessage(error, 'Unable to export payroll again.'), status: 'error', position: 'top' });
+    } finally {
+      setBusyBatch(null);
+    }
   }
 
-  const organizationScope = selectedOrganizationName || 'All organizations';
-  const runSummary = scope === 'all'
-    ? `All ${employeeTotal} assigned employees · ${organizationScope} · ${periodLabel(fromDate, toDate)}`
-    : `${selectedEmployeeIds.length} selected employee${selectedEmployeeIds.length === 1 ? '' : 's'} · ${organizationScope} · ${periodLabel(fromDate, toDate)}`;
+  async function cancelBatch(batch: BankInvoiceBatch, location: BankInvoiceBatch['locations'][number]) {
+    try {
+      await cancelPayrollRun(batch.id, location.locationId);
+      setRefreshKey((key) => key + 1);
+      toast({ title: `${location.locationName} cancelled`, description: `It is pending again. Other locations on ${batch.reference} stay printed.`, status: 'success', position: 'top' });
+    } catch (error) {
+      toast({ title: errorMessage(error, 'Unable to cancel the payroll run.'), status: 'error', position: 'top' });
+    }
+  }
 
   return (
     <Stack spacing={6}>
       <PageHeader
         eyebrow="Finance"
         title="Payroll"
-        description="Run attendance-based payroll for any period and download salary slips."
+        description="Pick locations from any organizations, then download salary slips, Excel or print. Exported locations are marked as printed for the month, so only pending ones are left to do."
       />
 
-      {payroll ? <PayrollSummary payroll={payroll} /> : null}
+      {selected.length > 0 ? <PayrollSummary payroll={payroll} /> : null}
 
       <ContentCard
-        noPadding
-        icon={<WalletIcon boxSize={5} />}
-        title="Run payroll"
-        subtitle="Pick a pay period and who to include, then generate."
-        toolbar={(
-          <FilterBar variant="inset">
-            <PeriodFields
-              fromDate={fromDate}
-              toDate={toDate}
-              onChange={(range) => {
-                setRange(range);
-                const isValid = Boolean(range.fromDate && range.toDate) && range.fromDate <= range.toDate;
-                setRunQuery((current) => (current && isValid ? { ...current, ...range } : null));
-              }}
-            />
-            <FilterField label="Organization" flex={{ base: '1 1 100%', md: '0 1 260px' }}>
-              <FilterSelect
-                label="Filter payroll by organization"
-                value={organizationId}
-                onChange={changeOrganization}
-                options={[
-                  { value: '', label: 'All organizations' },
-                  ...organizations.map((organization) => ({ value: organization.id as string, label: organizationName(organization.id as string) })),
-                ]}
-              />
-            </FilterField>
-            <FilterField label="Employees" flex={{ base: '1 1 100%', md: '0 0 280px' }}>
-              <ScopeToggle scope={scope} onChange={changeScope} />
-            </FilterField>
-          </FilterBar>
-        )}
-        footer={(
-          <Flex justify="space-between" align="center" gap={3} flexWrap="wrap">
-            <HStack spacing={2} color="slate.600" fontSize="sm" minW={0}>
-              <InfoOutlineIcon color="brand.500" />
-              <Text noOfLines={1}>{runSummary}</Text>
-            </HStack>
+        icon={<MapPinIcon boxSize={5} />}
+        title="Locations"
+        subtitle={locationsData ? `${locationsData.periodLabel} · tick locations from one or more organizations to run payroll for them together` : 'Choose a month'}
+        actions={(
+          <HStack spacing={3} align="flex-end">
             <ActionButton
-              borderRadius="full"
-              px={6}
-              leftIcon={<WalletIcon boxSize={4} />}
-              isLoading={isGenerating}
-              loadingText="Generating"
-              isDisabled={!canGenerate}
-              onClick={generatePayroll}
+              tone={showHistory ? 'primary' : 'neutral'}
+              h="40px"
+              leftIcon={showHistory ? <WalletIcon boxSize={4} /> : <PrintIcon boxSize={4} />}
+              onClick={() => setShowHistory((value) => !value)}
             >
-              Generate payroll
+              {showHistory ? 'Payroll results' : `Printed history${batchesLoading ? '' : ` (${batches.length})`}`}
             </ActionButton>
-          </Flex>
+            <FilterField label="Month" flex="0 0 180px">
+              <FilterInput aria-label="Payroll month" type="month" value={month} max={monthValue(new Date())} onChange={(event) => event.target.value && setMonth(event.target.value)} />
+            </FilterField>
+          </HStack>
         )}
       >
-        {invalidDateRange ? (
-          <Box p={4}><Alert status="error" borderRadius="md">{fromDate && toDate ? 'The start date must be on or before the end date.' : 'Choose both a start and an end date.'}</Alert></Box>
-        ) : scope === 'all' ? (
-          <HStack spacing={4} px={{ base: 4, md: 5 }} py={5}>
-            <Box display="grid" placeItems="center" flexShrink={0} w="44px" h="44px" borderRadius="12px" bg="brand.50" color="brand.600">
-              <PeopleIcon boxSize={5} />
-            </Box>
-            <Box>
-              <Text fontWeight="700" color="slate.900">
-                {isLoadingEmployees && employeeTotal === 0 ? 'Counting employees…' : `${employeeTotal} assigned employee${employeeTotal === 1 ? '' : 's'} will be included`}
-              </Text>
-              <Text fontSize="sm" color="slate.500">
-                {selectedOrganizationName ? `Every location of ${selectedOrganizationName}.` : 'Across every organization and location.'} Switch to “Choose employees” to pick specific people.
-              </Text>
-            </Box>
-          </HStack>
-        ) : (
-          <Box>
-            <Flex px={{ base: 4, md: 5 }} pt={4} gap={3} justify="space-between" align="center" flexWrap="wrap">
-              <SearchInput
-                maxW={{ md: '360px' }}
-                flex="1"
-                value={employeeSearch}
-                onChange={(value) => { setEmployeeSearch(value); setEmployeePage(1); }}
-                placeholder="Search employees..."
-                label="Search employees for payroll"
-              />
-              <HStack spacing={2}>
-                <Box px={3} py={1} borderRadius="full" bg={selectedEmployeeIds.length ? 'brand.500' : 'slate.100'} color={selectedEmployeeIds.length ? 'white' : 'slate.500'} fontSize="xs" fontWeight="700">
-                  {selectedEmployeeIds.length} selected
-                </Box>
-                <Button size="sm" variant="outline" borderRadius="full" borderColor="slate.200" color="slate.700" isDisabled={employees.length === 0 || isLoadingEmployees} onClick={togglePage}>
-                  {allOnPageSelected ? 'Unselect page' : 'Select page'}
-                </Button>
-                <Button size="sm" variant="ghost" borderRadius="full" color="slate.600" isDisabled={selectedEmployeeIds.length === 0} onClick={() => { setSelectedEmployeeIds([]); setRunQuery(null); }}>
-                  Clear
-                </Button>
-              </HStack>
-            </Flex>
-
-            <Box px={{ base: 4, md: 5 }} py={4}>
-              {employeeError ? (
-                <Alert status="error" borderRadius="md">{employeeError}</Alert>
-              ) : isLoadingEmployees && employees.length === 0 ? (
-                <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={3}>
-                  {Array.from({ length: 6 }, (_, index) => <Skeleton key={index} h="64px" borderRadius="12px" />)}
-                </SimpleGrid>
-              ) : employees.length > 0 ? (
-                <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={3} opacity={isLoadingEmployees ? 0.6 : 1}>
-                  {employees.map((employee) => (
-                    <EmployeeChoice
-                      key={employee.id}
-                      employee={employee}
-                      isSelected={selectedEmployeeIds.includes(employee.id)}
-                      onToggle={() => toggleEmployee(employee.id)}
-                    />
-                  ))}
-                </SimpleGrid>
-              ) : (
-                <EmptyState title={employeeSearch ? 'No matching employees' : 'No assigned employees'} description={employeeSearch ? 'Try a different name.' : 'Assign employees to a location first.'} />
-              )}
-            </Box>
-
-            {employeeTotal > 0 ? (
-              <TableFooter
-                page={employeePage}
-                pageSize={EMPLOYEE_PAGE_SIZE}
-                total={employeeTotal}
-                totalPages={Math.max(employeeTotalPages, 1)}
-                noun="employees"
-                isDisabled={isLoadingEmployees}
-                onPageChange={setEmployeePage}
-              />
-            ) : null}
-          </Box>
-        )}
+        <LocationPicker
+          data={locationsData}
+          isLoading={locationsLoading}
+          error={locationsError}
+          selected={selected}
+          onChange={(locationIds) => {
+            setSelected(locationIds);
+            if (locationIds.length > 0) setShowHistory(false);
+          }}
+        />
       </ContentCard>
 
-      {generationError ? <Alert status="error" borderRadius="md">{generationError}</Alert> : null}
-
-      {payroll ? (
-        <Stack spacing={5}>
-          <ContentCard
-            noPadding
-            icon={<PeopleIcon boxSize={5} />}
-            title="Payroll results"
-            subtitle={`${periodLabel(payroll.fromDate, payroll.toDate)} · ${payrollOrganizationName || 'All organizations'} · ${payrollScope === 'all' ? 'All employees' : `${payroll.summary.employees} selected`}`}
-            actions={(
-              <>
-                <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'slips'} onClick={() => void runExport('slips')}>
-                  Salary slips
-                </ActionButton>
-                <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'excel'} onClick={() => void runExport('excel')}>
-                  Excel
-                </ActionButton>
-                <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={payroll.summary.employees === 0 || Boolean(isExporting)} isLoading={isExporting === 'print'} onClick={() => void runExport('print')}>
-                  Print
-                </ActionButton>
-              </>
-            )}
-          >
-            <PayrollTable
-              payroll={payroll}
-              pageSize={payrollState.pageSize}
-              onPageChange={payrollState.setPage}
-              isLoading={payrollState.isLoading}
-              emptyTitle="No payroll lines"
-              emptyDescription="None of the chosen employees have attendance in this period."
-            />
-          </ContentCard>
-        </Stack>
-      ) : !isGenerating ? (
-        <Box bg="white" border="1px dashed" borderColor="slate.300" borderRadius="lg">
-          <EmptyState
-            icon={<WalletIcon boxSize={5} />}
-            title="No payroll generated yet"
-            description="Choose a period above and click “Generate payroll” to see totals, attendance and salary slips."
+      {showHistory ? (
+        <ContentCard
+          noPadding
+          icon={<PrintIcon boxSize={5} />}
+          title="Printed history"
+          subtitle={locationsData ? `Payroll exported for ${locationsData.periodLabel}. Cancel an entry to make its locations pending again.` : 'Payroll exported this month'}
+          actions={(
+            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
+              Back to payroll results
+            </ActionButton>
+          )}
+        >
+          <PrintedHistory
+            variant="payroll"
+            batches={batches}
+            isLoading={batchesLoading}
+            error={batchesError}
+            busyId={busyBatch}
+            onReprint={(batch, kind) => void reprint(batch, kind)}
+            onCancel={cancelBatch}
           />
-        </Box>
-      ) : null}
+        </ContentCard>
+      ) : (
+        <ContentCard
+          noPadding
+          icon={<PeopleIcon boxSize={5} />}
+          title="Payroll results"
+          subtitle={selected.length === 0
+            ? 'Select locations above to see their payroll'
+            : !payroll ? 'Loading…'
+              : choosing
+                ? `${payroll.periodLabel} · ${selectedEmployees.size} of ${payroll.summary.employees} employees chosen · locations stay pending unless everyone is chosen`
+                : `${payroll.periodLabel} · all ${payroll.summary.employees} employees · exporting marks the selected locations as printed`}
+          toolbar={selected.length > 0 ? (
+            <FilterBar variant="inset">
+              <FilterField label="Employees" flex={{ base: '1 1 100%', md: '0 0 300px' }}>
+                <ScopeToggle
+                  scope={employeeScope}
+                  onChange={(scope) => {
+                    setEmployeeScope(scope);
+                    setSelectedEmployees(new Set());
+                  }}
+                />
+              </FilterField>
+              {choosing ? (
+                <HStack spacing={2} alignSelf="flex-end" h="40px">
+                  <Box px={3} py={1} borderRadius="full" bg={selectedEmployees.size ? 'brand.500' : 'slate.100'} color={selectedEmployees.size ? 'white' : 'slate.500'} fontSize="xs" fontWeight="700">
+                    {selectedEmployees.size} selected
+                  </Box>
+                  <Button size="sm" variant="ghost" borderRadius="full" color="slate.600" isDisabled={selectedEmployees.size === 0} onClick={() => setSelectedEmployees(new Set())}>
+                    Clear
+                  </Button>
+                  <Text fontSize="xs" color="slate.500">Tick employees below; selections are kept across pages.</Text>
+                </HStack>
+              ) : null}
+            </FilterBar>
+          ) : undefined}
+          actions={(
+            <>
+              <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
+                Salary slips
+              </ActionButton>
+              <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
+                Excel
+              </ActionButton>
+              <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+                Print
+              </ActionButton>
+            </>
+          )}
+        >
+          {loadError ? <Alert status="error" borderRadius="md" m={4} w="auto">{loadError}</Alert> : null}
+          <PayrollTable
+            payroll={selected.length > 0 ? payroll : null}
+            pageSize={PAYROLL_PAGE_SIZE}
+            onPageChange={setPage}
+            isLoading={isLoading}
+            selection={choosing ? selection : undefined}
+            emptyTitle={selected.length === 0 ? 'Select locations to run payroll' : 'No payroll lines'}
+            emptyDescription={selected.length === 0
+              ? 'Tick pending locations above. You can mix locations from different organizations in one run.'
+              : 'None of the employees at these locations have attendance this month.'}
+          />
+        </ContentCard>
+      )}
     </Stack>
   );
 }

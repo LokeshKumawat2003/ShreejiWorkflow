@@ -11,12 +11,13 @@ const {
   updateAttendanceSymbols,
 } = require('../services/attendanceService');
 const {
-  cancelBankInvoiceBatch,
-  createBankInvoiceBatch,
-  getBankInvoiceBatch,
-  listBankInvoiceBatches,
-  listBankInvoiceLocations,
-  logBankInvoiceActivity,
+  cancelDocumentBatch,
+  createDocumentBatch,
+  getDocumentBatch,
+  listDocumentBatches,
+  listDocumentLocations,
+  logDocumentActivity,
+  previewLocationsPayroll,
 } = require('../services/bankInvoiceService');
 const { clearAttendanceSheet, getAttendanceSheet, saveAttendanceSheet } = require('../services/attendanceSheetService');
 const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister } = require('../services/payrollService');
@@ -46,29 +47,23 @@ async function bankPayments(req, res) {
   return res.json(await calculateBankPayments(req.user, req.query));
 }
 
-async function bankInvoiceLocations(req, res) {
-  return res.json(await listBankInvoiceLocations(req.user, req.query));
+/** Handlers shared by bank letters and payroll runs; `kind` keeps their printed status separate. */
+function documentHandlers(kind) {
+  return {
+    locations: async (req, res) => res.json(await listDocumentLocations(req.user, req.query, kind)),
+    batches: async (req, res) => res.json(await listDocumentBatches(req.user, req.query, kind)),
+    create: async (req, res) => res.status(201).json(await createDocumentBatch(req.user, req.body || {}, kind)),
+    get: async (req, res) => res.json(await getDocumentBatch(req.user, req.params.id, kind)),
+    cancel: async (req, res) => res.json(await cancelDocumentBatch(req.user, req.params.id, req.body || {}, kind)),
+    activity: async (req, res) => res.json(await logDocumentActivity(req.user, req.params.id, req.body || {}, kind)),
+  };
 }
 
-async function bankInvoiceBatches(req, res) {
-  return res.json(await listBankInvoiceBatches(req.user, req.query));
-}
-
-async function createBankInvoice(req, res) {
-  return res.status(201).json(await createBankInvoiceBatch(req.user, req.body || {}));
-}
-
-async function bankInvoice(req, res) {
-  return res.json(await getBankInvoiceBatch(req.user, req.params.id));
-}
-
-async function cancelBankInvoice(req, res) {
-  return res.json(await cancelBankInvoiceBatch(req.user, req.params.id));
-}
-
-async function bankInvoiceActivity(req, res) {
-  return res.json(await logBankInvoiceActivity(req.user, req.params.id, req.body || {}));
-}
+const bankInvoiceHandlers = documentHandlers('bank');
+const payrollRunHandlers = {
+  ...documentHandlers('payroll'),
+  preview: async (req, res) => res.json(await previewLocationsPayroll(req.user, req.query)),
+};
 
 async function parse(req, res) {
   return res.json(await parseAttendanceSheet(req.user, {
@@ -123,14 +118,10 @@ async function uploadFile(req, res) {
 }
 
 module.exports = {
-  bankInvoice,
-  bankInvoiceActivity,
-  bankInvoiceBatches,
-  bankInvoiceLocations,
+  bankInvoiceHandlers,
   bankPayments,
   bulk,
-  cancelBankInvoice,
-  createBankInvoice,
+  payrollRunHandlers,
   clearSheet,
   history,
   list,

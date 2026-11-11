@@ -1,5 +1,5 @@
 import { CalendarIcon, CheckCircleIcon } from '@chakra-ui/icons';
-import { Box, Button, HStack, Text, Tooltip } from '@chakra-ui/react';
+import { Box, Button, Checkbox, HStack, Text, Tooltip } from '@chakra-ui/react';
 import type { ReactNode } from 'react';
 import {
 	DataTable,
@@ -203,7 +203,7 @@ const payrollColumns: DataTableColumn<PayrollLine>[] = [
 		render: (line) => (
 			<EntityCell
 				name={line.employeeName}
-				subtitle={[line.designation || line.jobTitle, line.organizationName].filter(Boolean).join(' · ') || line.employeeEmail}
+				subtitle={[line.designation || line.jobTitle, line.locationName, line.organizationName].filter(Boolean).join(' · ') || line.employeeEmail}
 				minW="220px"
 			/>
 		),
@@ -265,6 +265,38 @@ const payrollColumns: DataTableColumn<PayrollLine>[] = [
 	},
 ];
 
+export type PayrollSelection = {
+	selectedIds: Set<string>;
+	onToggle: (employeeId: string) => void;
+	onTogglePage: (employeeIds: string[], checked: boolean) => void;
+};
+
+function selectionColumn(lines: PayrollLine[], selection: PayrollSelection): DataTableColumn<PayrollLine> {
+	const pageIds = lines.map((line) => line.employeeId);
+	const selectedOnPage = pageIds.filter((id) => selection.selectedIds.has(id)).length;
+	return {
+		key: 'select',
+		width: '44px',
+		header: (
+			<Checkbox
+				colorScheme="brand"
+				aria-label="Select all employees on this page"
+				isChecked={pageIds.length > 0 && selectedOnPage === pageIds.length}
+				isIndeterminate={selectedOnPage > 0 && selectedOnPage < pageIds.length}
+				onChange={(event) => selection.onTogglePage(pageIds, event.target.checked)}
+			/>
+		),
+		render: (line) => (
+			<Checkbox
+				colorScheme="brand"
+				aria-label={`Select ${line.employeeName}`}
+				isChecked={selection.selectedIds.has(line.employeeId)}
+				onChange={() => selection.onToggle(line.employeeId)}
+			/>
+		),
+	};
+}
+
 type PayrollTableProps = {
 	payroll: PayrollResponse | null;
 	pageSize: number;
@@ -273,16 +305,19 @@ type PayrollTableProps = {
 	error?: string;
 	emptyTitle?: string;
 	emptyDescription?: string;
+	selection?: PayrollSelection;
 };
 
-export function PayrollTable({ payroll, pageSize, onPageChange, isLoading, error, emptyTitle = 'No payroll lines', emptyDescription }: PayrollTableProps) {
+export function PayrollTable({ payroll, pageSize, onPageChange, isLoading, error, emptyTitle = 'No payroll lines', emptyDescription, selection }: PayrollTableProps) {
 	const pagination = payroll?.pagination;
+	const columns = selection ? [selectionColumn(payroll?.lines ?? [], selection), ...payrollColumns] : payrollColumns;
 
 	return (
 		<DataTable
-			columns={payrollColumns}
+			columns={columns}
 			rows={payroll?.lines ?? []}
 			rowKey={(line) => line.employeeId}
+			onRowClick={selection ? (line) => selection.onToggle(line.employeeId) : undefined}
 			isLoading={isLoading}
 			error={error}
 			emptyTitle={emptyTitle}

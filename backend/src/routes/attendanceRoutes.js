@@ -1,14 +1,10 @@
 const express = require('express');
 const multer = require('multer');
 const {
-  bankInvoice,
-  bankInvoiceActivity,
-  bankInvoiceBatches,
-  bankInvoiceLocations,
+  bankInvoiceHandlers,
   bankPayments,
   bulk,
-  cancelBankInvoice,
-  createBankInvoice,
+  payrollRunHandlers,
   clearSheet,
   history,
   list,
@@ -67,12 +63,15 @@ router.get('/history', history);
 router.get('/payroll', payroll);
 router.get('/wage-register', wageRegister);
 router.get('/bank-payments', requireRole('admin'), bankPayments);
-router.get('/bank-invoice/locations', requireRole('admin'), bankInvoiceLocations);
-router.get('/bank-invoice/batches', requireRole('admin'), bankInvoiceBatches);
-router.post('/bank-invoice/batches', requireRole('admin'), createBankInvoice);
-router.get('/bank-invoice/batches/:id', requireRole('admin'), bankInvoice);
-router.post('/bank-invoice/batches/:id/cancel', requireRole('admin'), cancelBankInvoice);
-router.post('/bank-invoice/batches/:id/activity', requireRole('admin'), bankInvoiceActivity);
+for (const [prefix, handlers] of [['/bank-invoice', bankInvoiceHandlers], ['/payroll-runs', payrollRunHandlers]]) {
+  router.get(`${prefix}/locations`, requireRole('admin'), handlers.locations);
+  router.get(`${prefix}/batches`, requireRole('admin'), handlers.batches);
+  router.post(`${prefix}/batches`, requireRole('admin'), handlers.create);
+  router.get(`${prefix}/batches/:id`, requireRole('admin'), handlers.get);
+  router.post(`${prefix}/batches/:id/cancel`, requireRole('admin'), handlers.cancel);
+  router.post(`${prefix}/batches/:id/activity`, requireRole('admin'), handlers.activity);
+}
+router.get('/payroll-runs/preview', requireRole('admin'), payrollRunHandlers.preview);
 router.get('/register', register);
 router.get('/sheet', sheet);
 router.put('/sheet', saveSheet);

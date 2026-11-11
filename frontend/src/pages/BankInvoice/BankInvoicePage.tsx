@@ -292,11 +292,11 @@ function BankInvoicePage() {
 		}
 	}
 
-	async function cancelBatch(batch: BankInvoiceBatch) {
+	async function cancelBatch(batch: BankInvoiceBatch, location: BankInvoiceBatch['locations'][number]) {
 		try {
-			await cancelBankInvoiceBatch(batch.id);
+			await cancelBankInvoiceBatch(batch.id, location.locationId);
 			setRefreshKey((key) => key + 1);
-			toast({ title: `${batch.reference} cancelled`, description: 'Its locations are pending again.', status: 'success', position: 'top' });
+			toast({ title: `${location.locationName} cancelled`, description: `It is pending again. Other locations on ${batch.reference} stay printed.`, status: 'success', position: 'top' });
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to cancel the bank letter.'), status: 'error', position: 'top' });
 		}

@@ -1,7 +1,7 @@
 import { ChevronDownIcon, ChevronRightIcon } from '@chakra-ui/icons';
 import { Alert, Box, Button, ButtonGroup, Checkbox, Collapse, Flex, HStack, IconButton, Skeleton, Stack, Text } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
-import { EmptyState, SearchInput, StatusBadge, TableFooter } from '../../../components/ui';
+import { EmptyState, FilterSelect, SearchInput, StatusBadge, TableFooter } from '../../../components/ui';
 import type { BankInvoiceLocation, BankInvoiceLocationsResponse, BankInvoiceOrganization } from '../../../services/attendanceService';
 import { formatAmount } from '../../Payroll/components/PayrollShared';
 import { formatLetterDate } from '../utils/bankLetterExport';
@@ -39,12 +39,19 @@ export function printedOn(value: string | null) {
 function LocationPicker({ data, isLoading, error, selected, onChange }: LocationPickerProps) {
 	const [view, setView] = useState<View>('pending');
 	const [search, setSearch] = useState('');
+	const [organizationFilter, setOrganizationFilter] = useState('');
 	const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
 	const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+	const organizationOptions = useMemo(() => [
+		{ value: '', label: 'All organizations' },
+		...(data?.organizations ?? []).map((organization) => ({ value: organization.organizationId, label: organization.organizationName })),
+	], [data]);
 
 	const groups = useMemo<BankInvoiceOrganization[]>(() => {
 		const term = search.trim().toLowerCase();
 		return (data?.organizations ?? [])
+			.filter((organization) => !organizationFilter || organization.organizationId === organizationFilter)
 			.map((organization) => {
 				const organizationMatches = term ? organization.organizationName.toLowerCase().includes(term) : true;
 				return {
@@ -54,7 +61,7 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 				};
 			})
 			.filter((organization) => organization.locations.length > 0);
-	}, [data, search, view]);
+	}, [data, organizationFilter, search, view]);
 
 	const [page, setPage] = useState(1);
 	const totalPages = Math.max(1, Math.ceil(groups.length / ORGANIZATIONS_PER_PAGE));
@@ -63,7 +70,7 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 
 	useEffect(() => {
 		setPage(1);
-	}, [search, view, data?.month]);
+	}, [search, view, organizationFilter, data?.month]);
 
 	const selectedTotal = useMemo(() => (data?.organizations ?? [])
 		.flatMap((organization) => organization.locations)
@@ -111,9 +118,19 @@ function LocationPicker({ data, isLoading, error, selected, onChange }: Location
 						</Button>
 					))}
 				</ButtonGroup>
-				<Box flex={{ base: '1 1 auto', md: '0 1 320px' }}>
-					<SearchInput value={search} onChange={setSearch} placeholder="Organization or location..." label="Search locations" />
-				</Box>
+				<Flex gap={3} flex={{ base: '1 1 auto', md: '0 1 560px' }} direction={{ base: 'column', sm: 'row' }}>
+					<Box flex="1 1 220px">
+						<FilterSelect
+							label="Filter locations by organization"
+							value={organizationFilter}
+							onChange={setOrganizationFilter}
+							options={organizationOptions}
+						/>
+					</Box>
+					<Box flex="1 1 260px">
+						<SearchInput value={search} onChange={setSearch} placeholder="Organization or location..." label="Search locations" />
+					</Box>
+				</Flex>
 			</Flex>
 
 			{error ? <Alert status="error" borderRadius="md" fontSize="sm">{error}</Alert> : null}

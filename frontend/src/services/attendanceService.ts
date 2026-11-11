@@ -129,6 +129,8 @@ export type PayrollLine = {
   epf?: number;
   esi?: number;
   netPay?: number;
+  locationId?: string;
+  locationName?: string;
 };
 
 export type PayrollResponse = {
@@ -307,6 +309,7 @@ export type BankInvoiceLocationsResponse = {
 
 export type BankInvoiceBatch = {
   id: string;
+  kind: 'bank' | 'payroll';
   month: string;
   reference: string;
   referenceNumber: string;
@@ -315,6 +318,7 @@ export type BankInvoiceBatch = {
   skipMissing: boolean;
   format: 'pdf' | 'excel' | 'print';
   status: 'printed' | 'cancelled';
+  partial?: boolean;
   employees: number;
   total: number;
   locations: {
@@ -324,6 +328,8 @@ export type BankInvoiceBatch = {
     locationName: string;
     employees: number;
     total: number;
+    status: 'printed' | 'cancelled';
+    cancelledAt: string | null;
   }[];
   createdAt: string;
   cancelledAt: string | null;
@@ -333,6 +339,7 @@ export type BankInvoiceBatch = {
 export type BankInvoiceActivity = {
   action: 'pdf' | 'excel' | 'print' | 'cancel';
   reprint: boolean;
+  locationName: string;
   byName: string;
   at: string;
 };
@@ -374,8 +381,50 @@ export async function logBankInvoiceActivity(id: string, action: 'pdf' | 'excel'
   return data.batch;
 }
 
-export async function cancelBankInvoiceBatch(id: string) {
-  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/bank-invoice/batches/${id}/cancel`);
+export async function cancelBankInvoiceBatch(id: string, locationId?: string) {
+  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/bank-invoice/batches/${id}/cancel`, locationId ? { locationId } : {});
+  return data.batch;
+}
+
+export type LocationsPayrollResponse = PayrollResponse & { month: string; periodLabel: string };
+
+export type PayrollRunResponse = { batch: BankInvoiceBatch; payroll: LocationsPayrollResponse };
+
+export async function getPayrollRunLocations(month: string, signal?: AbortSignal) {
+  const { data } = await api.get<BankInvoiceLocationsResponse>('/attendance/payroll-runs/locations', { params: { month }, signal });
+  return data;
+}
+
+export async function getLocationsPayroll(params: { month: string; locationIds: string[]; page?: number; limit?: number }, signal?: AbortSignal) {
+  const { data } = await api.get<LocationsPayrollResponse>('/attendance/payroll-runs/preview', {
+    params: { ...params, locationIds: params.locationIds.join(',') },
+    signal,
+  });
+  return data;
+}
+
+export async function listPayrollRuns(month: string, signal?: AbortSignal) {
+  const { data } = await api.get<{ batches: BankInvoiceBatch[] }>('/attendance/payroll-runs/batches', { params: { month }, signal });
+  return data.batches;
+}
+
+export async function createPayrollRun(payload: { month: string; locationIds: string[]; employeeIds?: string[]; format: 'pdf' | 'excel' | 'print' }) {
+  const { data } = await api.post<PayrollRunResponse>('/attendance/payroll-runs/batches', payload);
+  return data;
+}
+
+export async function getPayrollRun(id: string) {
+  const { data } = await api.get<PayrollRunResponse>(`/attendance/payroll-runs/batches/${id}`);
+  return data;
+}
+
+export async function logPayrollRunActivity(id: string, action: 'pdf' | 'excel' | 'print') {
+  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/payroll-runs/batches/${id}/activity`, { action });
+  return data.batch;
+}
+
+export async function cancelPayrollRun(id: string, locationId?: string) {
+  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/payroll-runs/batches/${id}/cancel`, locationId ? { locationId } : {});
   return data.batch;
 }
 

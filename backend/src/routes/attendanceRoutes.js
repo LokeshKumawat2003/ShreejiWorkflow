@@ -1,8 +1,14 @@
 const express = require('express');
 const multer = require('multer');
 const {
+  bankInvoice,
+  bankInvoiceActivity,
+  bankInvoiceBatches,
+  bankInvoiceLocations,
   bankPayments,
   bulk,
+  cancelBankInvoice,
+  createBankInvoice,
   clearSheet,
   history,
   list,
@@ -61,6 +67,12 @@ router.get('/history', history);
 router.get('/payroll', payroll);
 router.get('/wage-register', wageRegister);
 router.get('/bank-payments', requireRole('admin'), bankPayments);
+router.get('/bank-invoice/locations', requireRole('admin'), bankInvoiceLocations);
+router.get('/bank-invoice/batches', requireRole('admin'), bankInvoiceBatches);
+router.post('/bank-invoice/batches', requireRole('admin'), createBankInvoice);
+router.get('/bank-invoice/batches/:id', requireRole('admin'), bankInvoice);
+router.post('/bank-invoice/batches/:id/cancel', requireRole('admin'), cancelBankInvoice);
+router.post('/bank-invoice/batches/:id/activity', requireRole('admin'), bankInvoiceActivity);
 router.get('/register', register);
 router.get('/sheet', sheet);
 router.put('/sheet', saveSheet);

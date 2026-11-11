@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DownloadIcon, InfoOutlineIcon, WarningTwoIcon } from '@chakra-ui/icons';
+import { CheckCircleIcon, DownloadIcon, InfoOutlineIcon } from '@chakra-ui/icons';
 import { Alert, AlertIcon, Box, Flex, FormControl, FormLabel, HStack, SimpleGrid, Stack, Switch, Text, useToast } from '@chakra-ui/react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -9,8 +9,8 @@ import {
 	FilterBar,
 	FilterField,
 	FilterInput,
-	FilterSelect,
 	FormInput,
+	MapPinIcon,
 	PageHeader,
 	PeopleIcon,
 	PrintIcon,
@@ -21,13 +21,25 @@ import {
 	type DataTableColumn,
 } from '../../components/ui';
 import { ApiError } from '../../services/api';
-import { getBankPayments, type BankPaymentRow, type BankPaymentsParams, type BankPaymentsResponse } from '../../services/attendanceService';
-import { listOrganizationLocations } from '../../services/locationService';
-import { listOrganizations } from '../../services/organizationService';
-import type { OrganizationLocation, User } from '../../types';
+import {
+	cancelBankInvoiceBatch,
+	createBankInvoiceBatch,
+	getBankInvoiceBatch,
+	getBankInvoiceLocations,
+	getBankPayments,
+	listBankInvoiceBatches,
+	logBankInvoiceActivity,
+	type BankInvoiceBatch,
+	type BankInvoiceLocationsResponse,
+	type BankPaymentRow,
+	type BankPaymentsParams,
+	type BankPaymentsResponse,
+} from '../../services/attendanceService';
 import { formatAmount } from '../Payroll/components/PayrollShared';
 import { fieldLabelStyles } from '../../components/ui/fieldStyles';
-import { exportBankLetterExcel, exportBankLetterPdf, formatLetterDate } from './utils/bankLetterExport';
+import LocationPicker, { isSelectable } from './components/LocationPicker';
+import PrintedHistory from './components/PrintedHistory';
+import { exportBankLetterExcel, exportBankLetterPdf, formatLetterDate, type BankLetterDetails } from './utils/bankLetterExport';
 
 const PAGE_SIZE = 10;
 
@@ -100,56 +112,102 @@ const columns: DataTableColumn<BankPaymentRow>[] = [
 	},
 ];
 
+type ExportKind = 'pdf' | 'excel' | 'print';
+
+async function makeLetter(kind: ExportKind, details: BankLetterDetails) {
+	if (kind === 'excel') await exportBankLetterExcel(details);
+	else await exportBankLetterPdf(details, kind === 'print' ? 'print' : 'download');
+}
+
 function BankInvoicePage() {
 	const toast = useToast();
 	const [month, setMonth] = useState(() => monthValue(new Date()));
-	const [organizationId, setOrganizationId] = useState('');
-	const [locationId, setLocationId] = useState('');
+	const [selected, setSelected] = useState<string[]>([]);
 	const [search, setSearch] = useState('');
 	const debouncedSearch = useDebounced(search);
 	const [page, setPage] = useState(1);
 	const [data, setData] = useState<BankPaymentsResponse | null>(null);
-	const [isLoading, setIsLoading] = useState(true);
+	const [isLoading, setIsLoading] = useState(false);
 	const [loadError, setLoadError] = useState('');
-	const [organizations, setOrganizations] = useState<User[]>([]);
-	const [locations, setLocations] = useState<OrganizationLocation[]>([]);
+	const [locationsData, setLocationsData] = useState<BankInvoiceLocationsResponse | null>(null);
+	const [locationsLoading, setLocationsLoading] = useState(true);
+	const [locationsError, setLocationsError] = useState('');
+	const [batches, setBatches] = useState<BankInvoiceBatch[]>([]);
+	const [batchesLoading, setBatchesLoading] = useState(true);
+	const [batchesError, setBatchesError] = useState('');
+	const [refreshKey, setRefreshKey] = useState(0);
 	const [letterDate, setLetterDate] = useState(todayValue);
 	const [referenceNumber, setReferenceNumber] = useState('01');
+	const [referenceEdited, setReferenceEdited] = useState(false);
 	const [chequeNumber, setChequeNumber] = useState('');
 	const [skipMissing, setSkipMissing] = useState(true);
-	const [exporting, setExporting] = useState<'pdf' | 'excel' | 'print' | null>(null);
+	const [exporting, setExporting] = useState<ExportKind | null>(null);
+	const [busyBatch, setBusyBatch] = useState<string | null>(null);
+	const [showHistory, setShowHistory] = useState(false);
 
 	useEffect(() => {
-		const controller = new AbortController();
-		void listOrganizations({ search: '', status: 'all', sort: 'name-asc', page: 1, limit: 100 }, controller.signal)
-			.then((result) => setOrganizations(result.organizations))
-			.catch(() => undefined);
-		return () => controller.abort();
-	}, []);
+		setSelected([]);
+		setReferenceEdited(false);
+	}, [month]);
 
 	useEffect(() => {
-		setLocations([]);
-		if (!organizationId) return undefined;
+		if (!/^\d{4}-\d{2}$/.test(month)) return undefined;
 		const controller = new AbortController();
-		void listOrganizationLocations(organizationId, {}, controller.signal)
-			.then((result) => setLocations(result.locations))
-			.catch(() => undefined);
+		setLocationsLoading(true);
+		setLocationsError('');
+		setBatchesLoading(true);
+		setBatchesError('');
+		void getBankInvoiceLocations(month, controller.signal)
+			.then((result) => {
+				setLocationsData(result);
+				const selectable = new Set(result.organizations.flatMap((organization) => organization.locations).filter(isSelectable).map((location) => location.locationId));
+				setSelected((current) => {
+					const kept = current.filter((id) => selectable.has(id));
+					return kept.length === current.length ? current : kept;
+				});
+			})
+			.catch((error: unknown) => {
+				if (controller.signal.aborted) return;
+				setLocationsData(null);
+				setLocationsError(errorMessage(error, 'Unable to load locations.'));
+			})
+			.finally(() => {
+				if (!controller.signal.aborted) setLocationsLoading(false);
+			});
+		void listBankInvoiceBatches(month, controller.signal)
+			.then(setBatches)
+			.catch((error: unknown) => {
+				if (controller.signal.aborted) return;
+				setBatches([]);
+				setBatchesError(errorMessage(error, 'Unable to load printed letters.'));
+			})
+			.finally(() => {
+				if (!controller.signal.aborted) setBatchesLoading(false);
+			});
 		return () => controller.abort();
-	}, [organizationId]);
+	}, [month, refreshKey]);
+
+	useEffect(() => {
+		if (locationsData && !referenceEdited) setReferenceNumber(locationsData.nextReference);
+	}, [locationsData, referenceEdited]);
 
 	const query = useMemo<BankPaymentsParams>(() => ({
 		month,
-		organizationId: organizationId || undefined,
-		locationId: locationId || undefined,
+		locationIds: [...selected].sort(),
 		search: debouncedSearch.trim() || undefined,
-	}), [debouncedSearch, locationId, month, organizationId]);
+	}), [debouncedSearch, month, selected]);
 
 	useEffect(() => {
 		setPage(1);
 	}, [query]);
 
 	useEffect(() => {
-		if (!/^\d{4}-\d{2}$/.test(month)) return undefined;
+		if (!/^\d{4}-\d{2}$/.test(month) || selected.length === 0) {
+			setData(null);
+			setLoadError('');
+			setIsLoading(false);
+			return undefined;
+		}
 		const controller = new AbortController();
 		setIsLoading(true);
 		setLoadError('');
@@ -167,25 +225,80 @@ function BankInvoicePage() {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [month, page, query]);
+	}, [month, page, query, selected.length]);
 
 	const summary = data?.summary;
 	const payable = summary ? (skipMissing ? summary.employees - summary.missingBankDetails : summary.employees) : 0;
-	const reference = data ? `${data.referencePrefix} ${referenceNumber.trim() || '01'}` : '';
-	const canExport = Boolean(data) && payable > 0 && !isLoading && !exporting && Boolean(letterDate);
+	const referencePrefix = locationsData?.referencePrefix ?? data?.referencePrefix ?? '';
+	const reference = referencePrefix ? `${referencePrefix} ${referenceNumber.trim() || '01'}` : '';
+	const canExport = selected.length > 0 && Boolean(data) && !debouncedSearch.trim() && payable > 0 && !isLoading && !exporting && Boolean(letterDate);
+	const printedCount = batches.filter((batch) => batch.status === 'printed').length;
 
-	async function runExport(kind: 'pdf' | 'excel' | 'print') {
+	async function runExport(kind: ExportKind) {
 		setExporting(kind);
 		try {
-			const full = await getBankPayments(query);
-			const rows = skipMissing ? full.rows.filter((row) => !row.missingBankDetails) : full.rows;
-			const details = { letter: full.letter, reference: `${full.referencePrefix} ${referenceNumber.trim() || '01'}`, date: letterDate, chequeNumber, rows, month: full.month };
-			if (kind === 'pdf' || kind === 'print') await exportBankLetterPdf(details, kind === 'print' ? 'print' : 'download');
-			else await exportBankLetterExcel(details);
+			const result = await createBankInvoiceBatch({
+				month,
+				locationIds: selected,
+				letterDate,
+				referenceNumber: referenceNumber.trim(),
+				chequeNumber: chequeNumber.trim(),
+				skipMissing,
+				format: kind,
+			});
+			setSelected([]);
+			setReferenceEdited(false);
+			setRefreshKey((key) => key + 1);
+			toast({
+				title: `${result.batch.reference} saved`,
+				description: `${result.batch.locations.length} location${result.batch.locations.length === 1 ? '' : 's'} marked as printed for ${result.periodLabel}.`,
+				status: 'success',
+				position: 'top',
+			});
+			await makeLetter(kind, {
+				letter: result.letter,
+				reference: result.batch.reference,
+				date: result.batch.letterDate,
+				chequeNumber: result.batch.chequeNumber,
+				rows: result.rows,
+				month: result.month,
+			});
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to create the bank letter.'), status: 'error', position: 'top' });
+			if (error instanceof ApiError && error.status === 409) setRefreshKey((key) => key + 1);
 		} finally {
 			setExporting(null);
+		}
+	}
+
+	async function reprint(batch: BankInvoiceBatch, kind: ExportKind) {
+		setBusyBatch(`${batch.id}:${kind}`);
+		try {
+			const result = await getBankInvoiceBatch(batch.id);
+			await makeLetter(kind, {
+				letter: result.letter,
+				reference: result.batch.reference,
+				date: result.batch.letterDate,
+				chequeNumber: result.batch.chequeNumber,
+				rows: result.rows,
+				month: result.month,
+			});
+			const updated = await logBankInvoiceActivity(batch.id, kind);
+			setBatches((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+		} catch (error) {
+			toast({ title: errorMessage(error, 'Unable to reprint the bank letter.'), status: 'error', position: 'top' });
+		} finally {
+			setBusyBatch(null);
+		}
+	}
+
+	async function cancelBatch(batch: BankInvoiceBatch) {
+		try {
+			await cancelBankInvoiceBatch(batch.id);
+			setRefreshKey((key) => key + 1);
+			toast({ title: `${batch.reference} cancelled`, description: 'Its locations are pending again.', status: 'success', position: 'top' });
+		} catch (error) {
+			toast({ title: errorMessage(error, 'Unable to cancel the bank letter.'), status: 'error', position: 'top' });
 		}
 	}
 
@@ -193,28 +306,31 @@ function BankInvoicePage() {
 		<Stack spacing={6}>
 			<PageHeader
 				title="Bank invoice"
-				description="NEFT payment request to the bank. Each amount is the employee's GROSS PAYMENT IN RS. from the location wage register (FORM XVII column N); account details come from the employee record."
+				description="NEFT payment request to the bank. Pick locations from any organizations, print one letter for them, and they are marked as printed for the month. Each amount is the employee's GROSS PAYMENT IN RS. from the location wage register (FORM XVII column N)."
 			/>
 
 			<StatStrip
 				items={[
-					{ label: 'Employees', value: summary ? summary.employees : null, helper: 'Paid in this month', color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
-					{ label: 'Total amount', value: summary ? formatAmount(summary.total) : null, helper: data ? data.periodLabel : 'Net payable', color: 'green.500', icon: <WalletIcon boxSize={5} /> },
-					{ label: 'Banks', value: summary ? summary.banks : null, helper: 'Different receiving banks', color: 'blue.500', icon: <CheckCircleIcon /> },
-					{
-						label: 'Missing details',
-						value: summary ? summary.missingBankDetails : null,
-						helper: 'No account, IFSC or bank',
-						color: summary?.missingBankDetails ? 'orange.400' : 'slate.400',
-						icon: <WarningTwoIcon />,
-					},
+					{ label: 'Pending locations', value: locationsData ? locationsData.summary.pending : null, helper: 'With payments, not printed yet', color: 'orange.400', icon: <MapPinIcon boxSize={5} /> },
+					{ label: 'Printed letters', value: batchesLoading ? null : printedCount, helper: locationsData ? `${locationsData.summary.printed} locations covered` : 'This month', color: 'green.500', icon: <CheckCircleIcon /> },
+					{ label: 'Selected employees', value: summary ? summary.employees : selected.length === 0 ? 0 : null, helper: `${selected.length} location${selected.length === 1 ? '' : 's'} selected`, color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
+					{ label: 'Selected amount', value: summary ? formatAmount(summary.total) : selected.length === 0 ? formatAmount(0) : null, helper: locationsData ? locationsData.periodLabel : 'Net payable', color: 'green.500', icon: <WalletIcon boxSize={5} /> },
 				]}
 			/>
 
 			<ContentCard title="Letter details" subtitle="Printed on the letter. The bank, account and signatory are in Settings → Bank letter.">
 				<SimpleGrid columns={{ base: 1, md: 2, xl: 4 }} spacing={4} alignItems="start">
 					<FormInput label="Letter date" type="date" isRequired value={letterDate} onChange={(event) => setLetterDate(event.target.value)} />
-					<FormInput label="Reference number" maxLength={10} value={referenceNumber} placeholder="01" onChange={(event) => setReferenceNumber(event.target.value)} />
+					<FormInput
+						label="Reference number"
+						maxLength={10}
+						value={referenceNumber}
+						placeholder="01"
+						onChange={(event) => {
+							setReferenceEdited(true);
+							setReferenceNumber(event.target.value);
+						}}
+					/>
 					<FormInput label="Cheque number" maxLength={30} inputMode="numeric" value={chequeNumber} placeholder="e.g. 628374" onChange={(event) => setChequeNumber(event.target.value)} />
 					<FormControl>
 						<FormLabel htmlFor="skip-missing" {...fieldLabelStyles}>Missing bank details</FormLabel>
@@ -255,10 +371,68 @@ function BankInvoicePage() {
 			</ContentCard>
 
 			<ContentCard
+				icon={<MapPinIcon boxSize={5} />}
+				title="Locations"
+				subtitle={locationsData ? `${locationsData.periodLabel} · tick locations from one or more organizations to put them on one letter` : 'Choose a month'}
+				actions={(
+					<HStack spacing={3} align="flex-end">
+						<ActionButton
+							tone={showHistory ? 'primary' : 'neutral'}
+							h="40px"
+							leftIcon={showHistory ? <WalletIcon boxSize={4} /> : <PrintIcon boxSize={4} />}
+							onClick={() => setShowHistory((value) => !value)}
+						>
+							{showHistory ? 'Payment list' : `Printed history${batchesLoading ? '' : ` (${batches.length})`}`}
+						</ActionButton>
+						<FilterField label="Month" flex="0 0 180px">
+							<FilterInput aria-label="Payment month" type="month" value={month} max={monthValue(new Date())} onChange={(event) => event.target.value && setMonth(event.target.value)} />
+						</FilterField>
+					</HStack>
+				)}
+			>
+				<LocationPicker
+					data={locationsData}
+					isLoading={locationsLoading}
+					error={locationsError}
+					selected={selected}
+					onChange={(locationIds) => {
+						setSelected(locationIds);
+						if (locationIds.length > 0) setShowHistory(false);
+					}}
+				/>
+			</ContentCard>
+
+			{showHistory ? (
+				<ContentCard
+					noPadding
+					icon={<PrintIcon boxSize={5} />}
+					title="Printed history"
+					subtitle={locationsData ? `Letters printed for ${locationsData.periodLabel}. Cancel a letter to make its locations pending again.` : 'Letters printed this month'}
+					actions={(
+						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
+							Back to payment list
+						</ActionButton>
+					)}
+				>
+					<PrintedHistory
+						batches={batches}
+						isLoading={batchesLoading}
+						error={batchesError}
+						busyId={busyBatch}
+						onReprint={(batch, kind) => void reprint(batch, kind)}
+						onCancel={cancelBatch}
+					/>
+				</ContentCard>
+			) : (
+			<ContentCard
 				noPadding
 				icon={<WalletIcon boxSize={5} />}
 				title="Payment list"
-				subtitle={data ? `${data.periodLabel} · ${payable} of ${summary?.employees ?? 0} employees go on the letter` : 'Employees paid in the selected month'}
+				subtitle={selected.length === 0
+					? 'Select locations above to prepare a letter'
+					: debouncedSearch.trim()
+						? 'Clear the search to print — the letter always includes every employee of the selected locations'
+						: data ? `${data.periodLabel} · ${payable} of ${summary?.employees ?? 0} employees go on the letter · printing marks the selected locations as printed` : 'Loading…'}
 				actions={(
 					<>
 						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
@@ -275,36 +449,9 @@ function BankInvoicePage() {
 				toolbar={(
 					<FilterBar
 						variant="inset"
-						canClear={Boolean(organizationId || locationId || search)}
-						onClear={() => {
-							setOrganizationId('');
-							setLocationId('');
-							setSearch('');
-						}}
+						canClear={Boolean(search)}
+						onClear={() => setSearch('')}
 					>
-						<FilterField label="Month" flex={{ base: '1 1 100%', md: '0 0 180px' }}>
-							<FilterInput aria-label="Payment month" type="month" value={month} max={monthValue(new Date())} onChange={(event) => event.target.value && setMonth(event.target.value)} />
-						</FilterField>
-						<FilterField label="Organization" flex={{ base: '1 1 100%', md: '0 0 220px' }}>
-							<FilterSelect
-								label="Filter by organization"
-								value={organizationId}
-								onChange={(value) => {
-									setOrganizationId(value);
-									setLocationId('');
-								}}
-								options={[{ value: '', label: 'All organizations' }, ...organizations.filter((organization) => organization.id).map((organization) => ({ value: organization.id as string, label: organization.organizationName || organization.name || organization.email }))]}
-							/>
-						</FilterField>
-						<FilterField label="Location" flex={{ base: '1 1 100%', md: '0 0 220px' }}>
-							<FilterSelect
-								label="Filter by location"
-								value={locationId}
-								isDisabled={!organizationId}
-								onChange={setLocationId}
-								options={[{ value: '', label: organizationId ? 'All locations' : 'Choose an organization' }, ...locations.map((location) => ({ value: location.id, label: location.workName || location.name }))]}
-							/>
-						</FilterField>
 						<FilterField label="Search" flex={{ base: '1 1 100%', md: '1 1 200px' }}>
 							<SearchInput value={search} onChange={setSearch} placeholder="Name, account, IFSC, bank..." label="Search bank payments" />
 						</FilterField>
@@ -327,8 +474,10 @@ function BankInvoicePage() {
 					size="sm"
 					isLoading={isLoading}
 					error={loadError}
-					emptyTitle="No payments for this month"
-					emptyDescription="Only employees on a location wage register with present days are listed. Try another month or filter."
+					emptyTitle={selected.length === 0 ? 'Select locations to prepare a letter' : 'No payments for these locations'}
+					emptyDescription={selected.length === 0
+						? 'Tick pending locations above. You can mix locations from different organizations on one letter.'
+						: 'Only employees on a location wage register with present days are listed.'}
 					summary={summary && summary.employees > 0 ? {
 						employee: <Text>Total{data?.pagination && data.pagination.totalPages > 1 ? ' (all pages)' : ''}</Text>,
 						amount: <Text color="green.600" fontWeight="800" whiteSpace="nowrap">{formatAmount(summary.total)}</Text>,
@@ -354,6 +503,7 @@ function BankInvoicePage() {
 					)}
 				/>
 			</ContentCard>
+			)}
 		</Stack>
 	);
 }

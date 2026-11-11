@@ -349,10 +349,21 @@ function monthRange(month) {
   return { year, monthNumber, fromDate: `${month}-01`, toDate: `${month}-${String(lastDay).padStart(2, '0')}` };
 }
 
+function parseLocationIds(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const ids = [...new Set((Array.isArray(value) ? value : String(value).split(','))
+    .map((id) => String(id).trim())
+    .filter(Boolean))];
+  if (ids.length > 500) throw httpError(400, 'Select 500 locations or fewer.');
+  if (ids.some((id) => !mongoose.isValidObjectId(id))) throw httpError(400, 'Invalid location id.');
+  return ids;
+}
+
 /** Bank transfer list for a month: one row per paid employee, amount = FORM XVII net payment (column N). */
 async function calculateBankPayments(user, options = {}) {
   if (user.role !== 'admin') throw httpError(403, 'Only admins can prepare bank payment letters.');
   const { year, monthNumber, fromDate, toDate } = monthRange(options.month);
+  const locationIds = parseLocationIds(options.locationIds);
   if (options.locationId && !options.organizationId) throw httpError(400, 'Select an organization for this location.');
 
   const organizationId = await resolveOrganizationId(user, options.organizationId);
@@ -360,6 +371,7 @@ async function calculateBankPayments(user, options = {}) {
   const locationFilter = {};
   if (organizationId) locationFilter.organizationId = organizationId;
   if (options.locationId) locationFilter._id = options.locationId;
+  else if (locationIds) locationFilter._id = { $in: locationIds };
 
   const [locations, organizations, wageSettings, letter] = await Promise.all([
     Location.find(locationFilter).lean(),
@@ -396,6 +408,8 @@ async function calculateBankPayments(user, options = {}) {
       serial: index + 1,
       employeeId: line.employeeId,
       employeeName: line.employeeName,
+      organizationId: String(location.organizationId),
+      locationId: String(location._id),
       organizationName: organizationNames.get(String(location.organizationId)) || '',
       locationName: location.workName || location.name || '',
       designation: line.designation,
@@ -440,4 +454,4 @@ async function calculateBankPayments(user, options = {}) {
   return { ...result, rows: rows.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: rows.length, totalPages } };
 }
 
-module.exports = { calculateBankPayments, calculatePayroll, calculatePayrollWithDeductions, calculateWageRegister, wageRegisterRow };
+module.exports = { calculateBankPayments, monthRange, parseLocationIds, calculatePayroll, calculatePayrollWithDeductions, calculateWageRegister, wageRegisterRow };

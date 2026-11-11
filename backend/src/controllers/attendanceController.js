@@ -10,6 +10,14 @@ const {
   parseAttendanceSheet,
   updateAttendanceSymbols,
 } = require('../services/attendanceService');
+const {
+  cancelBankInvoiceBatch,
+  createBankInvoiceBatch,
+  getBankInvoiceBatch,
+  listBankInvoiceBatches,
+  listBankInvoiceLocations,
+  logBankInvoiceActivity,
+} = require('../services/bankInvoiceService');
 const { clearAttendanceSheet, getAttendanceSheet, saveAttendanceSheet } = require('../services/attendanceSheetService');
 const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister } = require('../services/payrollService');
 
@@ -36,6 +44,30 @@ async function wageRegister(req, res) {
 
 async function bankPayments(req, res) {
   return res.json(await calculateBankPayments(req.user, req.query));
+}
+
+async function bankInvoiceLocations(req, res) {
+  return res.json(await listBankInvoiceLocations(req.user, req.query));
+}
+
+async function bankInvoiceBatches(req, res) {
+  return res.json(await listBankInvoiceBatches(req.user, req.query));
+}
+
+async function createBankInvoice(req, res) {
+  return res.status(201).json(await createBankInvoiceBatch(req.user, req.body || {}));
+}
+
+async function bankInvoice(req, res) {
+  return res.json(await getBankInvoiceBatch(req.user, req.params.id));
+}
+
+async function cancelBankInvoice(req, res) {
+  return res.json(await cancelBankInvoiceBatch(req.user, req.params.id));
+}
+
+async function bankInvoiceActivity(req, res) {
+  return res.json(await logBankInvoiceActivity(req.user, req.params.id, req.body || {}));
 }
 
 async function parse(req, res) {
@@ -91,8 +123,14 @@ async function uploadFile(req, res) {
 }
 
 module.exports = {
+  bankInvoice,
+  bankInvoiceActivity,
+  bankInvoiceBatches,
+  bankInvoiceLocations,
   bankPayments,
   bulk,
+  cancelBankInvoice,
+  createBankInvoice,
   clearSheet,
   history,
   list,

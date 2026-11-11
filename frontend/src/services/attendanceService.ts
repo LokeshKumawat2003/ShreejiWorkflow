@@ -230,6 +230,8 @@ export type BankPaymentRow = {
   serial: number;
   employeeId: string;
   employeeName: string;
+  organizationId: string;
+  locationId: string;
   organizationName: string;
   locationName: string;
   designation: string;
@@ -259,17 +261,122 @@ export type BankPaymentsParams = {
   month: string;
   organizationId?: string;
   locationId?: string;
+  locationIds?: string[];
   search?: string;
   page?: number;
   limit?: number;
 };
 
 export async function getBankPayments(params: BankPaymentsParams, signal?: AbortSignal) {
+  const { locationIds, ...rest } = params;
   const { data } = await api.get<BankPaymentsResponse>('/attendance/bank-payments', {
-    params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')),
+    params: Object.fromEntries(Object.entries({ ...rest, locationIds: locationIds?.join(',') })
+      .filter(([, value]) => value !== undefined && value !== '')),
     signal,
   });
   return data;
+}
+
+export type BankInvoiceLocation = {
+  locationId: string;
+  locationName: string;
+  locationStatus: 'active' | 'disabled';
+  employees: number;
+  total: number;
+  missingBankDetails: number;
+  status: 'pending' | 'printed';
+  batchId: string | null;
+  reference: string;
+  printedAt: string | null;
+};
+
+export type BankInvoiceOrganization = {
+  organizationId: string;
+  organizationName: string;
+  locations: BankInvoiceLocation[];
+};
+
+export type BankInvoiceLocationsResponse = {
+  month: string;
+  periodLabel: string;
+  referencePrefix: string;
+  nextReference: string;
+  organizations: BankInvoiceOrganization[];
+  summary: { locations: number; printed: number; pending: number };
+};
+
+export type BankInvoiceBatch = {
+  id: string;
+  month: string;
+  reference: string;
+  referenceNumber: string;
+  letterDate: string;
+  chequeNumber: string;
+  skipMissing: boolean;
+  format: 'pdf' | 'excel' | 'print';
+  status: 'printed' | 'cancelled';
+  employees: number;
+  total: number;
+  locations: {
+    organizationId: string;
+    locationId: string;
+    organizationName: string;
+    locationName: string;
+    employees: number;
+    total: number;
+  }[];
+  createdAt: string;
+  cancelledAt: string | null;
+  activity: BankInvoiceActivity[];
+};
+
+export type BankInvoiceActivity = {
+  action: 'pdf' | 'excel' | 'print' | 'cancel';
+  reprint: boolean;
+  byName: string;
+  at: string;
+};
+
+export type BankInvoiceBatchResponse = BankPaymentsResponse & { batch: BankInvoiceBatch };
+
+export type CreateBankInvoicePayload = {
+  month: string;
+  locationIds: string[];
+  letterDate: string;
+  referenceNumber: string;
+  chequeNumber: string;
+  skipMissing: boolean;
+  format: 'pdf' | 'excel' | 'print';
+};
+
+export async function getBankInvoiceLocations(month: string, signal?: AbortSignal) {
+  const { data } = await api.get<BankInvoiceLocationsResponse>('/attendance/bank-invoice/locations', { params: { month }, signal });
+  return data;
+}
+
+export async function listBankInvoiceBatches(month: string, signal?: AbortSignal) {
+  const { data } = await api.get<{ batches: BankInvoiceBatch[] }>('/attendance/bank-invoice/batches', { params: { month }, signal });
+  return data.batches;
+}
+
+export async function createBankInvoiceBatch(payload: CreateBankInvoicePayload) {
+  const { data } = await api.post<BankInvoiceBatchResponse>('/attendance/bank-invoice/batches', payload);
+  return data;
+}
+
+export async function getBankInvoiceBatch(id: string) {
+  const { data } = await api.get<BankInvoiceBatchResponse>(`/attendance/bank-invoice/batches/${id}`);
+  return data;
+}
+
+export async function logBankInvoiceActivity(id: string, action: 'pdf' | 'excel' | 'print') {
+  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/bank-invoice/batches/${id}/activity`, { action });
+  return data.batch;
+}
+
+export async function cancelBankInvoiceBatch(id: string) {
+  const { data } = await api.post<{ batch: BankInvoiceBatch }>(`/attendance/bank-invoice/batches/${id}/cancel`);
+  return data.batch;
 }
 
 export type AttendanceRegisterMark = 'P' | 'A' | 'HD' | 'L' | 'PL' | 'CL' | 'SL' | 'WO' | 'H' | '';

@@ -40,10 +40,6 @@ const STATUS_OPTIONS = [
 	{ value: 'disabled', label: 'Inactive' },
 ];
 
-function displayDate(value?: string) {
-	return value ? value.split('-').reverse().join('-') : '';
-}
-
 function errorMessage(error: unknown, fallback: string) {
 	return error instanceof ApiError ? error.message : fallback;
 }
@@ -181,18 +177,6 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 						</Wrap>
 					)
 					: <Text color="orange.500" fontSize="sm">Not set</Text>
-			),
-		}, {
-			key: 'validity',
-			header: 'Valid period',
-			render: (item: MasterDataItem) => (
-				item.effectiveFrom || item.effectiveTo
-					? (
-						<Text fontSize="sm" color="slate.700" whiteSpace="nowrap">
-							{displayDate(item.effectiveFrom) || 'Any time'} – {displayDate(item.effectiveTo) || 'No end'}
-						</Text>
-					)
-					: <Text fontSize="sm" color="slate.400">Not set</Text>
 			),
 		}] : []),
 		...(type === 'workName' ? [{

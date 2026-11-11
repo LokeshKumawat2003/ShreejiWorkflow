@@ -53,11 +53,6 @@ const PLACEHOLDERS: Record<MasterDataType, string> = {
 
 const RATE_KEY_SEPARATOR = '|';
 
-function todayDate() {
-	const now = new Date();
-	return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
 function displayDate(value?: string) {
 	return value ? value.split('-').reverse().join('-') : '';
 }
@@ -93,9 +88,6 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 	const [status, setStatus] = useState<MasterDataItem['status']>('active');
 	const [designations, setDesignations] = useState<string[]>([]);
 	const [rateInputs, setRateInputs] = useState<Record<string, string>>({});
-	const [effectiveFrom, setEffectiveFrom] = useState('');
-	const [effectiveTo, setEffectiveTo] = useState('');
-	const isDateRangeValid = !effectiveFrom || !effectiveTo || effectiveTo >= effectiveFrom;
 	const isWorkName = type === 'workName';
 	const isSkillCategory = type === 'skillCategory';
 	const { options, isLoading: isLoadingDesignations } = useMasterDataOptions(isOpen && (isWorkName || isSkillCategory));
@@ -116,8 +108,6 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 		setStatus(item?.status || 'active');
 		setDesignations([...(item?.designations || [])]);
 		setRateInputs(Object.fromEntries((item?.rates || []).map((rate) => [rateKey(rate.governmentType, rate.area), String(rate.salary)])));
-		setEffectiveFrom(item ? item.effectiveFrom || '' : todayDate());
-		setEffectiveTo(item?.effectiveTo || '');
 	}, [isOpen, item]);
 
 	function toggleDesignation(value: string, isChecked: boolean) {
@@ -141,8 +131,6 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 			...(isSkillCategory
 				? {
 					rates: filledRates.map(({ governmentType, area, key }) => ({ governmentType, area, salary: Number(rateInputs[key]) })),
-					effectiveFrom,
-					effectiveTo,
 				}
 				: {}),
 		});
@@ -180,27 +168,6 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 								placeholder={PLACEHOLDERS[type]}
 								helperText={usageHint}
 							/>
-							{isSkillCategory ? (
-								<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={3}>
-									<FormInput
-										label="Valid from"
-										type="date"
-										value={effectiveFrom}
-										max={effectiveTo || undefined}
-										helperText={item ? 'Set to today automatically when you change the salaries.' : 'Optional. Leave blank for no start date.'}
-										onChange={(event) => setEffectiveFrom(event.target.value)}
-									/>
-									<FormInput
-										label="Valid to"
-										type="date"
-										value={effectiveTo}
-										min={effectiveFrom || undefined}
-										isInvalid={!isDateRangeValid}
-										helperText={isDateRangeValid ? 'Optional. Leave blank if it has no end date.' : 'Must be on or after Valid from.'}
-										onChange={(event) => setEffectiveTo(event.target.value)}
-									/>
-								</SimpleGrid>
-							) : null}
 							{isSkillCategory ? (
 								<Box>
 									<Text mb={1} fontSize="sm" fontWeight="600" color="slate.700">
@@ -321,7 +288,7 @@ function MasterDataFormDialog({ isOpen, type, item, isSaving, error, onClose, on
 						type="submit"
 						form="master-data-form"
 						isLoading={isSaving}
-						isDisabled={!name.trim() || (isWorkName && designations.length === 0) || (isSkillCategory && (!areRatesValid || !isDateRangeValid))}
+						isDisabled={!name.trim() || (isWorkName && designations.length === 0) || (isSkillCategory && !areRatesValid)}
 					>
 						{item ? 'Save changes' : `Add ${label.singular}`}
 					</ActionButton>

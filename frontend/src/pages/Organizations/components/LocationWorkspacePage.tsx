@@ -1,12 +1,13 @@
 import { CalendarIcon, ChevronLeftIcon, InfoOutlineIcon, TimeIcon } from '@chakra-ui/icons';
 import { Avatar, Box, Button, Heading, HStack, SimpleGrid, Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
 import { useState, type ReactNode } from 'react';
-import { BuildingIcon, MapPinIcon, PeopleIcon, StatusBadge } from '../../../components/ui';
+import { BuildingIcon, FileIcon, MapPinIcon, PeopleIcon, StatusBadge } from '../../../components/ui';
 import type { OrganizationLocation, User } from '../../../types';
 import AttendanceRegisterGrid from '../../Attendance/components/AttendanceRegisterGrid';
 import AttendanceHistory from '../../Attendance/components/AttendanceHistory';
 import OrganizationEmployeesPage from './OrganizationEmployeesPage';
 import LocationPayrollPage from '../../Payroll/components/LocationPayrollPage';
+import LocationInvoicePage from '../../Invoice/LocationInvoicePage';
 
 type LocationWorkspacePageProps = {
 	organization: User;
@@ -19,6 +20,7 @@ const workspaceTabs = [
 	{ label: 'Attendance', icon: <CalendarIcon boxSize={3.5} /> },
 	{ label: 'Attendance history', icon: <TimeIcon boxSize={3.5} /> },
 	{ label: 'Payroll', icon: <Text as="span" fontSize="sm" fontWeight="800" lineHeight="1">₹</Text> },
+	{ label: 'Invoice', icon: <FileIcon boxSize={4} /> },
 ];
 
 function LocationWorkspacePage({ organization, location, onBack }: LocationWorkspacePageProps) {
@@ -126,6 +128,9 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 					</TabPanel>
 					<TabPanel p={0}>
 						{organizationId ? <LocationPayrollPage organizationId={organizationId} locationId={location.id} /> : missingId}
+					</TabPanel>
+					<TabPanel p={0}>
+						{organizationId ? <LocationInvoicePage organizationId={organizationId} locationId={location.id} /> : missingId}
 					</TabPanel>
 				</TabPanels>
 			</Stack>

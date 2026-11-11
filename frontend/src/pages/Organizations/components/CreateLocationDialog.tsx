@@ -39,6 +39,7 @@ const STATUS_OPTIONS = [
 function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: CreateLocationDialogProps) {
 	const [workName, setWorkName] = useState('');
 	const [opNumber, setOpNumber] = useState('');
+	const [loaReference, setLoaReference] = useState('');
 	const [address, setAddress] = useState('');
 	const [designation, setDesignation] = useState('');
 	const [status, setStatus] = useState<OrganizationLocation['status']>('active');
@@ -51,6 +52,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 		if (!isOpen) return;
 		setWorkName(location?.workName || '');
 		setOpNumber(location?.opNumber || '');
+		setLoaReference(location?.loaReference || '');
 		setAddress(location?.address || location?.name || '');
 		setDesignation(location?.designation || '');
 		setStatus(location?.status || 'active');
@@ -79,6 +81,7 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 		if (await onSave({
 			workName: workName.trim(),
 			opNumber: opNumber.trim(),
+			loaReference: loaReference.trim(),
 			name: address.trim(),
 			address: address.trim(),
 			designation,
@@ -117,9 +120,17 @@ function CreateLocationDialog({ isOpen, isSaving, location, onClose, onSave }: C
 											value={opNumber}
 											onChange={(event) => setOpNumber(event.target.value)}
 											placeholder="5200076637"
-											helperText="Printed on the wage register (FORM XVII)."
+											helperText="Printed on the wage register and invoice (SAP PO)."
 										/>
 									</SimpleGrid>
+									<FormInput
+										label="LOA / GeM contract reference"
+										maxLength={200}
+										value={loaReference}
+										onChange={(event) => setLoaReference(event.target.value)}
+										placeholder="GEMC-511687787412439"
+										helperText="Printed on the invoice breakup."
+									/>
 									<FormTextarea
 										label="Address"
 										isRequired

@@ -12,7 +12,8 @@
     "seed:transfer": "node src/scripts/seed-transfer-demo.js",
     "seed:malikhera": "node src/scripts/seed-malikhera.js",
     "seed:months": "node src/scripts/seed-three-months.js",
-    "test": "node --test"
+    "test": "node --test",
+    "verify:billing": "node src/scripts/verify-billing.js"
   },
   "keywords": [],
   "author": "",

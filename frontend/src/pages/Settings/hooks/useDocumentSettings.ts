@@ -7,6 +7,7 @@ import {
 	updateDocumentSettings,
 	type DocumentSettingsMap,
 	type DocumentType,
+	type InvoiceRatePeriod,
 } from '../../../services/settingsService';
 
 function pick<T extends DocumentType>(type: T, source: Partial<DocumentSettingsMap[T]>) {
@@ -26,11 +27,14 @@ function useDocumentSettings<T extends DocumentType>(type: T, savedMessage: stri
 	const [loadError, setLoadError] = useState('');
 	const [formError, setFormError] = useState('');
 
-	const apply = useCallback((settings: Partial<DocumentSettingsMap[T]> & { updatedAt?: string | null }) => {
+	const [rateHistory, setRateHistory] = useState<InvoiceRatePeriod[]>([]);
+
+	const apply = useCallback((settings: Partial<DocumentSettingsMap[T]> & { updatedAt?: string | null; rateHistory?: InvoiceRatePeriod[] }) => {
 		const next = pick(type, settings);
 		setValues(next);
 		setSaved(next);
 		setUpdatedAt(settings.updatedAt ?? null);
+		setRateHistory(settings.rateHistory ?? []);
 	}, [type]);
 
 	useEffect(() => {
@@ -75,6 +79,7 @@ function useDocumentSettings<T extends DocumentType>(type: T, savedMessage: stri
 		loadError,
 		formError,
 		updatedAt,
+		rateHistory,
 		submit,
 		discard: () => setValues(saved),
 		restoreDefaults: () => setValues(DOCUMENT_DEFAULTS[type]),

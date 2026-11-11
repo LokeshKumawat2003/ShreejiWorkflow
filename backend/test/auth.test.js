@@ -263,6 +263,8 @@ test('signup rejects unknown roles', async () => {
 
 test('organization updates preserve optional profile details when omitted', async () => {
   const originalFindOneAndUpdate = User.findOneAndUpdate;
+  const originalFindOne = User.findOne;
+  User.findOne = () => ({ select: async () => ({ posts: [], governmentType: 'Central', area: 'A - Inside city' }) });
   const currentOrganization = {
     id: '507f1f77bcf86cd799439011',
     name: 'Old Owner',
@@ -292,11 +294,14 @@ test('organization updates preserve optional profile details when omitted', asyn
     assert.equal(result.industry, currentOrganization.industry);
   } finally {
     User.findOneAndUpdate = originalFindOneAndUpdate;
+    User.findOne = originalFindOne;
   }
 });
 
 test('organization updates hash a new password and sign out existing sessions', async () => {
   const originalFindOneAndUpdate = User.findOneAndUpdate;
+  const originalFindOne = User.findOne;
+  User.findOne = () => ({ select: async () => ({ posts: [], governmentType: 'Central', area: 'A - Inside city' }) });
   let capturedUpdate;
   User.findOneAndUpdate = async (_filter, update) => {
     capturedUpdate = update;
@@ -318,6 +323,7 @@ test('organization updates hash a new password and sign out existing sessions', 
     await assert.rejects(updateOrganization('507f1f77bcf86cd799439011', { ...input, password: 'short' }), { statusCode: 400 });
   } finally {
     User.findOneAndUpdate = originalFindOneAndUpdate;
+    User.findOne = originalFindOne;
   }
 });
 
@@ -638,6 +644,8 @@ test('moving employees to another location only allows a matching designation', 
     employeeFind: Employee.find,
     employeeFindOne: Employee.findOne,
     employeeUpdateMany: Employee.updateMany,
+    userFind: User.find,
+    masterDataFind: MasterData.find,
   };
   const targetOrganizationId = '507f1f77bcf86cd799439021';
   const targetLocationId = '507f1f77bcf86cd799439022';
@@ -645,7 +653,9 @@ test('moving employees to another location only allows a matching designation', 
   let designation = 'Mali';
   let update;
 
-  User.findOne = async () => ({ id: targetOrganizationId, organizationName: 'Target Org' });
+  User.findOne = async () => ({ id: targetOrganizationId, organizationName: 'Target Org', governmentType: 'Central', area: 'A - Inside city' });
+  User.find = () => ({ select: () => ({ lean: async () => [] }) });
+  MasterData.find = () => ({ select: () => ({ lean: async () => [] }) });
   Location.findOne = async () => ({ id: targetLocationId });
   Location.findById = () => ({ select: async () => ({ designation: 'mali', status: 'active' }) });
   Employee.find = (filter) => {
@@ -699,6 +709,8 @@ test('moving employees to another location only allows a matching designation', 
     Employee.find = originals.employeeFind;
     Employee.findOne = originals.employeeFindOne;
     Employee.updateMany = originals.employeeUpdateMany;
+    User.find = originals.userFind;
+    MasterData.find = originals.masterDataFind;
   }
 });
 
@@ -1457,7 +1469,7 @@ test('document settings fall back to separate defaults until saved', async () =>
     assert.equal(letter.email, 'shreejicaretaker2007@gmail.com');
     assert.equal(letter.terms.split('\n').length, 3);
     assert.equal('phone' in slip, false);
-    await assert.rejects(getDocumentSettings('invoice'), (error) => error.statusCode === 404);
+    await assert.rejects(getDocumentSettings('unknown-document'), (error) => error.statusCode === 404);
   } finally {
     DocumentSettings.findOne = originalFindOne;
   }
@@ -1939,6 +1951,8 @@ test('employees at another location can be moved to a matching new location', as
   const originalLocationFindById = Location.findById;
   const originalEmployeeFind = Employee.find;
   const originalEmployeeUpdateMany = Employee.updateMany;
+  const originalUserFind = User.find;
+  const originalMasterDataFind = MasterData.find;
   const organizationId = '507f1f77bcf86cd799439011';
   const newLocationId = '507f1f77bcf86cd799439012';
   const oldLocationId = '507f1f77bcf86cd799439013';
@@ -1954,7 +1968,9 @@ test('employees at another location can be moved to a matching new location', as
   };
   let assignmentFilter;
   let assignmentUpdate;
-  User.findOne = async () => ({ id: organizationId });
+  User.findOne = async () => ({ id: organizationId, organizationName: 'Example Org', governmentType: 'Central', area: 'A - Inside city' });
+  User.find = () => ({ select: () => ({ lean: async () => [] }) });
+  MasterData.find = () => ({ select: () => ({ lean: async () => [] }) });
   Location.findOne = async () => ({ id: newLocationId });
   Location.findById = () => ({ select: async () => ({ designation: 'cook' }) });
   Employee.find = (filter) => {
@@ -1987,6 +2003,8 @@ test('employees at another location can be moved to a matching new location', as
     Location.findById = originalLocationFindById;
     Employee.find = originalEmployeeFind;
     Employee.updateMany = originalEmployeeUpdateMany;
+    User.find = originalUserFind;
+    MasterData.find = originalMasterDataFind;
   }
 });
 

@@ -6,6 +6,7 @@ import type { MasterDataType } from '../../types';
 import AppointmentLetterSettingsPanel from './components/AppointmentLetterSettingsPanel';
 import AttendanceSymbolsPanel from './components/AttendanceSymbolsPanel';
 import BankLetterSettingsPanel from './components/BankLetterSettingsPanel';
+import InvoiceSettingsPanel from './components/InvoiceSettingsPanel';
 import MasterDataPanel from './components/MasterDataPanel';
 import SalarySlipSettingsPanel from './components/SalarySlipSettingsPanel';
 import WageRegisterSettingsPanel from './components/WageRegisterSettingsPanel';
@@ -55,6 +56,7 @@ function SettingsPage() {
 						<SectionTab icon="✉">Appointment letter</SectionTab>
 						<SectionTab icon="▦">Wage register</SectionTab>
 						<SectionTab icon="🏦">Bank letter</SectionTab>
+						<SectionTab icon="🧾">Invoice</SectionTab>
 						<SectionTab icon="✓">Attendance symbols</SectionTab>
 						<SectionTab icon="≡">Master data</SectionTab>
 					</TabList>
@@ -72,6 +74,9 @@ function SettingsPage() {
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<BankLetterSettingsPanel />
+					</TabPanel>
+					<TabPanel px={0} pt={5}>
+						<InvoiceSettingsPanel />
 					</TabPanel>
 					<TabPanel px={0} pt={5}>
 						<AttendanceSymbolsPanel />

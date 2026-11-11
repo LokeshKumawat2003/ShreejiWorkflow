@@ -61,11 +61,31 @@ export type BankLetterSettings = {
 	signatureImage: string;
 };
 
+export type InvoiceSettings = {
+	title: string;
+	partyName: string;
+	vendorCode: string;
+	invoicePrefix: string;
+	startNumber: string;
+	epfRate: string;
+	esicRate: string;
+	bonusRate: string;
+	serviceChargeRate: string;
+	relievingRate: string;
+	monthDays: string;
+	labourQtyType: string;
+	ratesEffectiveFrom: string;
+	signatoryCompany: string;
+	signatoryTitle: string;
+	signatureImage: string;
+};
+
 export type DocumentSettingsMap = {
 	'salary-slip': SalarySlipSettings;
 	'appointment-letter': AppointmentLetterSettings;
 	'wage-register': WageRegisterSettings;
 	'bank-letter': BankLetterSettings;
+	invoice: InvoiceSettings;
 };
 
 export type DocumentType = keyof DocumentSettingsMap;
@@ -135,14 +155,37 @@ export const BANK_LETTER_DEFAULTS: BankLetterSettings = {
 	signatureImage: '',
 };
 
+export const INVOICE_DEFAULTS: InvoiceSettings = {
+	title: 'INVOICE BREAKUP',
+	partyName: 'M/s. Shreeji Caretaker Company, Kankroli, Distt- Rajsamand (Raj.)',
+	vendorCode: '2100020771',
+	invoicePrefix: 'AMC',
+	startNumber: '1',
+	epfRate: '13',
+	esicRate: '3.25',
+	bonusRate: '8.33',
+	serviceChargeRate: '0',
+	relievingRate: '16.6667',
+	monthDays: '26',
+	labourQtyType: 'mandays',
+	ratesEffectiveFrom: '',
+	signatoryCompany: 'For:-M/S.Shreeji Caretaker company',
+	signatoryTitle: 'Proprietor / manager',
+	signatureImage: '',
+};
+
 export const DOCUMENT_DEFAULTS: DocumentSettingsMap = {
 	'salary-slip': SALARY_SLIP_DEFAULTS,
 	'appointment-letter': APPOINTMENT_LETTER_DEFAULTS,
 	'wage-register': WAGE_REGISTER_DEFAULTS,
 	'bank-letter': BANK_LETTER_DEFAULTS,
+	invoice: INVOICE_DEFAULTS,
 };
 
-type Saved<T extends DocumentType> = DocumentSettingsMap[T] & { updatedAt: string | null };
+/** Earlier invoice rate values, valid from `fromMonth` up to the month before `toMonth`. */
+export type InvoiceRatePeriod = { values: Record<string, string>; fromMonth: string; toMonth: string; changedAt: string };
+
+type Saved<T extends DocumentType> = DocumentSettingsMap[T] & { updatedAt: string | null; rateHistory?: InvoiceRatePeriod[] };
 
 export async function getDocumentSettings<T extends DocumentType>(type: T, signal?: AbortSignal) {
 	const { data } = await api.get<{ settings: Saved<T> }>(`/settings/documents/${type}`, { signal });

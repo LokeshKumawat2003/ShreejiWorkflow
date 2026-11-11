@@ -222,13 +222,16 @@ function rateSignature(rates) {
  */
 function archiveRates(item, dateRange, datesEdited, timeZone) {
 	const today = todayIn(timeZone);
-	if (item.rates?.length) {
+	const effectiveTo = datesEdited && dateRange.effectiveFrom ? dateRange.effectiveFrom : today;
+	// Rates replaced from a date on or before their own start never applied, so they are not kept as a period.
+	const neverApplied = item.effectiveFrom && effectiveTo <= item.effectiveFrom;
+	if (item.rates?.length && !neverApplied) {
 		item.rateHistory = [
 			...(item.rateHistory || []),
 			{
 				rates: item.rates.map(({ governmentType, area, salary }) => ({ governmentType, area, salary })),
 				effectiveFrom: item.effectiveFrom || '',
-				effectiveTo: datesEdited && dateRange.effectiveFrom ? dateRange.effectiveFrom : today,
+				effectiveTo,
 				changedAt: new Date(),
 			},
 		];

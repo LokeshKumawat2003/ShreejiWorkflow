@@ -43,6 +43,52 @@ async function findSkillRate(skillCategory, organizationId) {
 	return rate.salary;
 }
 
+/**
+ * Basic pay of a category of skill for a government type and area as it was on `date` (YYYY-MM-DD).
+ * Archived rate periods run from `effectiveFrom` up to the day before `effectiveTo`; a period that ends on or
+ * before its start was replaced before it ever applied and is ignored. Dates older than every period use the
+ * oldest one. Returns null when no rate exists for that government type and area.
+ */
+function skillBasicOn(skillItem, governmentType, area, date) {
+	const rateIn = (rates) => (rates || []).find((entry) => sameText(entry.governmentType, governmentType) && sameText(entry.area, area));
+	const current = rateIn(skillItem.rates);
+	if (!skillItem.effectiveFrom || date >= skillItem.effectiveFrom) return current ? current.salary : null;
+	const periods = (skillItem.rateHistory || []).filter((period) => rateIn(period.rates)
+		&& !(period.effectiveFrom && period.effectiveTo && period.effectiveTo <= period.effectiveFrom));
+	const covering = [...periods].reverse().find((period) => (period.effectiveFrom || '') <= date && (!period.effectiveTo || date < period.effectiveTo));
+	const oldest = [...periods].sort((left, right) => (left.effectiveFrom || '').localeCompare(right.effectiveFrom || ''))[0];
+	const period = covering || oldest;
+	if (period) return rateIn(period.rates).salary;
+	return current ? current.salary : null;
+}
+
+/**
+ * Employees as they were paid on `date`: their basic pay always holds today's category of skill rate, so it is
+ * swapped for the rate valid on `date`, keeping their own DA and allowances. Employees with a basic pay that is not
+ * today's skill rate were set by hand and are left as they are.
+ */
+async function withSkillPayOn(employees, date) {
+	const codes = [...new Set(employees.map((employee) => String(employee.skillCategory || '').trim().toLowerCase()).filter(Boolean))];
+	const organizationIds = [...new Set(employees.map((employee) => String(employee.organizationId || '')).filter(Boolean))];
+	if (!date || codes.length === 0 || organizationIds.length === 0) return employees;
+	const [skills, organizations] = await Promise.all([
+		MasterData.find({ type: 'skillCategory', code: { $in: codes }, effectiveFrom: { $gt: date } }).select('code rates effectiveFrom rateHistory').lean(),
+		User.find({ _id: { $in: organizationIds }, role: 'organization' }).select('governmentType area').lean(),
+	]);
+	if (skills.length === 0) return employees;
+	const skillByCode = new Map(skills.map((skill) => [skill.code, skill]));
+	const organizationById = new Map(organizations.map((organization) => [String(organization._id), organization]));
+	return employees.map((employee) => {
+		const skill = skillByCode.get(String(employee.skillCategory || '').trim().toLowerCase());
+		const organization = organizationById.get(String(employee.organizationId || ''));
+		if (!skill || !organization?.governmentType || !organization?.area) return employee;
+		const today = skillBasicOn(skill, organization.governmentType, organization.area, '9999-12-31');
+		const then = skillBasicOn(skill, organization.governmentType, organization.area, date);
+		if (then === null || today === null || Number(employee.basicPay) !== today || then === today) return employee;
+		return { ...employee, basicPay: then, dailySalary: Math.round((Number(employee.dailySalary) - today + then) * 100) / 100 };
+	});
+}
+
 /** Re-applies the fixed basic pay of each employee's category of skill for their organization's government type and area. */
 async function recalculateEmployeeSalaries(employeeFilter = {}) {
 	const [skills, organizations] = await Promise.all([
@@ -73,4 +119,4 @@ async function recalculateEmployeeSalaries(employeeFilter = {}) {
 	await Promise.all(updates);
 }
 
-module.exports = { dailySalaryFor, findSkillRate, recalculateEmployeeSalaries, requireSalarySchedule };
+module.exports = { dailySalaryFor, findSkillRate, recalculateEmployeeSalaries, requireSalarySchedule, skillBasicOn, withSkillPayOn };

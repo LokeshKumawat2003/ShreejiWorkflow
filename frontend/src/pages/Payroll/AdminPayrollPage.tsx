@@ -349,10 +349,10 @@ function AdminPayrollPage() {
           />
         </ContentCard>
       ) : (
-        <ContentCard
-          noPadding
-          icon={<PeopleIcon boxSize={5} />}
-          title="Payroll results"
+          <ContentCard
+            noPadding
+            icon={<PeopleIcon boxSize={5} />}
+            title="Payroll results"
           subtitle={selected.length === 0
             ? 'Select locations above to see their payroll'
             : !payroll ? 'Loading…'
@@ -383,22 +383,22 @@ function AdminPayrollPage() {
               ) : null}
             </FilterBar>
           ) : undefined}
-          actions={(
-            <>
+            actions={(
+              <>
               <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
-                Salary slips
-              </ActionButton>
+                  Salary slips
+                </ActionButton>
               <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
-                Excel
-              </ActionButton>
+                  Excel
+                </ActionButton>
               <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
-                Print
-              </ActionButton>
-            </>
-          )}
-        >
+                  Print
+                </ActionButton>
+              </>
+            )}
+          >
           {loadError ? <Alert status="error" borderRadius="md" m={4} w="auto">{loadError}</Alert> : null}
-          <PayrollTable
+            <PayrollTable
             payroll={selected.length > 0 ? payroll : null}
             pageSize={PAYROLL_PAGE_SIZE}
             onPageChange={setPage}

@@ -3,6 +3,9 @@ const { httpError } = require('../utils/httpError');
 const { deleteSignatureImage, isSignatureUrl } = require('./cloudinaryService');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** Invoice values that price the bill; their earlier values are kept so old months bill at old rates. */
+const INVOICE_RATE_FIELDS = ['epfRate', 'esicRate', 'bonusRate', 'serviceChargeRate', 'relievingRate', 'monthDays'];
 
 /** Field rules per document; `default` is used until an admin saves the document. */
 const DOCUMENT_FIELDS = {
@@ -85,6 +88,24 @@ const DOCUMENT_FIELDS = {
 		signatoryPhone: { label: 'Signatory mobile', max: 30, default: '9784785808' },
 		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
 	},
+	invoice: {
+		title: { label: 'Invoice title', max: 60, required: true, default: 'INVOICE BREAKUP' },
+		partyName: { label: 'Name of party', max: 200, required: true, default: 'M/s. Shreeji Caretaker Company, Kankroli, Distt- Rajsamand (Raj.)' },
+		vendorCode: { label: 'Vendor code', max: 40, default: '2100020771' },
+		invoicePrefix: { label: 'Invoice number prefix', max: 30, required: true, default: 'AMC' },
+		startNumber: { label: 'First invoice number of the year', max: 8, number: { min: 1, max: 9999999 }, default: '1' },
+		epfRate: { label: 'EPF on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '13' },
+		esicRate: { label: 'ESIC on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '3.25' },
+		bonusRate: { label: 'Bonus on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '8.33' },
+		serviceChargeRate: { label: 'Service charge (%)', max: 10, number: { min: 0, max: 100 }, default: '0' },
+		relievingRate: { label: 'Relieving charge (% of rate)', max: 10, number: { min: 0, max: 100 }, default: '16.6667' },
+		monthDays: { label: 'Paid days in a month', max: 3, number: { min: 1, max: 31 }, default: '26' },
+		labourQtyType: { label: 'Labour quantity type', max: 20, options: ['mandays', 'manmonths', 'persons'], default: 'mandays' },
+		ratesEffectiveFrom: { label: 'Rates effective from', max: 7, month: true, default: '' },
+		signatoryCompany: { label: 'Signatory company line', max: 120, default: 'For:-M/S.Shreeji Caretaker company' },
+		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Proprietor / manager' },
+		signatureImage: { label: 'Signature / stamp image', max: 500, cloudinaryImage: true, default: '' },
+	},
 };
 
 const ROUTE_TYPES = {
@@ -92,6 +113,7 @@ const ROUTE_TYPES = {
 	'appointment-letter': 'appointmentLetter',
 	'wage-register': 'wageRegister',
 	'bank-letter': 'bankLetter',
+	invoice: 'invoice',
 };
 
 function resolveType(type) {
@@ -110,7 +132,48 @@ function publicSettings(key, document) {
 	Object.keys(values).forEach((field) => {
 		if (typeof saved[field] === 'string') values[field] = saved[field];
 	});
-	return { ...values, updatedAt: document?.updatedAt || null };
+	const history = key === 'invoice'
+		? { rateHistory: (document?.rateHistory || []).map(({ values: old, fromMonth, toMonth, changedAt }) => ({ values: old, fromMonth, toMonth, changedAt })) }
+		: {};
+	return { ...values, ...history, updatedAt: document?.updatedAt || null };
+}
+
+function currentMonth() {
+	return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()).slice(0, 7);
+}
+
+/** Invoice settings with the rate values that were valid in `month` (YYYY-MM). */
+async function getInvoiceSettingsFor(month) {
+	const document = await DocumentSettings.findOne({ key: 'invoice' }).lean();
+	const settings = publicSettings('invoice', document);
+	const { rateHistory, ...current } = settings;
+	if (!settings.ratesEffectiveFrom || month >= settings.ratesEffectiveFrom || !rateHistory.length) return current;
+	const covering = [...rateHistory].reverse().find((period) => (period.fromMonth || '') <= month && month < period.toMonth);
+	const oldest = [...rateHistory].sort((left, right) => (left.fromMonth || '').localeCompare(right.fromMonth || ''))[0];
+	const period = covering || oldest;
+	const old = Object.fromEntries(INVOICE_RATE_FIELDS.filter((field) => typeof period.values?.[field] === 'string').map((field) => [field, period.values[field]]));
+	return { ...current, ...old };
+}
+
+/** Archives the invoice rate values being replaced and dates the new ones (this month unless the admin chose one). */
+function invoiceRateHistory(previous, values) {
+	const before = publicSettings('invoice', previous);
+	const changed = INVOICE_RATE_FIELDS.some((field) => before[field] !== values[field]);
+	if (!changed) {
+		if (!values.ratesEffectiveFrom && previous?.rateHistory?.length) values.ratesEffectiveFrom = before.ratesEffectiveFrom;
+		return previous?.rateHistory;
+	}
+	const chosen = values.ratesEffectiveFrom !== before.ratesEffectiveFrom ? values.ratesEffectiveFrom : '';
+	values.ratesEffectiveFrom = chosen || currentMonth();
+	return [
+		...(previous?.rateHistory || []),
+		{
+			values: Object.fromEntries(INVOICE_RATE_FIELDS.map((field) => [field, before[field]])),
+			fromMonth: before.ratesEffectiveFrom || '',
+			toMonth: values.ratesEffectiveFrom,
+			changedAt: new Date(),
+		},
+	];
 }
 
 async function getDocumentSettings(type) {
@@ -131,6 +194,8 @@ async function updateDocumentSettings(user, type, input = {}) {
 		if (rule.cloudinaryImage && value && !isSignatureUrl(value)) throw httpError(400, `${rule.label} must be uploaded through the signature upload.`);
 		if (value.length > rule.max) throw httpError(400, `${rule.label} must be ${rule.max} characters or fewer.`);
 		if (rule.email && value && !EMAIL_PATTERN.test(value)) throw httpError(400, `Enter a valid ${rule.label.toLowerCase()}.`);
+		if (rule.options && value && !rule.options.includes(value)) throw httpError(400, `Choose a valid ${rule.label.toLowerCase()}.`);
+		if (rule.month && value && !MONTH_PATTERN.test(value)) throw httpError(400, `${rule.label} must be a month (YYYY-MM).`);
 		if (rule.number && value) {
 			const number = Number(value);
 			if (!/^\d+(\.\d+)?$/.test(value) || number < rule.number.min || number > rule.number.max) {
@@ -141,11 +206,12 @@ async function updateDocumentSettings(user, type, input = {}) {
 	});
 
 	const imageFields = Object.keys(DOCUMENT_FIELDS[key]).filter((field) => DOCUMENT_FIELDS[key][field].cloudinaryImage);
-	const previous = imageFields.length ? await DocumentSettings.findOne({ key }).lean() : null;
+	const previous = imageFields.length || key === 'invoice' ? await DocumentSettings.findOne({ key }).lean() : null;
+	const rateHistory = key === 'invoice' ? invoiceRateHistory(previous, values) : undefined;
 
 	const document = await DocumentSettings.findOneAndUpdate(
 		{ key },
-		{ $set: { values } },
+		{ $set: { values, ...(rateHistory ? { rateHistory } : {}) } },
 		{ new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
 	).lean();
 
@@ -160,4 +226,4 @@ async function updateDocumentSettings(user, type, input = {}) {
 	return publicSettings(key, document);
 }
 
-module.exports = { DOCUMENT_FIELDS, getDocumentSettings, updateDocumentSettings };
+module.exports = { DOCUMENT_FIELDS, getDocumentSettings, getInvoiceSettingsFor, updateDocumentSettings };

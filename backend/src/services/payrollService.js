@@ -8,6 +8,7 @@ const { countsAttendanceOn } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 const { getDocumentSettings } = require('./documentSettingsService');
+const { withSkillPayOn } = require('./salaryService');
 
 const PAYROLL_PAGE_SIZE = 10;
 const MAX_PAYROLL_PAGE_SIZE = 100;
@@ -71,7 +72,7 @@ async function calculatePayroll(user, options = {}) {
     ? [{ _id: { $in: locationEmployeeIds }, organizationId }]
     : organizationId ? [{ organizationId }] : [{ organizationId: { $ne: null } }];
   if (attendanceEmployeeIds.length > 0) employeeConditions.push({ _id: { $in: attendanceEmployeeIds } });
-  const employees = await Employee.find({ $or: employeeConditions }).lean();
+  const employees = await withSkillPayOn(await Employee.find({ $or: employeeConditions }).lean(), toDate);
   const organizationDetailsById = new Map();
   if (user.role === 'admin') {
     const organizations = await User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) })
@@ -233,12 +234,12 @@ function wageRegisterRow(line, rates) {
   const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2(line.basicPay + line.dearnessAllowance);
   const workingDays = line.paidDays;
   const wages = round2(dailyWage * workingDays);
-  const bonus = wages * (rates.bonusRate / 100);
+  const bonus = (wages * rates.bonusRate) / 100;
   const totalWages = wages + bonus;
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
-  const epf = line.epfoApplicable ? epfBase * (rates.epfRate / 100) : 0;
+  const epf = line.epfoApplicable ? (epfBase * rates.epfRate) / 100 : 0;
   const esiBase = rates.esiWageCeiling > 0 ? Math.min(wages, rates.esiWageCeiling) : wages;
-  const esi = line.esicApplicable ? esiBase * (rates.esiRate / 100) : 0;
+  const esi = line.esicApplicable ? (esiBase * rates.esiRate) / 100 : 0;
   return {
     employeeId: line.employeeId,
     employeeName: line.employeeName,

@@ -79,19 +79,15 @@ function sameName(left, right) {
 }
 
 /**
- * When the organization lists its work names (posts), a location's designation must be one of them, and a location
- * named after one of those work names must use a designation of that work name. Organizations without posts are free.
+ * When the organization lists its work names (posts), a location's designation must be one of their designations.
+ * The location's own work name is free text and does not limit the designation. Organizations without posts are free.
  */
-async function assertDesignationFitsPosts(organizationId, workName, designation) {
+async function assertDesignationFitsPosts(organizationId, designation) {
 	const organization = await User.findOne({ _id: organizationId, role: 'organization' });
 	const posts = organization?.posts || [];
 	if (posts.length === 0) return;
-	const post = posts.find((item) => sameName(item.workName, workName));
-	const allowed = post ? post.designations : posts.flatMap((item) => item.designations);
-	if (allowed.some((name) => sameName(name, designation))) return;
-	throw httpError(400, post
-		? `"${designation}" is not a designation of the work name "${post.workName}". Choose ${post.designations.join(' or ')}.`
-		: `"${designation}" is not one of this organization's designations. Add it to the organization's work names first.`);
+	if (posts.some((item) => item.designations.some((name) => sameName(name, designation)))) return;
+	throw httpError(400, `"${designation}" is not one of this organization's designations. Add it to the organization's work names first.`);
 }
 
 async function resolveLocation(user, organizationId, locationId) {
@@ -151,7 +147,7 @@ async function createLocation(user, organizationId, input) {
 	const resolvedOrganizationId = await resolveOrganizationId(user, organizationId);
 	const fields = validateLocationInput(input);
 	fields.designation = await resolveMasterValue('designation', fields.designation);
-	await assertDesignationFitsPosts(resolvedOrganizationId, fields.workName, fields.designation);
+	await assertDesignationFitsPosts(resolvedOrganizationId, fields.designation);
 	const location = await Location.create({ ...fields, organizationId: resolvedOrganizationId });
 	return publicLocation(location);
 }
@@ -164,10 +160,9 @@ async function updateLocation(user, organizationId, locationId, input) {
 			? location.designation
 			: await resolveMasterValue('designation', fields.designation);
 	}
-	const workName = fields.workName ?? location.workName;
 	const designation = fields.designation ?? location.designation;
-	if (!sameName(workName, location.workName) || !sameName(designation, location.designation)) {
-		await assertDesignationFitsPosts(location.organizationId, workName, designation);
+	if (!sameName(designation, location.designation)) {
+		await assertDesignationFitsPosts(location.organizationId, designation);
 	}
 	Object.assign(location, fields);
 	await location.save();

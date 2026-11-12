@@ -125,17 +125,13 @@ function masterDesignation(name) {
   return { type: 'designation', name, code: name.toLowerCase() };
 }
 
-test('a location named after a work name must use a designation of that work name', async (t) => {
+test('a location work name does not limit its designation to that work name', async (t) => {
   stub(t, User, { findOne: async () => ({ id: organizationId, posts }) });
   stub(t, MasterData, { findOne: () => ({ lean: async () => masterDesignation('Mali') }) });
-  let created = false;
-  stub(t, Location, { create: async () => { created = true; return {}; } });
+  stub(t, Location, { create: async (input) => ({ ...input, _id: locationId, toObject() { return this; } }) });
 
-  await assert.rejects(
-    createLocation(admin, organizationId, { workName: 'Security', name: 'Main gate', designation: 'Mali' }),
-    (error) => error.statusCode === 400 && error.message === '"Mali" is not a designation of the work name "Security". Choose Security Guard.',
-  );
-  assert.equal(created, false);
+  const location = await createLocation(admin, organizationId, { workName: 'Security', name: 'Main gate', designation: 'Mali' });
+  assert.equal(location.designation, 'Mali');
 });
 
 test('a location designation must be one of the organization designations', async (t) => {
@@ -166,9 +162,10 @@ test('a location matching its work name, or a free work name with an organizatio
   assert.deepEqual(createdInputs.map((input) => input.designation), ['Supervisor', 'Security Guard']);
 });
 
-test('updating a location to a designation outside its work name is refused, unchanged pairs stay editable', async (t) => {
+test('updating a location to another organization designation is allowed whatever its work name', async (t) => {
   stub(t, User, { findOne: async () => ({ id: organizationId, posts }) });
-  stub(t, MasterData, { findOne: () => ({ lean: async () => masterDesignation('Mali') }) });
+  let name = 'Sweeper';
+  stub(t, MasterData, { findOne: () => ({ lean: async () => masterDesignation(name) }) });
   const location = {
     _id: locationId,
     organizationId,
@@ -182,11 +179,13 @@ test('updating a location to a designation outside its work name is refused, unc
   stub(t, Location, { findOne: async () => location });
 
   await assert.rejects(
-    updateLocation(admin, organizationId, locationId, { designation: 'Mali' }),
-    (error) => error.statusCode === 400 && error.message.startsWith('"Mali" is not a designation of the work name "Security"'),
+    updateLocation(admin, organizationId, locationId, { designation: 'Sweeper' }),
+    (error) => error.statusCode === 400 && error.message.startsWith('"Sweeper" is not one of this organization\'s designations'),
   );
   assert.equal(location.designation, 'Security Guard');
-  const updated = await updateLocation(admin, organizationId, locationId, { opNumber: 'PO-7' });
+  name = 'Mali';
+  const updated = await updateLocation(admin, organizationId, locationId, { designation: 'Mali', opNumber: 'PO-7' });
+  assert.equal(updated.designation, 'Mali');
   assert.equal(updated.opNumber, 'PO-7');
 });
 

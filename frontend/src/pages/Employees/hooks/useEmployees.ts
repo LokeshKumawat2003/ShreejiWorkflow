@@ -126,14 +126,14 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
     return employee;
   }
 
-  async function assignMany(ids: string[], targetOrganizationId: string, targetLocationId?: string) {
-    const assignedEmployees = await assignEmployeesToOrganization(ids, targetOrganizationId, targetLocationId);
+  async function assignMany(ids: string[], targetOrganizationId: string, targetLocationId?: string, locationJoiningDate?: string) {
+    const assignedEmployees = await assignEmployeesToOrganization(ids, targetOrganizationId, targetLocationId, locationJoiningDate);
     setRefreshVersion((current) => current + 1);
     return assignedEmployees;
   }
 
-  async function transferMany(ids: string[], targetOrganizationId: string, targetLocationId: string) {
-    const movedEmployees = await transferEmployees(ids, targetOrganizationId, targetLocationId);
+  async function transferMany(ids: string[], targetOrganizationId: string, targetLocationId: string, locationJoiningDate?: string) {
+    const movedEmployees = await transferEmployees(ids, targetOrganizationId, targetLocationId, locationJoiningDate);
     setRefreshVersion((current) => current + 1);
     return movedEmployees;
   }

@@ -20,8 +20,9 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { useEffect, useState } from 'react';
-import { MapPinIcon } from '../../../components/ui';
+import { FormInput, MapPinIcon } from '../../../components/ui';
 import { fieldLabelStyles, fieldStyles } from '../../../components/ui/fieldStyles';
+import { localDateString } from '../../Payroll/components/PayrollShared';
 import { ApiError } from '../../../services/api';
 import { listOrganizationLocations } from '../../../services/locationService';
 import { listOrganizations } from '../../../services/organizationService';
@@ -34,7 +35,7 @@ type MoveEmployeeDialogProps = {
   currentLocation: OrganizationLocation;
   isSaving: boolean;
   onClose: () => void;
-  onMove: (organizationId: string, location: OrganizationLocation, organizationName: string) => void;
+  onMove: (organizationId: string, location: OrganizationLocation, organizationName: string, joiningDate: string) => void;
 };
 
 function errorMessage(error: unknown, fallback: string) {
@@ -59,6 +60,7 @@ function MoveEmployeeDialog({
   const [organizationId, setOrganizationId] = useState('');
   const [locations, setLocations] = useState<OrganizationLocation[]>([]);
   const [locationId, setLocationId] = useState('');
+  const [joiningDate, setJoiningDate] = useState('');
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [error, setError] = useState('');
@@ -68,6 +70,7 @@ function MoveEmployeeDialog({
     const controller = new AbortController();
     setOrganizationId(currentOrganizationId);
     setLocationId('');
+    setJoiningDate(localDateString(new Date()));
     setError('');
     setIsLoadingOrganizations(true);
     void listOrganizations({ search: '', status: 'active', sort: 'name-asc', page: 1, limit: 100 }, controller.signal)
@@ -106,6 +109,8 @@ function MoveEmployeeDialog({
 
   const selectedOrganization = organizations.find((organization) => organization.id === organizationId);
   const selectedLocation = locations.find((location) => location.id === locationId);
+  const earliestJoiningDate = employee?.dateOfJoining || undefined;
+  const isJoiningDateValid = Boolean(joiningDate) && (!earliestJoiningDate || joiningDate >= earliestJoiningDate);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" closeOnEsc={!isSaving} closeOnOverlayClick={!isSaving} scrollBehavior="inside">
@@ -202,6 +207,18 @@ function MoveEmployeeDialog({
               )}
             </FormControl>
 
+            <FormInput
+              label="Joining date at new location"
+              type="date"
+              isRequired
+              value={joiningDate}
+              min={earliestJoiningDate}
+              isDisabled={isSaving}
+              helperText="Printed as the date of the new appointment letter."
+              error={joiningDate && !isJoiningDateValid ? `Cannot be before the employee's joining date (${earliestJoiningDate}).` : undefined}
+              onChange={(event) => setJoiningDate(event.target.value)}
+            />
+
             {organizationId && organizationId !== currentOrganizationId ? (
               <Alert status="info" borderRadius="md" fontSize="sm">
                 <AlertIcon />
@@ -216,8 +233,8 @@ function MoveEmployeeDialog({
           <Button
             colorScheme="brand"
             isLoading={isSaving}
-            isDisabled={!selectedLocation}
-            onClick={() => selectedLocation && onMove(organizationId, selectedLocation, selectedOrganization ? organizationLabel(selectedOrganization) : '')}
+            isDisabled={!selectedLocation || !isJoiningDateValid}
+            onClick={() => selectedLocation && onMove(organizationId, selectedLocation, selectedOrganization ? organizationLabel(selectedOrganization) : '', joiningDate)}
           >
             Move employee
           </Button>

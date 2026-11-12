@@ -102,10 +102,10 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     }
   }
 
-  async function handleAssign(employeeIds: string[]): Promise<boolean> {
+  async function handleAssign(employeeIds: string[], joiningDate?: string): Promise<boolean> {
     setIsAssigning(true);
     try {
-      const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id);
+      const assignedEmployees = await employees.assignMany(employeeIds, organizationId, location.id, joiningDate);
       toast({ title: `${employeeIds.length} employee${employeeIds.length === 1 ? '' : 's'} added to ${organizationName}`, status: 'success', position: 'top' });
       void deliverAppointmentLetters(assignedEmployees, location);
       return true;
@@ -125,11 +125,11 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
     }
   }
 
-  async function handleMove(targetOrganizationId: string, targetLocation: OrganizationLocation, targetOrganizationName: string) {
+  async function handleMove(targetOrganizationId: string, targetLocation: OrganizationLocation, targetOrganizationName: string, joiningDate: string) {
     if (!movingEmployee) return;
     setIsMoving(true);
     try {
-      const movedEmployees = await employees.transferMany([movingEmployee.id], targetOrganizationId, targetLocation.id);
+      const movedEmployees = await employees.transferMany([movingEmployee.id], targetOrganizationId, targetLocation.id, joiningDate);
       const place = [targetOrganizationId !== organizationId ? targetOrganizationName : '', targetLocation.workName || targetLocation.name].filter(Boolean).join(' · ');
       toast({ title: `${movingEmployee.name} moved to ${place}`, description: 'Preparing the new appointment letter…', status: 'success', position: 'top' });
       setMovingEmployee(null);
@@ -238,7 +238,7 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
         onClose={() => {
           if (!isMoving) setMovingEmployee(null);
         }}
-        onMove={(targetOrganizationId, targetLocation, targetOrganizationName) => void handleMove(targetOrganizationId, targetLocation, targetOrganizationName)}
+        onMove={(targetOrganizationId, targetLocation, targetOrganizationName, joiningDate) => void handleMove(targetOrganizationId, targetLocation, targetOrganizationName, joiningDate)}
       />
       <RemoveOrganizationEmployeeDialog
         isOpen={removeDialog.isOpen}

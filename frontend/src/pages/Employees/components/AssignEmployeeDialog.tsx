@@ -26,7 +26,9 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '../../../services/api';
 import { listEmployees, type EmployeeListParams } from '../../../services/employeeService';
 import type { Employee } from '../../../types';
+import { FormInput } from '../../../components/ui';
 import Pagination from '../../../components/ui/Pagination';
+import { localDateString } from '../../Payroll/components/PayrollShared';
 import { ListSkeleton } from '../../../components/ui/Skeletons';
 
 type AssignEmployeeDialogProps = {
@@ -37,7 +39,7 @@ type AssignEmployeeDialogProps = {
   locationId?: string;
   locationDesignation?: string;
   onClose: () => void;
-  onAssign: (employeeIds: string[]) => Promise<boolean>;
+  onAssign: (employeeIds: string[], joiningDate?: string) => Promise<boolean>;
 };
 
 function errorMessage(error: unknown) {
@@ -63,6 +65,7 @@ function AssignEmployeeDialog({
   const [totalPages, setTotalPages] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [joiningDate, setJoiningDate] = useState('');
   const modalSize = useBreakpointValue({ base: 'full', md: '3xl', lg: '4xl' }) ?? '4xl';
 
   useEffect(() => {
@@ -103,9 +106,18 @@ function AssignEmployeeDialog({
     };
   }, [isOpen, locationDesignation, locationId, organizationId, page, search]);
 
+  useEffect(() => {
+    if (isOpen) setJoiningDate(localDateString(new Date()));
+  }, [isOpen]);
+
+  const latestEmployeeJoining = selectedEmployees.reduce((latest, employee) => (
+    employee.dateOfJoining && employee.dateOfJoining > latest ? employee.dateOfJoining : latest
+  ), '');
+  const isJoiningDateValid = !locationId || (Boolean(joiningDate) && joiningDate >= latestEmployeeJoining);
+
   async function handleAssign() {
-    if (selectedEmployees.length === 0) return;
-    if (!await onAssign(selectedEmployees.map(({ id }) => id))) return;
+    if (selectedEmployees.length === 0 || !isJoiningDateValid) return;
+    if (!await onAssign(selectedEmployees.map(({ id }) => id), locationId ? joiningDate : undefined)) return;
     setSelectedEmployees([]);
     setSearch('');
     setPage(1);
@@ -147,6 +159,20 @@ function AssignEmployeeDialog({
             Select available {locationDesignation ? `${locationDesignation} ` : ''}employees to add to {organizationName}.
           </Text>
           <Stack spacing={4}>
+            {locationId ? (
+              <FormInput
+                label="Joining date at this location"
+                type="date"
+                isRequired
+                maxW={{ base: '100%', sm: '260px' }}
+                value={joiningDate}
+                min={latestEmployeeJoining || undefined}
+                isDisabled={isSaving}
+                helperText="Printed as the date of the appointment letter."
+                error={joiningDate && !isJoiningDateValid ? `Cannot be before a selected employee's joining date (${latestEmployeeJoining}).` : undefined}
+                onChange={(event) => setJoiningDate(event.target.value)}
+              />
+            ) : null}
             <Input
               aria-label="Search unassigned employees"
               placeholder="Search by name, email, or department"
@@ -256,7 +282,7 @@ function AssignEmployeeDialog({
         </ModalBody>
         <ModalFooter gap={3} px={{ base: 4, md: 6 }} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
           <Button flex={{ base: 1, sm: 'initial' }} variant="outline" onClick={onClose} isDisabled={isSaving}>Cancel</Button>
-          <Button flex={{ base: 1, sm: 'initial' }} colorScheme="brand" isLoading={isSaving} isDisabled={selectedEmployees.length === 0 || Boolean(loadError)} onClick={() => void handleAssign()}>
+          <Button flex={{ base: 1, sm: 'initial' }} colorScheme="brand" isLoading={isSaving} isDisabled={selectedEmployees.length === 0 || Boolean(loadError) || !isJoiningDateValid} onClick={() => void handleAssign()}>
             Add {selectedEmployees.length || ''} to {locationDesignation ? 'location' : 'organization'}
           </Button>
         </ModalFooter>

@@ -103,6 +103,27 @@ async function validateEmployeeLocationDesignation(locationId, designation) {
 	}
 }
 
+function parseIsoDate(value) {
+	const text = typeof value === 'string' ? value.trim() : '';
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+	const date = new Date(`${text}T00:00:00.000Z`);
+	return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text ? date : null;
+}
+
+/** The date an employee joins a location; printed as the joining date on the appointment letter. */
+function locationJoiningDate(value) {
+	if (value === undefined || value === null || value === '') return null;
+	const date = parseIsoDate(value);
+	if (!date) throw httpError(400, 'Location joining date must be a valid date.');
+	return date;
+}
+
+function requireJoinedBeforeLocation(employees, date) {
+	const day = date.toISOString().slice(0, 10);
+	const early = employees.find((employee) => employee.dateOfJoining && day < employee.dateOfJoining);
+	if (early) throw httpError(400, `${early.name} joined on ${early.dateOfJoining}. The location joining date cannot be earlier.`);
+}
+
 const MASTER_FIELDS = [
 	['designation', 'name'],
 	['employmentType', 'code'],
@@ -368,7 +389,7 @@ async function createEmployee(user, input = {}, { allowManualPay = false } = {})
 		...(fields.status === 'disabled' ? { disabledOn: currentDateInTimeZone(input.timeZone || 'UTC') } : {}),
 		organizationId,
 		locationId,
-		locationAssignedAt: locationId ? new Date() : null,
+		locationAssignedAt: locationId ? parseIsoDate(fields.dateOfJoining) || new Date() : null,
 	});
 	await employee.populate('organizationId', 'organizationName governmentType area');
 	return publicEmployee(employee, user.role);
@@ -452,6 +473,7 @@ async function assignEmployees(user, input = {}) {
 	if (!organization) throw httpError(404, 'Organization not found.');
 	requireSalarySchedule(organization);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
+	const joinedOn = locationJoiningDate(input.locationJoiningDate);
 	let designationFilter;
 	if (locationId) {
 		const location = await Location.findById(locationId).select('designation');
@@ -482,11 +504,12 @@ async function assignEmployees(user, input = {}) {
 	if (existingEmployees > 0) {
 		throw httpError(409, 'An employee with one of these email addresses already belongs to this organization.');
 	}
+	if (locationId && joinedOn) requireJoinedBeforeLocation(employees, joinedOn);
 
 	await Employee.updateMany(employeeFilter, {
 		$set: {
 			organizationId,
-			...(locationId ? { locationId, locationAssignedAt: new Date() } : {}),
+			...(locationId ? { locationId, locationAssignedAt: joinedOn || new Date() } : {}),
 		},
 	});
 	await recalculateEmployeeSalaries({ _id: { $in: employeeIds } });
@@ -508,6 +531,7 @@ async function transferEmployees(user, input = {}) {
 	if (!organization) throw httpError(404, 'Organization not found.');
 	requireSalarySchedule(organization);
 	const locationId = await resolveLocationId(input.locationId, organizationId);
+	const joinedOn = locationJoiningDate(input.locationJoiningDate);
 	const location = await Location.findById(locationId).select('designation status');
 	if (location.status !== 'active') throw httpError(400, 'Employees can only be moved to an active location.');
 
@@ -530,10 +554,11 @@ async function transferEmployees(user, input = {}) {
 		const conflict = await Employee.findOne({ organizationId, email: { $in: emails }, _id: { $nin: employeeIds } }).select('email');
 		if (conflict) throw httpError(409, `An employee with the email ${conflict.email} already belongs to ${organization.organizationName || 'this organization'}.`);
 	}
+	if (joinedOn) requireJoinedBeforeLocation(employees, joinedOn);
 
 	await Employee.updateMany(
 		{ _id: { $in: employeeIds } },
-		{ $set: { organizationId, locationId, locationAssignedAt: new Date() } },
+		{ $set: { organizationId, locationId, locationAssignedAt: joinedOn || new Date() } },
 	);
 	await recalculateEmployeeSalaries({ _id: { $in: employeeIds } });
 	const moved = await Employee.find({ _id: { $in: employeeIds } }).populate('organizationId', 'organizationName governmentType area');

@@ -20,7 +20,7 @@ const {
   previewLocationsPayroll,
 } = require('../services/bankInvoiceService');
 const { clearAttendanceSheet, getAttendanceSheet, saveAttendanceSheet } = require('../services/attendanceSheetService');
-const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister } = require('../services/payrollService');
+const { calculateBankPayments, calculatePayrollWithDeductions, calculateWageRegister, setOvertimeHours } = require('../services/payrollService');
 
 async function list(req, res) {
   return res.json(await listAttendance(req.user, req.query));
@@ -41,6 +41,10 @@ async function payroll(req, res) {
 
 async function wageRegister(req, res) {
   return res.json(await calculateWageRegister(req.user, req.query));
+}
+
+async function overtime(req, res) {
+  return res.json({ overtime: await setOvertimeHours(req.user, req.body || {}) });
 }
 
 async function bankPayments(req, res) {
@@ -126,6 +130,7 @@ module.exports = {
   history,
   list,
   mark,
+  overtime,
   parse,
   parseMonth,
   payroll,

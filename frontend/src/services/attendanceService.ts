@@ -124,6 +124,10 @@ export type PayrollLine = {
   grossPay: number;
   dailyWage?: number;
   wages?: number;
+  /** Overtime hours entered on the wage register for the period. */
+  overtimeHours?: number;
+  overtimeRate?: number;
+  overtimeWages?: number;
   bonus?: number;
   totalWages?: number;
   epf?: number;
@@ -133,6 +137,16 @@ export type PayrollLine = {
   locationName?: string;
 };
 
+export type WageRates = {
+  bonusRate: number;
+  epfRate: number;
+  epfWageCeiling: number;
+  esiRate: number;
+  esiWageCeiling: number;
+  overtimeHoursPerDay: number;
+  overtimeRateMultiplier: number;
+};
+
 export type PayrollResponse = {
   fromDate: string;
   toDate: string;
@@ -140,7 +154,7 @@ export type PayrollResponse = {
   lines: PayrollLine[];
   totals: { currency: string; total: number }[];
   netTotals?: { currency: string; total: number }[];
-  rates?: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number; esiWageCeiling: number };
+  rates?: WageRates;
   summary: { employees: number; presentDays: number; absentDays: number; paidDays: number };
   pagination?: { page: number; limit: number; total: number; totalPages: number };
 };
@@ -189,6 +203,9 @@ export type WageRegisterRow = {
   workingDays: number;
   dailyWage: number;
   wages: number;
+  overtimeHours: number;
+  overtimeRate: number;
+  overtimeWages: number;
   bonus: number;
   totalWages: number;
   epf: number;
@@ -214,9 +231,11 @@ export type WageRegisterResponse = {
     address: string;
     opNumber: string;
   };
-  rates: { bonusRate: number; epfRate: number; epfWageCeiling: number; esiRate: number; esiWageCeiling: number };
+  rates: WageRates;
   rows: WageRegisterRow[];
-  totals: Omit<WageRegisterRow, 'serial' | 'employeeId' | 'employeeName' | 'parentName' | 'showParentName' | 'post' | 'dailyWage'> & { employees: number };
+  /** Overtime totals are only sent when someone on the register has overtime. */
+  totals: Omit<WageRegisterRow, 'serial' | 'employeeId' | 'employeeName' | 'parentName' | 'showParentName' | 'post' | 'dailyWage' | 'overtimeHours' | 'overtimeRate' | 'overtimeWages'>
+    & { employees: number; overtimeHours?: number; overtimeWages?: number };
   pagination: { page: number; limit: number; total: number; totalPages: number };
 };
 
@@ -226,6 +245,15 @@ export async function getWageRegister(
 ) {
   const { data } = await api.get<WageRegisterResponse>('/attendance/wage-register', { params, signal });
   return data;
+}
+
+/** Saves an employee's overtime hours for a month on a location's wage register; 0 removes them. */
+export async function setOvertimeHours(input: { organizationId: string; locationId: string; employeeId: string; month: string; hours: string }) {
+  const { data } = await api.put<{ overtime: { employeeId: string; month: string; hours: number } }>('/attendance/overtime', {
+    ...input,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  return data.overtime;
 }
 
 export type BankPaymentRow = {

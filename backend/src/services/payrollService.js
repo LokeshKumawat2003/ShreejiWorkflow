@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Attendance = require('../models/Attendance');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
+const Overtime = require('../models/Overtime');
 const User = require('../models/User');
 const { PAID_DAY_VALUE, isAttendanceStatus, summarizeAttendance } = require('../utils/attendanceStatus');
 const { countsAttendanceOn } = require('../utils/employeeStatus');
@@ -52,6 +53,22 @@ function monthlyAttendance(statusesByMonth = new Map()) {
   }
   total.paidDays = Math.round((total.paidDays + Number.EPSILON) * 100) / 100;
   return total;
+}
+
+/** Overtime hours entered on the wage register for each employee, summed over the months the period touches. */
+async function overtimeHoursByEmployee(employees, organizationId, fromDate, toDate) {
+  const hours = new Map();
+  if (employees.length === 0 || mongoose.connection.readyState !== 1) return hours;
+  const records = await Overtime.find({
+    employeeId: { $in: employees.map(({ _id }) => _id) },
+    month: { $gte: fromDate.slice(0, 7), $lte: toDate.slice(0, 7) },
+    ...(organizationId ? { organizationId } : {}),
+  }).select('employeeId hours').lean();
+  for (const record of records) {
+    const id = String(record.employeeId);
+    hours.set(id, round2((hours.get(id) || 0) + (Number(record.hours) || 0)));
+  }
+  return hours;
 }
 
 async function calculatePayroll(user, options = {}) {
@@ -109,6 +126,7 @@ async function calculatePayroll(user, options = {}) {
   const payableEmployees = employees.filter((employee) => (
     employee.status !== 'disabled' || attendanceByEmployee.has(String(employee._id))
   ));
+  const overtimeHours = await overtimeHoursByEmployee(payableEmployees, organizationId, fromDate, toDate);
 
   const lines = payableEmployees.map((employee) => {
     const counts = monthlyAttendance(attendanceByEmployee.get(String(employee._id)));
@@ -152,6 +170,7 @@ async function calculatePayroll(user, options = {}) {
       otherLeaveDays: counts.otherLeaves,
       paidDays,
       grossPay,
+      overtimeHours: overtimeHours.get(String(employee._id)) || 0,
     };
   }).map((line) => {
     if (!options.wageRates) return line;
@@ -160,6 +179,8 @@ async function calculatePayroll(user, options = {}) {
       ...line,
       dailyWage: row.dailyWage,
       wages: row.wages,
+      overtimeRate: row.overtimeRate,
+      overtimeWages: row.overtimeWages,
       bonus: row.bonus,
       totalWages: row.totalWages,
       epf: row.epf,
@@ -233,6 +254,8 @@ function wageRates(settings) {
     epfWageCeiling: rate(settings, 'epfWageCeiling'),
     esiRate: rate(settings, 'esiRate'),
     esiWageCeiling: rate(settings, 'esiWageCeiling'),
+    overtimeHoursPerDay: rate(settings, 'overtimeHoursPerDay') || 8,
+    overtimeRateMultiplier: String(settings.overtimeRateMultiplier ?? '').trim() === '' ? 2 : rate(settings, 'overtimeRateMultiplier'),
   };
 }
 
@@ -242,16 +265,26 @@ async function calculatePayrollWithDeductions(user, options = {}) {
   return calculatePayroll(user, { ...options, wageRates: wageRates(settings) });
 }
 
-/** Builds one FORM XVII row; deductions stay unrounded so the net matches the paper register. */
+/**
+ * Builds one FORM XVII row; deductions stay unrounded so the net matches the paper register.
+ * Overtime pays each hour at (daily wage ÷ normal hours) × the overtime rate. It is added to the total wages and
+ * counts for ESI, but not for bonus or EPF, which are on the regular wages only.
+ */
 function wageRegisterRow(line, rates) {
   const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2(line.basicPay + line.dearnessAllowance);
   const workingDays = line.paidDays;
   const wages = round2(dailyWage * workingDays);
+  const overtimeHours = Number(line.overtimeHours) || 0;
+  const hoursPerDay = rates.overtimeHoursPerDay > 0 ? rates.overtimeHoursPerDay : 8;
+  const multiplier = rates.overtimeRateMultiplier ?? 2;
+  const overtimeRate = round2((dailyWage / hoursPerDay) * multiplier);
+  const overtimeWages = round2(overtimeHours * overtimeRate);
   const bonus = (wages * rates.bonusRate) / 100;
-  const totalWages = wages + bonus;
+  const totalWages = wages + bonus + overtimeWages;
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
   const epf = line.epfoApplicable ? (epfBase * rates.epfRate) / 100 : 0;
-  const esiBase = rates.esiWageCeiling > 0 ? Math.min(wages, rates.esiWageCeiling) : wages;
+  const esiWages = wages + overtimeWages;
+  const esiBase = rates.esiWageCeiling > 0 ? Math.min(esiWages, rates.esiWageCeiling) : esiWages;
   const esi = line.esicApplicable ? (esiBase * rates.esiRate) / 100 : 0;
   return {
     employeeId: line.employeeId,
@@ -261,6 +294,9 @@ function wageRegisterRow(line, rates) {
     workingDays,
     dailyWage,
     wages,
+    overtimeHours,
+    overtimeRate,
+    overtimeWages,
     bonus: round2(bonus),
     totalWages: round2(totalWages),
     epf: Math.round(epf),
@@ -310,12 +346,14 @@ async function calculateWageRegister(user, options = {}) {
   const totals = rows.reduce((sum, row) => ({
     workingDays: sum.workingDays + row.workingDays,
     wages: sum.wages + row.wages,
+    overtimeHours: sum.overtimeHours + row.overtimeHours,
+    overtimeWages: sum.overtimeWages + row.overtimeWages,
     bonus: sum.bonus + row._raw.bonus,
     totalWages: sum.totalWages + row._raw.totalWages,
     epf: sum.epf + row._raw.epf,
     esi: sum.esi + row._raw.esi,
     grossPayment: sum.grossPayment + row.grossPayment,
-  }), { workingDays: 0, wages: 0, bonus: 0, totalWages: 0, epf: 0, esi: 0, grossPayment: 0 });
+  }), { workingDays: 0, wages: 0, overtimeHours: 0, overtimeWages: 0, bonus: 0, totalWages: 0, epf: 0, esi: 0, grossPayment: 0 });
   const publicRows = rows.map(({ _raw, ...row }) => row);
 
   const limit = Math.min(positiveInteger(options.limit, publicRows.length || 1), MAX_PAYROLL_PAGE_SIZE);
@@ -346,6 +384,7 @@ async function calculateWageRegister(user, options = {}) {
       employees: rows.length,
       workingDays: totals.workingDays,
       wages: round2(totals.wages),
+      ...(totals.overtimeHours > 0 ? { overtimeHours: round2(totals.overtimeHours), overtimeWages: round2(totals.overtimeWages) } : {}),
       bonus: Math.round(totals.bonus),
       totalWages: Math.round(totals.totalWages),
       epf: Math.round(totals.epf),
@@ -354,6 +393,48 @@ async function calculateWageRegister(user, options = {}) {
     },
     pagination: { page, limit: options.page === undefined ? publicRows.length : limit, total: publicRows.length, totalPages },
   };
+}
+
+const MAX_OVERTIME_HOURS = 400;
+
+function currentMonthIn(timeZone) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'Asia/Kolkata' }).format(new Date()).slice(0, 7);
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()).slice(0, 7);
+  }
+}
+
+/** Sets the overtime hours of one employee on a location's wage register for a month; 0 removes them. */
+async function setOvertimeHours(user, input = {}) {
+  if (user.role !== 'admin') throw httpError(403, 'Only admins can enter overtime.');
+  const { month } = input;
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw httpError(400, 'Select a valid month.');
+  if (month > currentMonthIn(input.timeZone)) throw httpError(400, 'Overtime cannot be entered for a future month.');
+  if (!mongoose.isValidObjectId(input.employeeId)) throw httpError(400, 'Invalid employee id.');
+  if (!mongoose.isValidObjectId(input.locationId)) throw httpError(400, 'Invalid location id.');
+  const organizationId = await resolveOrganizationId(user, input.organizationId);
+  if (!organizationId) throw httpError(400, 'A valid organization id is required.');
+
+  const text = String(input.hours ?? '').trim();
+  const hours = text === '' ? 0 : Number(text);
+  if (!/^\d+(\.\d{1,2})?$/.test(text || '0') || hours > MAX_OVERTIME_HOURS) {
+    throw httpError(400, `Overtime must be a number of hours between 0 and ${MAX_OVERTIME_HOURS}, with up to 2 decimals.`);
+  }
+  const employee = await Employee.findOne({ _id: input.employeeId, organizationId, locationId: input.locationId }).select('_id name').lean();
+  if (!employee) throw httpError(404, 'Employee not found on this location.');
+
+  const filter = { employeeId: employee._id, month };
+  if (hours === 0) {
+    await Overtime.deleteOne(filter);
+  } else {
+    await Overtime.findOneAndUpdate(
+      filter,
+      { $set: { organizationId, locationId: input.locationId, hours, updatedBy: user.id } },
+      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+  }
+  return { employeeId: String(employee._id), month, hours };
 }
 
 function monthRange(month) {
@@ -468,4 +549,13 @@ async function calculateBankPayments(user, options = {}) {
   return { ...result, rows: rows.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: rows.length, totalPages } };
 }
 
-module.exports = { calculateBankPayments, monthRange, parseLocationIds, calculatePayroll, calculatePayrollWithDeductions, calculateWageRegister, wageRegisterRow };
+module.exports = {
+  calculateBankPayments,
+  monthRange,
+  parseLocationIds,
+  calculatePayroll,
+  calculatePayrollWithDeductions,
+  calculateWageRegister,
+  setOvertimeHours,
+  wageRegisterRow,
+};

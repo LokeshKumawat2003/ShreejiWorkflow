@@ -38,6 +38,8 @@ export type WageRegisterSettings = {
 	epfWageCeiling: string;
 	esiRate: string;
 	esiWageCeiling: string;
+	overtimeHoursPerDay: string;
+	overtimeRateMultiplier: string;
 	ratesEffectiveFrom: string;
 	signatoryCompany: string;
 	signatoryTitle: string;
@@ -133,6 +135,8 @@ export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {
 	epfWageCeiling: '25000',
 	esiRate: '0.75',
 	esiWageCeiling: '21000',
+	overtimeHoursPerDay: '8',
+	overtimeRateMultiplier: '2',
 	signatoryCompany: 'FOR:-SHREEJI CARETAKER COMPANY',
 	ratesEffectiveFrom: '',
 	signatoryTitle: 'Proprietor / Manager',

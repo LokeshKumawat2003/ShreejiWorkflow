@@ -12,21 +12,66 @@ function formatRate(value: number) {
 	return String(Number(value.toFixed(2)));
 }
 
-export function registerHeadings(register: WageRegisterResponse) {
+type RegisterColumn = {
+	title: string;
+	letter: string;
+	/** Excel column width and number formats for employee rows and the total row. */
+	width: number;
+	format: string;
+	totalFormat: string;
+	text: (row: WageRegisterRow) => string;
+	value: (row: WageRegisterRow) => string | number;
+	totalText: string;
+	totalValue: string | number;
+};
+
+/** FORM XVII columns; the two overtime columns appear only when someone on the register has overtime. */
+function registerColumns(register: WageRegisterResponse): RegisterColumn[] {
 	const { bonusRate, epfRate, esiRate } = register.rates;
-	return [
-		{ key: 'serial', title: 'S.no.', letter: 'A' },
-		{ key: 'name', title: 'Name of Employees', letter: 'B' },
-		{ key: 'post', title: 'POST', letter: 'C' },
-		{ key: 'workingDays', title: 'WORKING DAYS', letter: 'D' },
-		{ key: 'dailyWage', title: 'WAGES (BASIC +DA)', letter: 'E' },
-		{ key: 'wages', title: 'WAGES', letter: 'F' },
-		{ key: 'bonus', title: `BONUS@${formatRate(bonusRate)}%`, letter: 'H' },
-		{ key: 'totalWages', title: 'TOTAL WAGES', letter: 'J' },
-		{ key: 'epf', title: `DEDUCTION EPF${formatRate(epfRate)}%`, letter: 'K' },
-		{ key: 'esi', title: `DEDUCTION ESI@${formatRate(esiRate)}%`, letter: 'L' },
-		{ key: 'grossPayment', title: 'GROSS PAYMENT IN RS.', letter: 'N' },
-	] as const;
+	const { totals } = register;
+	const amount = (field: 'wages' | 'bonus' | 'totalWages' | 'epf' | 'esi' | 'grossPayment' | 'dailyWage', decimals: 'auto' | 0 | 2, totalDecimals: 'auto' | 0) => ({
+		text: (row: WageRegisterRow) => formatRegisterNumber(row[field], decimals),
+		value: (row: WageRegisterRow) => row[field],
+		totalText: field === 'dailyWage' ? '' : formatRegisterNumber(totals[field], totalDecimals),
+		totalValue: field === 'dailyWage' ? '' : totals[field],
+	});
+	const columns: RegisterColumn[] = [
+		{ title: 'S.no.', letter: 'A', width: 7, format: '0', totalFormat: '@', text: (row) => String(row.serial), value: (row) => row.serial, totalText: '', totalValue: '' },
+		{ title: 'Name of Employees', letter: 'B', width: 32, format: '@', totalFormat: '@', text: registerEmployeeName, value: registerEmployeeName, totalText: 'TOTAL', totalValue: 'TOTAL' },
+		{ title: 'POST', letter: 'C', width: 14, format: '@', totalFormat: '@', text: (row) => row.post, value: (row) => row.post, totalText: '', totalValue: '' },
+		{
+			title: 'WORKING DAYS', letter: 'D', width: 10, format: '0', totalFormat: '0',
+			text: (row) => String(row.workingDays), value: (row) => row.workingDays, totalText: String(totals.workingDays), totalValue: totals.workingDays,
+		},
+		{ title: 'WAGES (BASIC +DA)', letter: 'E', width: 12, format: 'General', totalFormat: '@', ...amount('dailyWage', 'auto', 'auto') },
+		{ title: 'WAGES', letter: 'F', width: 11, format: 'General', totalFormat: 'General', ...amount('wages', 'auto', 'auto') },
+	];
+	if (totals.overtimeHours) {
+		columns.push(
+			{
+				title: 'O.T. HOURS', letter: 'G', width: 9, format: 'General', totalFormat: 'General',
+				text: (row) => (row.overtimeHours ? formatRegisterNumber(row.overtimeHours) : ''),
+				value: (row) => row.overtimeHours || '',
+				totalText: formatRegisterNumber(totals.overtimeHours),
+				totalValue: totals.overtimeHours,
+			},
+			{
+				title: 'O.T. WAGES', letter: 'G1', width: 11, format: '0.00', totalFormat: '0.00',
+				text: (row) => (row.overtimeWages ? formatRegisterNumber(row.overtimeWages, 2) : ''),
+				value: (row) => row.overtimeWages || '',
+				totalText: formatRegisterNumber(totals.overtimeWages ?? 0, 2),
+				totalValue: totals.overtimeWages ?? 0,
+			},
+		);
+	}
+	columns.push(
+		{ title: `BONUS@${formatRate(bonusRate)}%`, letter: 'H', width: 13, format: '0.00', totalFormat: '0', ...amount('bonus', 2, 0) },
+		{ title: 'TOTAL WAGES', letter: 'J', width: 13, format: '0.00', totalFormat: '0', ...amount('totalWages', 2, 0) },
+		{ title: `DEDUCTION EPF${formatRate(epfRate)}%`, letter: 'K', width: 13, format: '0', totalFormat: '0', ...amount('epf', 0, 0) },
+		{ title: `DEDUCTION ESI@${formatRate(esiRate)}%`, letter: 'L', width: 13, format: '0', totalFormat: '0', ...amount('esi', 0, 0) },
+		{ title: 'GROSS PAYMENT IN RS.', letter: 'N', width: 14, format: '0', totalFormat: '0', ...amount('grossPayment', 0, 0) },
+	);
+	return columns;
 }
 
 export function registerEmployeeName(row: WageRegisterRow) {
@@ -42,39 +87,6 @@ export function registerContractLine(register: WageRegisterResponse) {
 export function registerPoLine(register: WageRegisterResponse) {
 	const poNumber = register.header.opNumber.trim();
 	return poNumber ? `PO No.- ${poNumber}` : '';
-}
-
-function rowCells(row: WageRegisterRow) {
-	return [
-		String(row.serial),
-		registerEmployeeName(row),
-		row.post,
-		String(row.workingDays),
-		formatRegisterNumber(row.dailyWage),
-		formatRegisterNumber(row.wages),
-		formatRegisterNumber(row.bonus, 2),
-		formatRegisterNumber(row.totalWages, 2),
-		formatRegisterNumber(row.epf, 0),
-		formatRegisterNumber(row.esi, 0),
-		formatRegisterNumber(row.grossPayment, 0),
-	];
-}
-
-function totalCells(register: WageRegisterResponse) {
-	const { totals } = register;
-	return [
-		'',
-		'TOTAL',
-		'',
-		String(totals.workingDays),
-		'',
-		formatRegisterNumber(totals.wages),
-		formatRegisterNumber(totals.bonus, 0),
-		formatRegisterNumber(totals.totalWages, 0),
-		formatRegisterNumber(totals.epf, 0),
-		formatRegisterNumber(totals.esi, 0),
-		formatRegisterNumber(totals.grossPayment, 0),
-	];
 }
 
 type SignatureImage = { dataUrl: string; format: 'png' | 'jpeg'; width: number; height: number };
@@ -172,34 +184,25 @@ export async function exportWageRegisterPdf(register: WageRegisterResponse, acti
 		y += 3;
 	}
 
-	const headings = registerHeadings(register);
+	const columns = registerColumns(register);
 	autoTable(doc, {
 		startY: y + 1,
 		margin: { left: margin, right: margin },
 		theme: 'grid',
 		head: [
-			headings.map((heading) => heading.title),
-			headings.map((heading) => heading.letter),
+			columns.map((column) => column.title),
+			columns.map((column) => column.letter),
 		],
-		body: register.rows.map(rowCells),
-		foot: [totalCells(register)],
+		body: register.rows.map((row) => columns.map((column) => column.text(row))),
+		foot: [columns.map((column) => column.totalText)],
 		showFoot: 'lastPage',
 		styles: { font: 'helvetica', fontSize: 8.5, cellPadding: 1.6, textColor: 20, lineColor: 20, lineWidth: 0.2, valign: 'middle' },
 		headStyles: { fillColor: [255, 255, 255], textColor: 20, fontStyle: 'bold', halign: 'center', fontSize: 7.5 },
 		footStyles: { fillColor: [255, 255, 255], textColor: 20, fontStyle: 'bold', halign: 'center' },
-		columnStyles: {
-			0: { halign: 'center', cellWidth: 12 },
-			1: { cellWidth: 52 },
-			2: { halign: 'center', cellWidth: 26 },
-			3: { halign: 'center' },
-			4: { halign: 'center' },
-			5: { halign: 'center' },
-			6: { halign: 'center' },
-			7: { halign: 'center' },
-			8: { halign: 'center' },
-			9: { halign: 'center' },
-			10: { halign: 'center' },
-		},
+		columnStyles: Object.fromEntries(columns.map((_, index) => [
+			index,
+			index === 0 ? { halign: 'center' as const, cellWidth: 12 } : index === 1 ? { cellWidth: 52 } : index === 2 ? { halign: 'center' as const, cellWidth: 26 } : { halign: 'center' as const },
+		])),
 	});
 
 	const pageHeight = doc.internal.pageSize.getHeight();
@@ -241,19 +244,15 @@ export async function exportWageRegisterPdf(register: WageRegisterResponse, acti
 	finishPdf(doc, fileName(register, 'pdf'), action);
 }
 
-const COLUMN_WIDTHS = [7, 32, 14, 10, 12, 11, 13, 13, 13, 13, 14];
-const NUMBER_FORMATS = ['0', '@', '@', '0', 'General', 'General', '0.00', '0.00', '0', '0', '0'];
-const TOTAL_NUMBER_FORMATS = ['@', '@', '@', '0', '@', 'General', '0', '0', '0', '0', '0'];
-
 export async function exportWageRegisterExcel(register: WageRegisterResponse) {
-	const headings = registerHeadings(register);
-	const lastColumn = headings.length;
+	const columns = registerColumns(register);
+	const lastColumn = columns.length;
 	const workbook = await createWorkbook();
 	workbook.creator = register.header.contractorName;
 	const sheet = workbook.addWorksheet('FORM XVII', {
 		pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, horizontalCentered: true, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
 	});
-	sheet.columns = COLUMN_WIDTHS.map((width) => ({ width }));
+	sheet.columns = columns.map(({ width }) => ({ width }));
 
 	const font = (size: number, extra: Partial<import('exceljs').Font> = {}) => ({ name: 'Times New Roman', size, ...extra });
 	const thin = { style: 'thin' as const, color: { argb: 'FF1A1A1A' } };
@@ -292,9 +291,9 @@ export async function exportWageRegisterExcel(register: WageRegisterResponse) {
 	const poLine = registerPoLine(register);
 	if (poLine) banner(poLine, 11, { align: 'left' });
 
-	const headingRow = sheet.addRow(headings.map((heading) => heading.title));
+	const headingRow = sheet.addRow(columns.map((column) => column.title));
 	headingRow.height = 34;
-	const letterRow = sheet.addRow(headings.map((heading) => heading.letter));
+	const letterRow = sheet.addRow(columns.map((column) => column.letter));
 	[headingRow, letterRow].forEach((row) => row.eachCell((cell) => {
 		cell.font = font(row === headingRow ? 9.5 : 10, { bold: true });
 		cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
@@ -302,35 +301,22 @@ export async function exportWageRegisterExcel(register: WageRegisterResponse) {
 	}));
 
 	register.rows.forEach((item) => {
-		const row = sheet.addRow([
-			item.serial,
-			registerEmployeeName(item),
-			item.post,
-			item.workingDays,
-			item.dailyWage,
-			item.wages,
-			item.bonus,
-			item.totalWages,
-			item.epf,
-			item.esi,
-			item.grossPayment,
-		]);
+		const row = sheet.addRow(columns.map((column) => column.value(item)));
 		row.height = item.showParentName ? 30 : 18;
 		row.eachCell({ includeEmpty: true }, (cell, column) => {
 			cell.font = font(10.5);
 			cell.border = border;
-			cell.numFmt = NUMBER_FORMATS[column - 1];
+			cell.numFmt = columns[column - 1]?.format ?? 'General';
 			cell.alignment = { horizontal: column === 2 ? 'left' : 'center', vertical: 'middle', wrapText: column === 2 };
 		});
 	});
 
-	const { totals } = register;
-	const totalRow = sheet.addRow(['', 'TOTAL', '', totals.workingDays, '', totals.wages, totals.bonus, totals.totalWages, totals.epf, totals.esi, totals.grossPayment]);
+	const totalRow = sheet.addRow(columns.map((column) => column.totalValue));
 	totalRow.height = 20;
 	totalRow.eachCell({ includeEmpty: true }, (cell, column) => {
 		cell.font = font(10.5, { bold: true });
 		cell.border = border;
-		cell.numFmt = TOTAL_NUMBER_FORMATS[column - 1];
+		cell.numFmt = columns[column - 1]?.totalFormat ?? 'General';
 		cell.alignment = { horizontal: 'center', vertical: 'middle' };
 	});
 

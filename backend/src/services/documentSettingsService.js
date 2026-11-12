@@ -7,7 +7,7 @@ const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Values that price an invoice or a wage register; earlier values are kept so old months use old rates. */
 const RATE_FIELDS = {
 	invoice: ['epfRate', 'esicRate', 'bonusRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
-	wageRegister: ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling'],
+	wageRegister: ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling', 'overtimeHoursPerDay', 'overtimeRateMultiplier'],
 };
 
 /** Field rules per document; `default` is used until an admin saves the document. */
@@ -56,6 +56,8 @@ const DOCUMENT_FIELDS = {
 		epfWageCeiling: { label: 'EPF wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '25000' },
 		esiRate: { label: 'ESI rate (%)', max: 10, number: { min: 0, max: 100 }, required: true, default: '0.75' },
 		esiWageCeiling: { label: 'ESI wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '21000' },
+		overtimeHoursPerDay: { label: 'Normal working hours in a day', max: 5, number: { min: 1, max: 24 }, blankUsesDefault: true, default: '8' },
+		overtimeRateMultiplier: { label: 'Overtime rate (times the hourly wage)', max: 5, number: { min: 0, max: 10 }, blankUsesDefault: true, default: '2' },
 		ratesEffectiveFrom: { label: 'Rates effective from', max: 7, month: true, default: '' },
 		signatoryCompany: { label: 'Signatory company line', max: 120, default: 'FOR:-SHREEJI CARETAKER COMPANY' },
 		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Proprietor / Manager' },
@@ -156,7 +158,10 @@ async function getSettingsFor(type, month) {
 	const covering = [...rateHistory].reverse().find((period) => (period.fromMonth || '') <= month && month < period.toMonth);
 	const oldest = [...rateHistory].sort((left, right) => (left.fromMonth || '').localeCompare(right.fromMonth || ''))[0];
 	const period = covering || oldest;
-	const old = Object.fromEntries(RATE_FIELDS[key].filter((field) => typeof period.values?.[field] === 'string').map((field) => [field, period.values[field]]));
+	// An overtime rate missing from a period was never saved before it, so it held its default.
+	const old = Object.fromEntries(RATE_FIELDS[key]
+		.filter((field) => typeof period.values?.[field] === 'string' || DOCUMENT_FIELDS[key][field].blankUsesDefault)
+		.map((field) => [field, typeof period.values?.[field] === 'string' ? period.values[field] : DOCUMENT_FIELDS[key][field].default]));
 	return { ...current, ...old };
 }
 
@@ -177,10 +182,12 @@ function rateHistoryFor(key, previous, values) {
 	values.ratesEffectiveFrom = chosen || currentMonth();
 	// Rates replaced from a month on or before their own start never applied, so they are not kept as a period.
 	if (before.ratesEffectiveFrom && values.ratesEffectiveFrom <= before.ratesEffectiveFrom) return previous?.rateHistory || [];
+	// Rates that were never saved held their default, which getSettingsFor assumes for periods without them.
+	const archived = fields.filter((field) => !DOCUMENT_FIELDS[key][field].blankUsesDefault || typeof previous?.values?.[field] === 'string');
 	return [
 		...(previous?.rateHistory || []),
 		{
-			values: Object.fromEntries(fields.map((field) => [field, before[field]])),
+			values: Object.fromEntries(archived.map((field) => [field, before[field]])),
 			fromMonth: before.ratesEffectiveFrom || '',
 			toMonth: values.ratesEffectiveFrom,
 			changedAt: new Date(),
@@ -201,7 +208,7 @@ async function updateDocumentSettings(user, type, input = {}) {
 
 	Object.entries(DOCUMENT_FIELDS[key]).forEach(([field, rule]) => {
 		const raw = typeof input[field] === 'string' ? input[field] : '';
-		const value = raw.replace(/\r\n/g, '\n').trim();
+		const value = raw.replace(/\r\n/g, '\n').trim() || (rule.blankUsesDefault ? rule.default : '');
 		if (rule.required && !value) throw httpError(400, `${rule.label} is required.`);
 		if (rule.cloudinaryImage && value && !isSignatureUrl(value)) throw httpError(400, `${rule.label} must be uploaded through the signature upload.`);
 		if (value.length > rule.max) throw httpError(400, `${rule.label} must be ${rule.max} characters or fewer.`);

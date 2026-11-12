@@ -9,6 +9,8 @@ const { bulkMarkAttendance, currentDateInTimeZone, markAttendance, parseAttendan
 const { computeTotals } = require('../src/services/clientInvoiceService');
 const { createLocation, updateLocation } = require('../src/services/locationService');
 const { listOrganizations } = require('../src/services/organizationService');
+const Overtime = require('../src/models/Overtime');
+const { setOvertimeHours, wageRegisterRow } = require('../src/services/payrollService');
 const { hasJoinedBy } = require('../src/utils/employeeStatus');
 
 const admin = { id: '507f1f77bcf86cd799439099', role: 'admin' };
@@ -307,6 +309,58 @@ test('absences are saved even after the month has 26 paid days', async (t) => {
   });
   assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 0, skippedInvalid: 0, skippedBlocked: 0 });
   assert.equal(inserted[0].status, 'absent');
+});
+
+const WAGE_RATES = {
+  bonusRate: 8.33, epfRate: 12, epfWageCeiling: 25000, esiRate: 0.75, esiWageCeiling: 21000, overtimeHoursPerDay: 8, overtimeRateMultiplier: 2,
+};
+const WAGE_LINE = { employeeId, employeeName: 'Bikash', parentName: '', dailySalary: 800, paidDays: 26, epfoApplicable: true, esicApplicable: true };
+
+test('overtime hours are paid at twice the hourly wage and added to the net payment', () => {
+  const row = wageRegisterRow({ ...WAGE_LINE, overtimeHours: 10 }, WAGE_RATES);
+  assert.equal(row.wages, 20800);
+  assert.equal(row.overtimeRate, 200);
+  assert.equal(row.overtimeWages, 2000);
+  assert.equal(row.bonus, 1732.64);
+  assert.equal(row.totalWages, 24532.64);
+  assert.equal(row.epf, 2496);
+  assert.equal(row.esi, 158);
+  assert.equal(row.grossPayment, 21879);
+});
+
+test('a register without overtime keeps the same figures as before', () => {
+  const row = wageRegisterRow(WAGE_LINE, WAGE_RATES);
+  assert.equal(row.overtimeHours, 0);
+  assert.equal(row.overtimeWages, 0);
+  assert.equal(row.totalWages, 22532.64);
+  assert.equal(row.esi, 156);
+  assert.equal(row.grossPayment, 19881);
+});
+
+test('only admins enter overtime, for this or an earlier month, in valid hours', async (t) => {
+  const thisMonth = currentDateInTimeZone('Asia/Kolkata').slice(0, 7);
+  const input = { organizationId, locationId, employeeId, month: thisMonth, hours: '12.5', timeZone: 'Asia/Kolkata' };
+  stub(t, User, { findOne: async () => ({ id: organizationId }) });
+  stub(t, Employee, { findOne: () => ({ select: () => ({ lean: async () => ({ _id: employeeId, name: 'Bikash' }) }) }) });
+  let saved = null;
+  let deleted = null;
+  stub(t, Overtime, {
+    findOneAndUpdate: async (filter, update) => { saved = { filter, update }; return {}; },
+    deleteOne: async (filter) => { deleted = filter; return {}; },
+  });
+
+  await assert.rejects(setOvertimeHours({ id: organizationId, role: 'organization' }, input), (error) => error.statusCode === 403);
+  await assert.rejects(setOvertimeHours(admin, { ...input, month: '2999-01' }), (error) => /future month/.test(error.message));
+  for (const hours of ['-1', 'abc', '401', '1.234']) {
+    await assert.rejects(setOvertimeHours(admin, { ...input, hours }), (error) => error.statusCode === 400 && /Overtime must be/.test(error.message));
+  }
+
+  assert.deepEqual(await setOvertimeHours(admin, input), { employeeId, month: thisMonth, hours: 12.5 });
+  assert.equal(saved.update.$set.hours, 12.5);
+  assert.equal(String(saved.update.$set.locationId), locationId);
+
+  await setOvertimeHours(admin, { ...input, hours: '0' });
+  assert.deepEqual(deleted, { employeeId, month: thisMonth });
 });
 
 test('a month sheet with 27 present days shows the 27th day blank', async (t) => {

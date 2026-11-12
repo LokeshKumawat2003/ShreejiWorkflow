@@ -9,6 +9,7 @@ const {
   history,
   list,
   mark,
+  overtime,
   parse,
   parseMonth,
   payroll,
@@ -62,6 +63,7 @@ router.use(requireAuth, requireRole('admin', 'organization'));
 router.get('/history', history);
 router.get('/payroll', payroll);
 router.get('/wage-register', wageRegister);
+router.put('/overtime', requireRole('admin'), overtime);
 router.get('/bank-payments', requireRole('admin'), bankPayments);
 for (const [prefix, handlers] of [['/bank-invoice', bankInvoiceHandlers], ['/payroll-runs', payrollRunHandlers]]) {
   router.get(`${prefix}/locations`, requireRole('admin'), handlers.locations);

@@ -73,6 +73,8 @@ function WageRegisterSettingsPanel() {
 					<FormInput label="EPF rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.epfRate} helperText="Column K, for EPFO applicable employees" onChange={(event) => setField('epfRate', event.target.value)} />
 					<FormInput label="EPF wage ceiling" inputMode="numeric" maxLength={12} value={values.epfWageCeiling} helperText="EPF is charged on wages up to this amount; above it EPF stays fixed. Leave blank for no limit." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
 					<FormInput label="ESI wage ceiling" inputMode="numeric" maxLength={12} value={values.esiWageCeiling} helperText="ESI is charged on wages up to this amount; above it ESI stays fixed. Leave blank for no limit." onChange={(event) => setField('esiWageCeiling', event.target.value)} />
+					<FormInput label="Normal working hours in a day" inputMode="decimal" maxLength={5} value={values.overtimeHoursPerDay} helperText="Hours above this are overtime. Hourly wage = daily wage ÷ these hours. Blank uses 8." onChange={(event) => setField('overtimeHoursPerDay', event.target.value)} />
+					<FormInput label="Overtime rate (× hourly wage)" inputMode="decimal" maxLength={5} value={values.overtimeRateMultiplier} helperText="2 pays each overtime hour at double the hourly wage (as per law). Blank uses 2." onChange={(event) => setField('overtimeRateMultiplier', event.target.value)} />
 				</SimpleGrid>
 				<FormInput
 					label="Rates effective from (month)"
@@ -83,7 +85,7 @@ function WageRegisterSettingsPanel() {
 				/>
 				<RateHistoryList
 					history={settings.rateHistory}
-					describe={(old) => `Bonus ${old.bonusRate}% · EPF ${old.epfRate}% (ceiling ${old.epfWageCeiling || 'none'}) · ESI ${old.esiRate}% (ceiling ${old.esiWageCeiling || 'none'})`}
+					describe={(old) => `Bonus ${old.bonusRate}% · EPF ${old.epfRate}% (ceiling ${old.epfWageCeiling || 'none'}) · ESI ${old.esiRate}% (ceiling ${old.esiWageCeiling || 'none'}) · OT ${old.overtimeRateMultiplier || '2'}× after ${old.overtimeHoursPerDay || '8'} hrs`}
 				/>
 			</FormSection>
 			<FormSection title="Signature">

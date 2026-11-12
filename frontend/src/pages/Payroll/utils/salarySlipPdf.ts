@@ -11,6 +11,8 @@ export type SalarySlipRates = {
   epfWageCeiling: number;
   esiRate: number;
   esiWageCeiling: number;
+  overtimeHoursPerDay: number;
+  overtimeRateMultiplier: number;
 };
 
 function rateOf(value: string | undefined) {
@@ -27,6 +29,8 @@ export type SalarySlip = {
   designation: string;
   monthYear: string;
   basic: number;
+  overtimeHours: number;
+  overtime: number;
   bonus: number;
   washingAllowance: number;
   conveyance: number;
@@ -95,13 +99,17 @@ export function salaryMonthYear(fromDate: string, toDate: string) {
 export function buildSalarySlip(line: PayrollLine, monthYear: string, rates: SalarySlipRates): SalarySlip {
   const dailyWage = line.dailySalary > 0 ? line.dailySalary : round2((line.basicPay || 0) + (line.dearnessAllowance || 0));
   const basic = round2(dailyWage * line.paidDays);
+  const overtimeHours = line.overtimeHours || 0;
+  const overtimeRate = round2((dailyWage / (rates.overtimeHoursPerDay || 8)) * rates.overtimeRateMultiplier);
+  const overtime = round2(overtimeHours * overtimeRate);
   const bonus = round2(basic * (rates.bonusRate / 100));
   const washingAllowance = round2(basic * (rates.washingAllowanceRate / 100));
   const conveyance = 0;
-  const totalAddition = round2(basic + bonus + washingAllowance + conveyance);
+  const totalAddition = round2(basic + overtime + bonus + washingAllowance + conveyance);
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(basic, rates.epfWageCeiling) : basic;
   const providentFund = line.epfoApplicable ? Math.round(epfBase * (rates.epfRate / 100)) : 0;
-  const esiBase = rates.esiWageCeiling > 0 ? Math.min(basic, rates.esiWageCeiling) : basic;
+  const esiWages = basic + overtime;
+  const esiBase = rates.esiWageCeiling > 0 ? Math.min(esiWages, rates.esiWageCeiling) : esiWages;
   const esi = line.esicApplicable ? Math.round(esiBase * (rates.esiRate / 100)) : 0;
   const foodCharge = 0;
   const houseRent = 0;
@@ -112,6 +120,8 @@ export function buildSalarySlip(line: PayrollLine, monthYear: string, rates: Sal
     designation: line.designation || line.jobTitle || '',
     monthYear,
     basic,
+    overtimeHours,
+    overtime,
     bonus,
     washingAllowance,
     conveyance,
@@ -149,6 +159,8 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     epfWageCeiling: rateOf(register.epfWageCeiling),
     esiRate: rateOf(register.esiRate),
     esiWageCeiling: rateOf(register.esiWageCeiling),
+    overtimeHoursPerDay: rateOf(register.overtimeHoursPerDay) || 8,
+    overtimeRateMultiplier: register.overtimeRateMultiplier?.trim() ? rateOf(register.overtimeRateMultiplier) : 2,
   };
   const signature = await loadSignatureImage(company.signatureImage);
   const pdf = new jsPDF({ format: 'a4', unit: 'mm' });
@@ -213,6 +225,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
         [`Bonus @${formatRate(rates.bonusRate)}%`, money(slip.bonus), `E.S.I.@${formatRate(rates.esiRate)}%`, money(slip.esi)],
         [`Washing allowance@${formatRate(rates.washingAllowanceRate)}%`, money(slip.washingAllowance), 'Food Charge', String(slip.foodCharge)],
         ['Conveyance', money(slip.conveyance), 'House Rent', String(slip.houseRent)],
+        ...(slip.overtime ? [[`Overtime (${slip.overtimeHours} hrs)`, money(slip.overtime), '', '']] : []),
         ['Total Addition', money(slip.totalAddition), 'Total Deduction', money(slip.totalDeduction)],
         ['', '', 'NET Salary', money(slip.netSalary)],
       ],
@@ -233,7 +246,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
       },
       didParseCell: (data) => {
         if (data.section === 'head' && (data.column.index === 1 || data.column.index === 3)) data.cell.styles.halign = 'right';
-        if (data.section === 'body' && data.row.index >= 4) data.cell.styles.fontStyle = 'bold';
+        if (data.section === 'body' && data.row.index >= (slip.overtime ? 5 : 4)) data.cell.styles.fontStyle = 'bold';
       },
     });
 

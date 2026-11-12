@@ -6,7 +6,9 @@ import {
 	Button,
 	Flex,
 	HStack,
+	Input,
 	Skeleton,
+	Spinner,
 	Stack,
 	Text,
 	useToast,
@@ -28,7 +30,7 @@ import {
 	type DataTableColumn,
 } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
-import { getPayroll, getWageRegister, type WageRegisterResponse, type WageRegisterRow } from '../../../services/attendanceService';
+import { getPayroll, getWageRegister, setOvertimeHours, type WageRegisterResponse, type WageRegisterRow } from '../../../services/attendanceService';
 import { downloadSalarySlipsPdf } from '../utils/salarySlipPdf';
 import { exportWageRegisterExcel, exportWageRegisterPdf, registerContractLine } from '../utils/wageRegisterExport';
 import { formatAmount } from './PayrollShared';
@@ -55,7 +57,50 @@ function rupees(value: number, decimals: 0 | 2 = 0) {
 	return formatAmount(decimals === 0 ? Math.round(value) : Math.round(value * 100) / 100);
 }
 
-function registerColumns(register: WageRegisterResponse): DataTableColumn<WageRegisterRow>[] {
+type OvertimeInputProps = {
+	row: WageRegisterRow;
+	onSave: (row: WageRegisterRow, hours: string) => Promise<boolean>;
+};
+
+/** Overtime hours of one employee; saved when the box loses focus or Enter is pressed. */
+function OvertimeInput({ row, onSave }: OvertimeInputProps) {
+	const saved = row.overtimeHours ? String(row.overtimeHours) : '';
+	const [value, setValue] = useState(saved);
+	const [isSaving, setIsSaving] = useState(false);
+
+	useEffect(() => setValue(saved), [saved]);
+
+	async function commit() {
+		const next = value.trim();
+		if (next === saved || (next === '0' && !saved)) return;
+		setIsSaving(true);
+		const ok = await onSave(row, next);
+		setIsSaving(false);
+		if (!ok) setValue(saved);
+	}
+
+	return (
+		<HStack spacing={1} justify="flex-end">
+			{isSaving ? <Spinner size="xs" color="brand.500" /> : null}
+			<Input
+				aria-label={`Overtime hours of ${row.employeeName}`}
+				size="sm"
+				w="72px"
+				textAlign="right"
+				borderRadius="md"
+				inputMode="decimal"
+				placeholder="0"
+				value={value}
+				isDisabled={isSaving}
+				onChange={(event) => setValue(event.target.value.replace(/[^\d.]/g, ''))}
+				onBlur={() => void commit()}
+				onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+			/>
+		</HStack>
+	);
+}
+
+function registerColumns(register: WageRegisterResponse, onSaveOvertime: OvertimeInputProps['onSave']): DataTableColumn<WageRegisterRow>[] {
 	const { bonusRate, epfRate, esiRate } = register.rates;
 	const amount = (value: number, decimals: 0 | 2 = 0) => <Text color="slate.700" whiteSpace="nowrap">{rupees(value, decimals)}</Text>;
 	return [
@@ -84,6 +129,15 @@ function registerColumns(register: WageRegisterResponse): DataTableColumn<WageRe
 				: <Text color="orange.500" fontWeight="600" whiteSpace="nowrap">Not set</Text>),
 		},
 		{ key: 'wages', header: 'Wages', align: 'right', render: (row) => amount(row.wages, 2) },
+		{ key: 'overtimeHours', header: 'OT hours', align: 'right', render: (row) => <OvertimeInput row={row} onSave={onSaveOvertime} /> },
+		{
+			key: 'overtimeWages',
+			header: 'OT wages',
+			align: 'right',
+			render: (row) => (row.overtimeWages
+				? <Text color="slate.700" whiteSpace="nowrap" title={`${row.overtimeHours} hrs × ${rupees(row.overtimeRate, 2)}`}>{rupees(row.overtimeWages, 2)}</Text>
+				: <Text color="slate.400">—</Text>),
+		},
 		{ key: 'bonus', header: `Bonus ${bonusRate}%`, align: 'right', hideBelow: 'lg', render: (row) => amount(row.bonus, 2) },
 		{ key: 'totalWages', header: 'Total wages', align: 'right', hideBelow: 'md', render: (row) => amount(row.totalWages, 2) },
 		{ key: 'epf', header: `EPF ${epfRate}%`, align: 'right', hideBelow: 'lg', render: (row) => <Text color="red.500" whiteSpace="nowrap">{row.epf ? `− ${rupees(row.epf)}` : '—'}</Text> },
@@ -104,6 +158,18 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 	const [isLoading, setIsLoading] = useState(true);
 	const [loadError, setLoadError] = useState('');
 	const [exporting, setExporting] = useState<ExportKind | null>(null);
+	const [refreshToken, setRefreshToken] = useState(0);
+
+	async function saveOvertime(row: WageRegisterRow, hours: string) {
+		try {
+			await setOvertimeHours({ organizationId, locationId, employeeId: row.employeeId, month, hours: hours || '0' });
+			setRefreshToken((current) => current + 1);
+			return true;
+		} catch (error) {
+			toast({ title: errorMessage(error, 'Unable to save the overtime hours.'), status: 'error', position: 'top' });
+			return false;
+		}
+	}
 
 	useEffect(() => {
 		if (!/^\d{4}-\d{2}$/.test(month)) return undefined;
@@ -124,7 +190,7 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [locationId, month, organizationId, page]);
+	}, [locationId, month, organizationId, page, refreshToken]);
 
 	function changeMonth(value: string) {
 		setMonth(value);
@@ -279,7 +345,7 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 						</Flex>
 
 						<DataTable
-							columns={registerColumns(register)}
+							columns={registerColumns(register, saveOvertime)}
 							rows={register.rows}
 							rowKey={(row) => row.employeeId}
 							size="sm"
@@ -290,6 +356,8 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 								employee: <Text>Total{register.pagination.totalPages > 1 ? ' (all pages)' : ''}</Text>,
 								workingDays: totals.workingDays,
 								wages: rupees(totals.wages, 2),
+								overtimeHours: totals.overtimeHours ? `${totals.overtimeHours} hrs` : '—',
+								overtimeWages: totals.overtimeWages ? rupees(totals.overtimeWages, 2) : '—',
 								bonus: rupees(totals.bonus),
 								totalWages: rupees(totals.totalWages),
 								epf: totals.epf ? `− ${rupees(totals.epf)}` : '—',
@@ -312,9 +380,10 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 									<HStack px={{ base: 4, md: 5 }} py={3} spacing={2} align="flex-start" fontSize="xs" color="slate.500" bg="slate.50" borderTop="1px solid" borderColor="slate.100">
 										<InfoOutlineIcon mt="2px" />
 										<Text>
-											Wages = days × daily wage · Bonus {register.rates.bonusRate}% · EPF {register.rates.epfRate}%
-											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}%
-											{register.rates.esiWageCeiling ? ` (on wages up to ${register.rates.esiWageCeiling})` : ''} · Net = total wages − EPF − ESI.
+											Wages = days × daily wage · OT wages = OT hours × daily wage ÷ {register.rates.overtimeHoursPerDay} × {register.rates.overtimeRateMultiplier}
+											{' '}(type the hours in the OT box; it saves when you leave the box) · Bonus {register.rates.bonusRate}% on wages · EPF {register.rates.epfRate}%
+											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}% on wages + OT
+											{register.rates.esiWageCeiling ? ` (up to ${register.rates.esiWageCeiling})` : ''} · Net = wages + bonus + OT − EPF − ESI.
 											The Excel and PDF downloads use the FORM XVII layout; edit it in Settings → Wage register.
 										</Text>
 									</HStack>

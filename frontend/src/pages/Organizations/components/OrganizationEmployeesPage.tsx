@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActionButton } from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import { downloadAppointmentLetters } from '../../../services/appointmentLetterService';
+import { useDataChanged } from '../../../utils/dataSync';
 import type { PdfAction } from '../../../utils/pdfOutput';
 import type { OrganizationLocation } from '../../../types';
 import type { Employee } from '../../../types';
@@ -51,6 +52,14 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
   }, [isViewing, onViewingChange]);
 
   useEffect(() => () => onViewingChange?.(false), [onViewingChange]);
+
+  const viewingEmployeeId = viewingEmployee?.id;
+  useDataChanged(['masterData', 'organizations'], () => {
+    if (!viewingEmployeeId) return;
+    void employees.getDetails(viewingEmployeeId)
+      .then((employee) => setViewingEmployee((current) => current?.id === employee.id ? employee : current))
+      .catch(() => undefined);
+  });
 
   function openCreateDialog() {
     setFormEmployee(null);

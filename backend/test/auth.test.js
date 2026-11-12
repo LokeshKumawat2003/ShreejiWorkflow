@@ -35,7 +35,7 @@ const { createLocation, deleteLocation, listLocations, updateLocation, validateL
 const MasterData = require('../src/models/MasterData');
 const { createMasterData, deleteMasterData, updateMasterData } = require('../src/services/masterDataService');
 const DocumentSettings = require('../src/models/DocumentSettings');
-const { DOCUMENT_FIELDS, getDocumentSettings, updateDocumentSettings } = require('../src/services/documentSettingsService');
+const { DOCUMENT_FIELDS, getDocumentSettings, getSettingsFor, updateDocumentSettings } = require('../src/services/documentSettingsService');
 
 process.env.JWT_EXPIRES_IN = '8h';
 
@@ -345,6 +345,23 @@ test('employee routes require authentication', async (t) => {
     method: 'POST',
   });
   assert.equal(letterResponse.status, 401);
+});
+
+test('accounts cannot be created without an admin session', async (t) => {
+  process.env.NODE_ENV = 'test';
+  const server = createApp().listen(0);
+  await once(server, 'listening');
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+
+  for (const role of ['admin', 'organization']) {
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, name: 'Intruder', organizationName: 'Intruder Org', email: 'intruder@example.com', password: 'StrongPass123' }),
+    });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get('set-cookie'), null);
+  }
 });
 
 test('appointment letter email rejects malformed employee ids before database access', async () => {
@@ -1636,6 +1653,54 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
   }
 });
 
+test('wage register rates of an old month come from the rates valid in that month', async () => {
+  const originals = { findOne: DocumentSettings.findOne, findOneAndUpdate: DocumentSettings.findOneAndUpdate };
+  const oldRates = { bonusRate: '8.33', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75', esiWageCeiling: '21000' };
+  let stored = { key: 'wageRegister', values: { title: 'Register of wages', contractorName: 'Shreeji', ...oldRates, ratesEffectiveFrom: '' }, rateHistory: [] };
+  let update;
+  DocumentSettings.findOne = () => ({ lean: async () => stored });
+  DocumentSettings.findOneAndUpdate = (filter, change) => {
+    update = change.$set;
+    stored = { ...stored, ...change.$set };
+    return { lean: async () => stored };
+  };
+
+  try {
+    await updateDocumentSettings(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      'wage-register',
+      { ...stored.values, bonusRate: '10', epfRate: '13', epfWageCeiling: '25000', esiRate: '0.75', ratesEffectiveFrom: '2026-04' },
+    );
+    assert.equal(update.values.ratesEffectiveFrom, '2026-04');
+    assert.deepEqual(update.rateHistory.map(({ values, fromMonth, toMonth }) => ({ values, fromMonth, toMonth })), [
+      { values: oldRates, fromMonth: '', toMonth: '2026-04' },
+    ]);
+
+    const march = await getSettingsFor('wage-register', '2026-03');
+    assert.deepEqual(
+      { bonusRate: march.bonusRate, epfRate: march.epfRate, epfWageCeiling: march.epfWageCeiling, esiRate: march.esiRate },
+      { bonusRate: '8.33', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75' },
+    );
+    const april = await getSettingsFor('wage-register', '2026-04');
+    assert.deepEqual(
+      { bonusRate: april.bonusRate, epfRate: april.epfRate, epfWageCeiling: april.epfWageCeiling, esiRate: april.esiRate },
+      { bonusRate: '10', epfRate: '13', epfWageCeiling: '25000', esiRate: '0.75' },
+    );
+
+    await updateDocumentSettings(
+      { id: '507f1f77bcf86cd799439099', role: 'admin' },
+      'wage-register',
+      { ...stored.values, bonusRate: '11', ratesEffectiveFrom: '2026-02' },
+    );
+    assert.equal(update.rateHistory.length, 1, 'rates replaced before they started are not archived');
+    assert.equal((await getSettingsFor('wage-register', '2026-03')).bonusRate, '11');
+    assert.equal((await getSettingsFor('wage-register', '2026-01')).bonusRate, '8.33');
+  } finally {
+    DocumentSettings.findOne = originals.findOne;
+    DocumentSettings.findOneAndUpdate = originals.findOneAndUpdate;
+  }
+});
+
 test('bank payments list wage register employees with their column N amount and bank details', async () => {
   const originals = {
     employeeFind: Employee.find,
@@ -2289,6 +2354,39 @@ test('attendance totals use each day status, not the number of marked cells', ()
   assert.equal(stats.holidays, 1);
   assert.equal(stats.paidDays, 3.5);
   assert.equal(stats.attendancePercentage, 31.25);
+});
+
+test('a month never counts more than 26 working or paid days', () => {
+  const stats = summarizeAttendance([...Array(26).fill('present'), 'paid_leave'], 27);
+  assert.equal(stats.presentDays, 26);
+  assert.equal(stats.workingDays, 26);
+  assert.equal(stats.paidDays, 26);
+  assert.equal(stats.attendancePercentage, 100);
+});
+
+test('payroll caps paid days at 26 in each month of a longer period', async () => {
+  const originals = { employeeFind: Employee.find, attendanceFind: Attendance.find, userFind: User.find };
+  const organizationId = '507f1f77bcf86cd799439011';
+  const employee = { _id: '507f1f77bcf86cd799439031', name: 'Ram', email: 'ram@example.com', organizationId, dailySalary: 100, status: 'active' };
+  const workingDates = (month, count) => Array.from({ length: 31 }, (_, index) => `${month}-${String(index + 1).padStart(2, '0')}`)
+    .filter((date) => !Number.isNaN(Date.parse(date)) && new Date(`${date}T00:00:00Z`).getUTCMonth() + 1 === Number(month.slice(5)) && new Date(`${date}T00:00:00Z`).getUTCDay() !== 0)
+    .slice(0, count);
+  const attendance = [...workingDates('2026-01', 27), ...workingDates('2026-02', 20)]
+    .map((date) => ({ employeeId: employee._id, date, status: 'present' }));
+  Employee.find = () => ({ lean: async () => [employee] });
+  Attendance.find = () => ({ lean: async () => attendance });
+  User.find = () => ({ select: () => ({ lean: async () => [] }) });
+
+  try {
+    const payroll = await calculatePayroll({ role: 'admin' }, { organizationId: undefined, fromDate: '2026-01-01', toDate: '2026-02-28' });
+    assert.equal(payroll.lines[0].presentDays, 47);
+    assert.equal(payroll.lines[0].paidDays, 46);
+    assert.equal(payroll.lines[0].grossPay, 4600);
+  } finally {
+    Employee.find = originals.employeeFind;
+    Attendance.find = originals.attendanceFind;
+    User.find = originals.userFind;
+  }
 });
 
 test('admins import a whole month and future days are skipped', async () => {

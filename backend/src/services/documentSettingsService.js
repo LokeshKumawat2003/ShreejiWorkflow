@@ -4,8 +4,11 @@ const { deleteSignatureImage, isSignatureUrl } = require('./cloudinaryService');
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
-/** Invoice values that price the bill; their earlier values are kept so old months bill at old rates. */
-const INVOICE_RATE_FIELDS = ['epfRate', 'esicRate', 'bonusRate', 'serviceChargeRate', 'relievingRate', 'monthDays'];
+/** Values that price an invoice or a wage register; earlier values are kept so old months use old rates. */
+const RATE_FIELDS = {
+	invoice: ['epfRate', 'esicRate', 'bonusRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
+	wageRegister: ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling'],
+};
 
 /** Field rules per document; `default` is used until an admin saves the document. */
 const DOCUMENT_FIELDS = {
@@ -53,6 +56,7 @@ const DOCUMENT_FIELDS = {
 		epfWageCeiling: { label: 'EPF wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '25000' },
 		esiRate: { label: 'ESI rate (%)', max: 10, number: { min: 0, max: 100 }, required: true, default: '0.75' },
 		esiWageCeiling: { label: 'ESI wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '21000' },
+		ratesEffectiveFrom: { label: 'Rates effective from', max: 7, month: true, default: '' },
 		signatoryCompany: { label: 'Signatory company line', max: 120, default: 'FOR:-SHREEJI CARETAKER COMPANY' },
 		signatoryTitle: { label: 'Signatory title', max: 60, default: 'Proprietor / Manager' },
 		signatureImage: { label: 'Signature image', max: 500, cloudinaryImage: true, default: '' },
@@ -132,7 +136,7 @@ function publicSettings(key, document) {
 	Object.keys(values).forEach((field) => {
 		if (typeof saved[field] === 'string') values[field] = saved[field];
 	});
-	const history = key === 'invoice'
+	const history = RATE_FIELDS[key]
 		? { rateHistory: (document?.rateHistory || []).map(({ values: old, fromMonth, toMonth, changedAt }) => ({ values: old, fromMonth, toMonth, changedAt })) }
 		: {};
 	return { ...values, ...history, updatedAt: document?.updatedAt || null };
@@ -142,33 +146,41 @@ function currentMonth() {
 	return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date()).slice(0, 7);
 }
 
-/** Invoice settings with the rate values that were valid in `month` (YYYY-MM). */
-async function getInvoiceSettingsFor(month) {
-	const document = await DocumentSettings.findOne({ key: 'invoice' }).lean();
-	const settings = publicSettings('invoice', document);
-	const { rateHistory, ...current } = settings;
-	if (!settings.ratesEffectiveFrom || month >= settings.ratesEffectiveFrom || !rateHistory.length) return current;
+/** Document settings with the rate values that were valid in `month` (YYYY-MM). */
+async function getSettingsFor(type, month) {
+	const key = resolveType(type);
+	const document = await DocumentSettings.findOne({ key }).lean();
+	const { rateHistory = [], ...current } = publicSettings(key, document);
+	if (!RATE_FIELDS[key] || !MONTH_PATTERN.test(month || '')) return current;
+	if (!current.ratesEffectiveFrom || month >= current.ratesEffectiveFrom || !rateHistory.length) return current;
 	const covering = [...rateHistory].reverse().find((period) => (period.fromMonth || '') <= month && month < period.toMonth);
 	const oldest = [...rateHistory].sort((left, right) => (left.fromMonth || '').localeCompare(right.fromMonth || ''))[0];
 	const period = covering || oldest;
-	const old = Object.fromEntries(INVOICE_RATE_FIELDS.filter((field) => typeof period.values?.[field] === 'string').map((field) => [field, period.values[field]]));
+	const old = Object.fromEntries(RATE_FIELDS[key].filter((field) => typeof period.values?.[field] === 'string').map((field) => [field, period.values[field]]));
 	return { ...current, ...old };
 }
 
-/** Archives the invoice rate values being replaced and dates the new ones (this month unless the admin chose one). */
-function invoiceRateHistory(previous, values) {
-	const before = publicSettings('invoice', previous);
-	const changed = INVOICE_RATE_FIELDS.some((field) => before[field] !== values[field]);
+function getInvoiceSettingsFor(month) {
+	return getSettingsFor('invoice', month);
+}
+
+/** Archives the rate values being replaced and dates the new ones (this month unless the admin chose one). */
+function rateHistoryFor(key, previous, values) {
+	const fields = RATE_FIELDS[key];
+	const before = publicSettings(key, previous);
+	const changed = fields.some((field) => before[field] !== values[field]);
 	if (!changed) {
 		if (!values.ratesEffectiveFrom && previous?.rateHistory?.length) values.ratesEffectiveFrom = before.ratesEffectiveFrom;
 		return previous?.rateHistory;
 	}
 	const chosen = values.ratesEffectiveFrom !== before.ratesEffectiveFrom ? values.ratesEffectiveFrom : '';
 	values.ratesEffectiveFrom = chosen || currentMonth();
+	// Rates replaced from a month on or before their own start never applied, so they are not kept as a period.
+	if (before.ratesEffectiveFrom && values.ratesEffectiveFrom <= before.ratesEffectiveFrom) return previous?.rateHistory || [];
 	return [
 		...(previous?.rateHistory || []),
 		{
-			values: Object.fromEntries(INVOICE_RATE_FIELDS.map((field) => [field, before[field]])),
+			values: Object.fromEntries(fields.map((field) => [field, before[field]])),
 			fromMonth: before.ratesEffectiveFrom || '',
 			toMonth: values.ratesEffectiveFrom,
 			changedAt: new Date(),
@@ -206,13 +218,13 @@ async function updateDocumentSettings(user, type, input = {}) {
 	});
 
 	const imageFields = Object.keys(DOCUMENT_FIELDS[key]).filter((field) => DOCUMENT_FIELDS[key][field].cloudinaryImage);
-	const previous = imageFields.length || key === 'invoice' ? await DocumentSettings.findOne({ key }).lean() : null;
-	const rateHistory = key === 'invoice' ? invoiceRateHistory(previous, values) : undefined;
+	const previous = imageFields.length || RATE_FIELDS[key] ? await DocumentSettings.findOne({ key }).lean() : null;
+	const rateHistory = RATE_FIELDS[key] ? rateHistoryFor(key, previous, values) : undefined;
 
 	const document = await DocumentSettings.findOneAndUpdate(
 		{ key },
 		{ $set: { values, ...(rateHistory ? { rateHistory } : {}) } },
-		{ new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+		{ returnDocument: 'after', upsert: true, runValidators: true, setDefaultsOnInsert: true },
 	).lean();
 
 	const replaced = imageFields
@@ -226,4 +238,4 @@ async function updateDocumentSettings(user, type, input = {}) {
 	return publicSettings(key, document);
 }
 
-module.exports = { DOCUMENT_FIELDS, getDocumentSettings, getInvoiceSettingsFor, updateDocumentSettings };
+module.exports = { DOCUMENT_FIELDS, getDocumentSettings, getInvoiceSettingsFor, getSettingsFor, updateDocumentSettings };

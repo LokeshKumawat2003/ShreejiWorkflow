@@ -1,22 +1,10 @@
-import { Box, Flex, FormControl, FormHelperText, FormLabel, Image, Select, SimpleGrid, Stack, Text } from '@chakra-ui/react';
+import { Box, Flex, FormControl, FormHelperText, FormLabel, Image, Select, SimpleGrid, Text } from '@chakra-ui/react';
 import { FormInput } from '../../../components/ui';
 import { LABOUR_QTY_OPTIONS } from '../../../services/invoiceService';
 import useDocumentSettings from '../hooks/useDocumentSettings';
 import DocumentSettingsLayout, { FormSection, PaperPreview } from './DocumentSettingsLayout';
+import RateHistoryList from './RateHistoryList';
 import SignatureUploadField from './SignatureUploadField';
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function monthLabel(month: string) {
-	const [year, number] = month.split('-').map(Number);
-	return year && number ? `${MONTHS[number - 1]} ${year}` : month;
-}
-
-function previousMonth(month: string) {
-	const [year, number] = month.split('-').map(Number);
-	if (!year || !number) return month;
-	return number === 1 ? `${year - 1}-12` : `${year}-${String(number - 1).padStart(2, '0')}`;
-}
 
 function InvoiceSettingsPanel() {
 	const settings = useDocumentSettings('invoice', 'Invoice settings saved');
@@ -98,19 +86,10 @@ function InvoiceSettingsPanel() {
 					helperText="When you change the % or paid days above, invoices from this month on use the new values. Older months keep the values that were valid then. Leave as is to start from the current month."
 					onChange={(event) => setField('ratesEffectiveFrom', event.target.value)}
 				/>
-				{settings.rateHistory.length ? (
-					<Box>
-						<Text fontSize="sm" fontWeight="600" color="slate.800" mb={1}>Earlier rates (used for older months)</Text>
-						<Stack spacing={1}>
-							{[...settings.rateHistory].reverse().map((period) => (
-								<Text key={`${period.fromMonth}-${period.toMonth}-${period.changedAt}`} fontSize="xs" color="slate.600" px={2} py={1.5} bg="slate.50" borderRadius="md">
-									<Text as="span" fontWeight="600">{period.fromMonth ? monthLabel(period.fromMonth) : 'Start'} to {monthLabel(previousMonth(period.toMonth))}</Text>
-									{' · '}EPF {period.values.epfRate}% · ESIC {period.values.esicRate}% · Bonus {period.values.bonusRate}% · Service {period.values.serviceChargeRate}% · Relieving {period.values.relievingRate}% · {period.values.monthDays} days
-								</Text>
-							))}
-						</Stack>
-					</Box>
-				) : null}
+				<RateHistoryList
+					history={settings.rateHistory}
+					describe={(old) => `EPF ${old.epfRate}% · ESIC ${old.esicRate}% · Bonus ${old.bonusRate}% · Service ${old.serviceChargeRate}% · Relieving ${old.relievingRate}% · ${old.monthDays} days`}
+				/>
 			</FormSection>
 			<FormSection title="Signature">
 				<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={4}>

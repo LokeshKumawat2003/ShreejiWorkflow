@@ -32,7 +32,7 @@ import {
 	type AttendanceSheetScope,
 } from '../../../services/attendanceService';
 import { locationLabel, useOwnLocations } from '../hooks/useOwnLocations';
-import { REGISTER_MARK_META } from '../utils/attendanceStatus';
+import { REGISTER_MARK_META, presentTotal } from '../utils/attendanceStatus';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
 
 type AttendanceSheetPageProps = {
@@ -84,10 +84,6 @@ function readLegacyDraft(key: string): SheetMarks {
 
 function hasMarks(marks: SheetMarks) {
 	return Object.values(marks).some((days) => Array.isArray(days) && days.some(Boolean));
-}
-
-function presentTotal(days: AttendanceRegisterMark[]) {
-	return days.reduce((sum, mark) => sum + (mark === 'P' ? 1 : mark === 'HD' ? 0.5 : 0), 0);
 }
 
 function brushLabel(mark: AttendanceRegisterMark) {

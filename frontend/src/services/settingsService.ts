@@ -38,6 +38,7 @@ export type WageRegisterSettings = {
 	epfWageCeiling: string;
 	esiRate: string;
 	esiWageCeiling: string;
+	ratesEffectiveFrom: string;
 	signatoryCompany: string;
 	signatoryTitle: string;
 	signatureImage: string;
@@ -133,6 +134,7 @@ export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {
 	esiRate: '0.75',
 	esiWageCeiling: '21000',
 	signatoryCompany: 'FOR:-SHREEJI CARETAKER COMPANY',
+	ratesEffectiveFrom: '',
 	signatoryTitle: 'Proprietor / Manager',
 	signatureImage: '',
 };
@@ -182,13 +184,14 @@ export const DOCUMENT_DEFAULTS: DocumentSettingsMap = {
 	invoice: INVOICE_DEFAULTS,
 };
 
-/** Earlier invoice rate values, valid from `fromMonth` up to the month before `toMonth`. */
-export type InvoiceRatePeriod = { values: Record<string, string>; fromMonth: string; toMonth: string; changedAt: string };
+/** Earlier rate values, valid from `fromMonth` up to the month before `toMonth`. */
+export type RatePeriod = { values: Record<string, string>; fromMonth: string; toMonth: string; changedAt: string };
 
-type Saved<T extends DocumentType> = DocumentSettingsMap[T] & { updatedAt: string | null; rateHistory?: InvoiceRatePeriod[] };
+type Saved<T extends DocumentType> = DocumentSettingsMap[T] & { updatedAt: string | null; rateHistory?: RatePeriod[] };
 
-export async function getDocumentSettings<T extends DocumentType>(type: T, signal?: AbortSignal) {
-	const { data } = await api.get<{ settings: Saved<T> }>(`/settings/documents/${type}`, { signal });
+/** With `month` (YYYY-MM), rates are the ones that were valid in that month. */
+export async function getDocumentSettings<T extends DocumentType>(type: T, signal?: AbortSignal, month?: string) {
+	const { data } = await api.get<{ settings: Saved<T> }>(`/settings/documents/${type}`, { signal, params: month ? { month } : undefined });
 	return data.settings;
 }
 
@@ -205,9 +208,9 @@ export async function uploadSignatureImage(image: Blob, fileName: string) {
 }
 
 /** Loads a document's settings for PDF generation, falling back to the defaults if the request fails. */
-export async function loadDocumentSettings<T extends DocumentType>(type: T): Promise<DocumentSettingsMap[T]> {
+export async function loadDocumentSettings<T extends DocumentType>(type: T, month?: string): Promise<DocumentSettingsMap[T]> {
 	try {
-		return { ...DOCUMENT_DEFAULTS[type], ...(await getDocumentSettings(type)) };
+		return { ...DOCUMENT_DEFAULTS[type], ...(await getDocumentSettings(type, undefined, month)) };
 	} catch {
 		return DOCUMENT_DEFAULTS[type];
 	}

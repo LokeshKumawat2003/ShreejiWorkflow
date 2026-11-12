@@ -1,4 +1,5 @@
-// Recomputes payroll, FORM XVII wage register, bank payments and client invoices for the last 24 months from raw
+// Recomputes payroll, FORM XVII wage register, bank payments and client invoices for the last 24 months (or the
+// number of months passed as the first argument) from raw
 // attendance, Category of skill price history and Settings, and compares them with what the services return.
 // Read-only, except one invoice that is saved for an unbilled old month and deleted again to test saving.
 require('dotenv').config({ quiet: true });
@@ -12,7 +13,7 @@ const MasterData = require('../models/MasterData');
 const User = require('../models/User');
 const payroll = require('../services/payrollService');
 const invoices = require('../services/clientInvoiceService');
-const { getDocumentSettings, getInvoiceSettingsFor } = require('../services/documentSettingsService');
+const { getInvoiceSettingsFor, getSettingsFor } = require('../services/documentSettingsService');
 
 const r2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const failures = [];
@@ -55,14 +56,20 @@ function billedIn(item, month) {
 async function verifyLocationMonth({ user, organization, location, month, skills, setup, wageRates, bankTotals }) {
   const tag = `${month} ${location.name}`;
   const { fromDate, toDate } = payroll.monthRange(month);
-  const employees = (await Employee.find({ organizationId: organization._id, locationId: location._id }).lean())
+  const assigned = (await Employee.find({ organizationId: organization._id, locationId: location._id }).lean())
     .filter((employee) => sameText(employee.designation, location.designation));
-  const records = await Attendance.find({ employeeId: { $in: employees.map((employee) => employee._id) }, date: { $gte: fromDate, $lte: toDate } }).lean();
+  const records = (await Attendance.find({ employeeId: { $in: assigned.map((employee) => employee._id) }, date: { $gte: fromDate, $lte: toDate } }).lean())
+    .filter((record) => {
+      const employee = assigned.find((candidate) => String(candidate._id) === String(record.employeeId));
+      return employee.status !== 'disabled' || !employee.disabledOn || record.date < employee.disabledOn;
+    });
+  // Blocked employees are listed only for periods in which they still have attendance.
+  const employees = assigned.filter((employee) => employee.status !== 'disabled' || records.some((record) => String(record.employeeId) === String(employee._id)));
 
   const expected = new Map(employees.map((employee) => {
     const days = records.filter((record) => String(record.employeeId) === String(employee._id) && new Date(`${record.date}T00:00:00Z`).getUTCDay() !== 0);
     const count = (status) => days.filter((record) => record.status === status).length;
-    const paidDays = count('present') + count('half_day') * 0.5 + count('paid_leave');
+    const paidDays = Math.min(26, count('present') + count('half_day') * 0.5 + count('paid_leave'));
     const skill = skills.get(String(employee.skillCategory || '').trim().toLowerCase());
     const todayPrice = skill && priceOn(skill, organization.governmentType, organization.area, '9999-12-31');
     const thenPrice = skill && priceOn(skill, organization.governmentType, organization.area, toDate);
@@ -104,24 +111,41 @@ async function verifyLocationMonth({ user, organization, location, month, skills
   const loading = (Number(settings.epfRate) + Number(settings.esicRate) + Number(settings.bonusRate)) / 100;
   const serviceCharge = Number(settings.serviceChargeRate || 0) / 100;
   const preview = await invoices.previewInvoice(user, String(organization._id), String(location._id), { month });
-  const working = [...expected.values()].filter((row) => row.paidDays > 0);
+  const all = [...expected.values()];
+  const working = all.filter((row) => row.paidDays > 0);
   const qtyType = setup?.labourQtyType || settings.labourQtyType || 'mandays';
   const monthDays = Math.max(1, Math.round(Number(settings.monthDays)) || 26);
-  const labour = setup?.autoLabour === false ? [] : [...new Set(working.map((row) => row.employee.skillCategory))].sort().map((category) => {
-    const group = working.filter((row) => row.employee.skillCategory === category);
-    const manDays = group.reduce((sum, row) => sum + row.paidDays, 0);
-    const wage = r2(group.reduce((sum, row) => sum + row.daily * row.paidDays, 0) / manDays);
+  // Man-day weighted daily wage; with nobody working in the month every employee counts once.
+  const wageOf = (rows) => {
+    const busy = rows.filter((row) => row.paidDays > 0);
+    const priced = (busy.length ? busy : rows).filter((row) => row.daily > 0);
+    const weight = (row) => (busy.length ? row.paidDays : 1);
+    const total = priced.reduce((sum, row) => sum + weight(row), 0);
+    return total ? r2(priced.reduce((sum, row) => sum + row.daily * weight(row), 0) / total) : 0;
+  };
+  const categoryRows = working.length ? working : all;
+  const labour = setup?.autoLabour === false ? [] : [...new Set(categoryRows.map((row) => row.employee.skillCategory).filter(Boolean))].sort().map((category) => {
+    const group = all.filter((row) => row.employee.skillCategory === category);
+    const busy = group.filter((row) => row.paidDays > 0);
+    const manDays = busy.reduce((sum, row) => sum + row.paidDays, 0);
     const monthly = qtyType !== 'mandays';
-    const qty = qtyType === 'manmonths' ? Math.round((manDays / monthDays + Number.EPSILON) * 1000) / 1000 : qtyType === 'persons' ? group.length : r2(manDays);
-    const rate = r2(wage * (monthly ? monthDays : 1) * (1 + loading) * (1 + serviceCharge));
+    const qty = qtyType === 'manmonths' ? Math.round((manDays / monthDays + Number.EPSILON) * 1000) / 1000 : qtyType === 'persons' ? (manDays > 0 ? busy.length : 0) : r2(manDays);
+    const rate = r2(wageOf(group) * (monthly ? monthDays : 1) * (1 + loading) * (1 + serviceCharge));
     return { qty, rate, amount: r2(qty * rate) };
   });
+  const relievingRate = Number(settings.relievingRate || 0) / 100;
+  const relieving = (setup?.items || [])
+    .filter((item) => item.section === 'service' && item.rateSource === 'relieving' && billedIn(item, month))
+    .map((item) => {
+      const rate = r2(r2(wageOf(all) * (1 + loading) * (1 + serviceCharge)) * relievingRate);
+      return { qty: item.defaultQty || 0, rate, amount: r2((item.defaultQty || 0) * rate) };
+    });
   const supplyItems = setup ? setup.items : [{ section: 'supply', rate: 0, defaultQty: 0 }];
   const supply = supplyItems
     .filter((item) => item.section === 'supply' && billedIn(item, month))
     .map((item) => ({ qty: item.defaultQty || 0, rate: item.rate || 0, amount: r2((item.defaultQty || 0) * (item.rate || 0)) }));
   if (setup?.autoLabour !== false) {
-    const lines = [...labour, ...supply];
+    const lines = [...labour, ...relieving, ...supply];
     expect(`${tag} invoice line count`, preview.items.length, lines.length);
     preview.items.forEach((item, index) => {
       if (!lines[index]) return;
@@ -182,8 +206,7 @@ async function main() {
   const user = { role: 'admin', id: String(admin._id), name: admin.name || 'Billing check' };
   const skills = new Map((await MasterData.find({ type: 'skillCategory' }).lean()).map((skill) => [skill.code, skill]));
   const setups = new Map((await InvoiceSetup.find({}).lean()).map((setup) => [String(setup.locationId), setup]));
-  const wageRates = await getDocumentSettings('wageRegister');
-  const months = lastMonths(24);
+  const months = lastMonths(Number(process.argv[2]) || 24);
   const bankTotals = new Map();
   const organizations = await User.find({ role: 'organization', governmentType: { $nin: ['', null] }, area: { $nin: ['', null] } }).lean();
   const allLocations = [];
@@ -192,6 +215,7 @@ async function main() {
     const locations = await Location.find({ organizationId: organization._id }).lean();
     allLocations.push(...locations.map((location) => ({ location, organization })));
     for (const month of months) {
+      const wageRates = await getSettingsFor('wageRegister', month);
       for (const location of locations) {
         await verifyLocationMonth({ user, organization, location, month, skills, setup: setups.get(String(location._id)), wageRates, bankTotals });
       }
@@ -207,7 +231,15 @@ async function main() {
   }
 
   console.log(`Checked ${months[0]} to ${months.at(-1)}, ${allLocations.length} locations: ${checks} checks, ${failures.length} failures.`);
-  if (failures.length) console.log(failures.slice(0, 50).join('\n'));
+  if (failures.length) {
+    const kinds = new Map();
+    for (const failure of failures) {
+      const kind = ['bank', 'saved', 'save', 'breakdown', 'invoice', 'register', 'payroll'].find((word) => failure.includes(word)) || 'other';
+      kinds.set(kind, (kinds.get(kind) || 0) + 1);
+    }
+    console.log([...kinds].map(([kind, count]) => `${kind}: ${count}`).join(', '));
+    console.log(failures.slice(0, 50).join('\n'));
+  }
   await mongoose.disconnect();
   process.exitCode = failures.length ? 1 : 0;
 }

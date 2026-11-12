@@ -5,8 +5,8 @@ const AttendanceUpload = require('../models/AttendanceUpload');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
-const { ATTENDANCE_STATUSES, STATUS_CODES, summarizeAttendance } = require('../utils/attendanceStatus');
-const { canMarkAttendanceOn, countsAttendanceOn, isSunday } = require('../utils/employeeStatus');
+const { ATTENDANCE_STATUSES, MAX_MONTH_WORKING_DAYS, STATUS_CODES, summarizeAttendance } = require('../utils/attendanceStatus');
+const { canMarkAttendanceOn, countsAttendanceOn, hasJoinedBy, isSunday } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
 const {
@@ -214,6 +214,7 @@ async function markAttendance(user, input = {}) {
   if (user.role === 'organization' && date !== currentDateInTimeZone(input.timeZone)) {
     throw httpError(400, 'Organizations can only mark attendance for today.');
   }
+  if (date > currentDateInTimeZone(input.timeZone || 'UTC')) throw httpError(400, 'Attendance cannot be marked for a future date.');
   if (!ATTENDANCE_STATUSES.includes(status)) throw httpError(400, 'Select a valid attendance status.');
   if (isSunday(date)) throw httpError(400, 'Sunday is a weekly off. Attendance cannot be marked on Sundays.');
   if (locationId && !mongoose.isValidObjectId(locationId)) throw httpError(400, 'Invalid location id.');
@@ -234,6 +235,9 @@ async function markAttendance(user, input = {}) {
   if (!location) throw httpError(404, 'Location not found for this organization.');
   if (!employee) throw httpError(404, 'Employee not found for this organization.');
   if (!canMarkAttendanceOn(employee, date)) throw httpError(400, blockedMessage(employee));
+  if (!hasJoinedBy(employee, date)) {
+    throw httpError(400, `${employee.name || 'This employee'} joined on ${employee.dateOfJoining}. Attendance cannot be marked before that date.`);
+  }
 
   const filter = { employeeId, date };
   const update = { $set: { organizationId, status, markedBy: user.id, source: 'manual', sourceMark: '', uploadId: null } };
@@ -243,11 +247,11 @@ async function markAttendance(user, input = {}) {
     record = await Attendance.findOneAndUpdate(
       filter,
       update,
-      { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true },
+      { returnDocument: 'after', upsert: true, runValidators: true, setDefaultsOnInsert: true },
     );
   } catch (error) {
     if (error.code !== 11000) throw error;
-    record = await Attendance.findOneAndUpdate(filter, update, { new: true, runValidators: true });
+    record = await Attendance.findOneAndUpdate(filter, update, { returnDocument: 'after', runValidators: true });
     if (!record) throw error;
   }
 
@@ -473,7 +477,7 @@ async function parseAttendanceMonth(user, input = {}) {
       const employee = matched.employee;
       const readings = Array.from({ length: lastImportableDay }, (_, index) => {
         const date = `${selected.month}-${String(index + 1).padStart(2, '0')}`;
-        if (isSunday(date) || (employee && !canMarkAttendanceOn(employee, date))) return null;
+        if (isSunday(date) || (employee && (!canMarkAttendanceOn(employee, date) || !hasJoinedBy(employee, date)))) return null;
         return row.days[index + 1] || null;
       });
       const existing = Array.from({ length: lastImportableDay }, (_, index) => (
@@ -529,6 +533,7 @@ async function bulkMarkAttendance(user, input = {}) {
   const candidateIds = new Set();
   const candidateDates = new Set();
   const accepted = [];
+  const today = currentDateInTimeZone(input.timeZone || 'UTC');
   let skippedInvalid = 0;
   let skippedBlocked = 0;
 
@@ -537,7 +542,11 @@ async function bulkMarkAttendance(user, input = {}) {
     const status = entry?.status;
     const date = entry?.date || defaultDate;
     const key = `${employeeId}|${date}`;
-    if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || isSunday(date) || seen.has(key)) {
+    if (!employeesById.has(employeeId) || !ATTENDANCE_STATUSES.includes(status) || !isValidDate(date) || isSunday(date) || date > today || seen.has(key)) {
+      skippedInvalid += 1;
+      continue;
+    }
+    if (!hasJoinedBy(employeesById.get(employeeId), date)) {
       skippedInvalid += 1;
       continue;
     }
@@ -683,7 +692,7 @@ async function getAttendanceRegister(user, input = {}) {
         disabledOn: employee.status === 'disabled' ? employee.disabledOn || '' : '',
         workingDays,
         days: Array.from({ length: daysInMonth }, (_, day) => STATUS_CODES[marks.get(day + 1)] || ''),
-        totalPresent: stats.presentDays + stats.halfDays * 0.5,
+        totalPresent: Math.min(MAX_MONTH_WORKING_DAYS, stats.presentDays + stats.halfDays * 0.5),
         stats,
       };
     });

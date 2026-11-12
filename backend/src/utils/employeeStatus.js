@@ -12,10 +12,15 @@ function canMarkAttendanceOn(employee, date) {
 	return Boolean(employee.disabledOn) && date < employee.disabledOn;
 }
 
+/** No attendance is recorded before the joining date; employees without one can be marked on any day. */
+function hasJoinedBy(employee, date) {
+	return !employee?.dateOfJoining || date >= employee.dateOfJoining;
+}
+
 function countsAttendanceOn(employee, date) {
 	if (isSunday(date)) return false;
 	if (employee?.status !== 'disabled' || !employee.disabledOn || !date) return true;
 	return date < employee.disabledOn;
 }
 
-module.exports = { canMarkAttendanceOn, countsAttendanceOn, isSunday };
+module.exports = { canMarkAttendanceOn, countsAttendanceOn, hasJoinedBy, isSunday };

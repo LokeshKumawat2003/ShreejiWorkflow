@@ -433,7 +433,7 @@ async function updateEmployee(user, id, input = {}) {
 	const employee = await Employee.findOneAndUpdate(
 		{ _id: id },
 		{ $set: fields },
-		{ new: true, runValidators: true },
+		{ returnDocument: 'after', runValidators: true },
 	).populate('organizationId', 'organizationName governmentType area');
 	if (!employee) throw httpError(404, 'Employee not found.');
 	return publicEmployee(employee, user.role);

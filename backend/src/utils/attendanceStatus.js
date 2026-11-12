@@ -26,6 +26,9 @@ const STATUS_CODES = {
 // Days paid in payroll: a half day pays half; only paid leave is paid among leaves.
 const PAID_DAY_VALUE = { present: 1, half_day: 0.5, paid_leave: 1 };
 
+// A month counts at most 26 working / paid days, even when it has 27 days other than Sundays.
+const MAX_MONTH_WORKING_DAYS = 26;
+
 const NON_WORKING_STATUSES = new Set(['weekly_off', 'holiday']);
 
 function isAttendanceStatus(value) {
@@ -37,8 +40,9 @@ function round2(value) {
 }
 
 /**
- * Totals for one employee over a period. `calendarDays` are the countable (non-Sunday) days in the period;
- * days marked weekly off or holiday are taken out of the working days.
+ * Totals for one employee over one month. `calendarDays` are the countable (non-Sunday) days in the month;
+ * days marked weekly off or holiday are taken out of the working days. Working and paid days stop at
+ * MAX_MONTH_WORKING_DAYS.
  */
 function summarizeAttendance(statuses, calendarDays) {
 	const counts = Object.fromEntries(ATTENDANCE_STATUSES.map((status) => [status, 0]));
@@ -46,9 +50,9 @@ function summarizeAttendance(statuses, calendarDays) {
 		if (counts[status] !== undefined) counts[status] += 1;
 	}
 	const nonWorking = counts.weekly_off + counts.holiday;
-	const workingDays = Math.max(0, calendarDays - nonWorking);
-	const attended = counts.present + counts.half_day * 0.5;
-	const paidDays = statuses.reduce((sum, status) => sum + (PAID_DAY_VALUE[status] || 0), 0);
+	const workingDays = Math.min(MAX_MONTH_WORKING_DAYS, Math.max(0, calendarDays - nonWorking));
+	const attended = Math.min(MAX_MONTH_WORKING_DAYS, counts.present + counts.half_day * 0.5);
+	const paidDays = Math.min(MAX_MONTH_WORKING_DAYS, statuses.reduce((sum, status) => sum + (PAID_DAY_VALUE[status] || 0), 0));
 	return {
 		workingDays,
 		presentDays: counts.present,
@@ -67,6 +71,7 @@ function summarizeAttendance(statuses, calendarDays) {
 
 module.exports = {
 	ATTENDANCE_STATUSES,
+	MAX_MONTH_WORKING_DAYS,
 	NON_WORKING_STATUSES,
 	PAID_DAY_VALUE,
 	STATUS_CODES,

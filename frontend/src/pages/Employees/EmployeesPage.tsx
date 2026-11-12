@@ -5,6 +5,7 @@ import { ApiError } from '../../services/api';
 import { createAppointmentLetterPdf, downloadAppointmentLetters } from '../../services/appointmentLetterService';
 import { listOrganizationLocations } from '../../services/locationService';
 import type { Employee, OrganizationLocation, UserRole } from '../../types';
+import { useDataChanged } from '../../utils/dataSync';
 import type { PdfAction } from '../../utils/pdfOutput';
 import AppointmentLetterPreviewDialog from './components/AppointmentLetterPreviewDialog';
 import AssignEmployeeDialog from './components/AssignEmployeeDialog';
@@ -44,6 +45,14 @@ function EmployeesPage({ role, organizationId, organizationName, currentUserId }
   const [preview, setPreview] = useState<{ employee: Employee; url: string | null } | null>(null);
   const locationsRef = useRef<Promise<OrganizationLocation[]> | null>(null);
   const canUseLetters = role === 'organization' && Boolean(currentUserId);
+  const viewingEmployeeId = viewingEmployee?.id;
+
+  useDataChanged(['masterData', 'organizations'], () => {
+    if (!viewingEmployeeId) return;
+    void employees.getDetails(viewingEmployeeId)
+      .then((employee) => setViewingEmployee((current) => current?.id === employee.id ? employee : current))
+      .catch(() => undefined);
+  });
 
   function loadOwnLocations() {
     if (!locationsRef.current && currentUserId) {

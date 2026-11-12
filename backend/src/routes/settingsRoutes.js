@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const multer = require('multer');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { uploadSignatureImage } = require('../services/cloudinaryService');
-const { getDocumentSettings, updateDocumentSettings } = require('../services/documentSettingsService');
+const { getDocumentSettings, getSettingsFor, updateDocumentSettings } = require('../services/documentSettingsService');
 const { httpError } = require('../utils/httpError');
 
 const router = express.Router();
@@ -35,7 +35,11 @@ function requireDatabase(req, res, next) {
 }
 
 router.use(requireAuth, requireRole('admin', 'organization'), requireDatabase);
-router.get('/documents/:type', async (req, res) => res.json({ settings: await getDocumentSettings(req.params.type) }));
+router.get('/documents/:type', async (req, res) => res.json({
+	settings: typeof req.query.month === 'string'
+		? await getSettingsFor(req.params.type, req.query.month)
+		: await getDocumentSettings(req.params.type),
+}));
 router.put('/documents/:type', requireRole('admin'), async (req, res) => (
 	res.json({ settings: await updateDocumentSettings(req.user, req.params.type, req.body || {}) })
 ));

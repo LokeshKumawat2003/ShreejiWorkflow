@@ -11,6 +11,7 @@ import {
   type UpdateOrganizationInput,
 } from '../../../services/organizationService';
 import type { User } from '../../../types';
+import { notifyDataChanged } from '../../../utils/dataSync';
 
 const PAGE_SIZE = 10;
 
@@ -102,6 +103,7 @@ export function useOrganizations() {
   async function update(id: string, input: UpdateOrganizationInput) {
     const organization = await updateOrganization(id, input);
     setRefreshVersion((current) => current + 1);
+    notifyDataChanged('organizations');
     return organization;
   }
 

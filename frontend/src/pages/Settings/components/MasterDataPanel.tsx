@@ -23,6 +23,7 @@ import {
 	updateMasterData,
 } from '../../../services/masterDataService';
 import type { MasterDataItem, MasterDataType } from '../../../types';
+import { notifyDataChanged } from '../../../utils/dataSync';
 import MasterDataFormDialog, { type MasterDataFormInput } from './MasterDataFormDialog';
 
 type MasterDataPanelProps = {
@@ -113,6 +114,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		try {
 			if (editingItem) await updateMasterData(editingItem.id, { ...input, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 			else await createMasterData({ type, ...input });
+			notifyDataChanged('masterData');
 			toast({ title: editingItem ? `${label.title} updated` : `${label.title} added`, status: 'success', position: 'top' });
 			setIsFormOpen(false);
 			setRefreshToken((current) => current + 1);
@@ -128,6 +130,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		try {
 			const updated = await updateMasterData(item.id, { status: item.status === 'active' ? 'disabled' : 'active' });
 			setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, ...updated } : entry)));
+			notifyDataChanged('masterData');
 		} catch (error) {
 			toast({ title: errorMessage(error, 'Unable to update status.'), status: 'error', position: 'top' });
 		} finally {
@@ -140,6 +143,7 @@ function MasterDataPanel({ type, onCountChange }: MasterDataPanelProps) {
 		setIsDeleting(true);
 		try {
 			await deleteMasterData(deletingItem.id);
+			notifyDataChanged('masterData');
 			toast({ title: `${label.title} deleted`, status: 'success', position: 'top' });
 			setDeletingItem(null);
 			setRefreshToken((current) => current + 1);

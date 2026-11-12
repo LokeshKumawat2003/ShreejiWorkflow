@@ -1,10 +1,8 @@
 import { ArrowForwardIcon, EmailIcon, LockIcon, ViewIcon, ViewOffIcon } from '@chakra-ui/icons';
 import {
-  Box,
   Button,
   Center,
   Checkbox,
-  Divider,
   FormControl,
   HStack,
   IconButton,
@@ -186,26 +184,6 @@ function LoginForm() {
         >
           Sign In
         </Button>
-
-        <HStack spacing={3} mt={{ base: 1, lg: 3 }}>
-          <Divider borderColor="#E3E5F0" />
-          <Box flexShrink={0}>
-            <Text as="span" color="slate.600" fontSize={{ base: 'sm', lg: 'clamp(0.7rem, 0.95vw, 0.8125rem)' }}>
-              Don’t have an account?{' '}
-            </Text>
-            <Button
-              variant="link"
-              color="brand.500"
-              fontSize={{ base: 'sm', lg: 'clamp(0.7rem, 0.95vw, 0.8125rem)' }}
-              fontWeight="600"
-              type="button"
-              onClick={() => navigate('/signup')}
-            >
-              Create an account
-            </Button>
-          </Box>
-          <Divider borderColor="#E3E5F0" />
-        </HStack>
       </Stack>
     </form>
   );

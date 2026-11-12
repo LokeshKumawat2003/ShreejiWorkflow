@@ -7,7 +7,7 @@ const { PAID_DAY_VALUE, isAttendanceStatus, summarizeAttendance } = require('../
 const { countsAttendanceOn } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
-const { getDocumentSettings } = require('./documentSettingsService');
+const { getSettingsFor } = require('./documentSettingsService');
 const { withSkillPayOn } = require('./salaryService');
 
 const PAYROLL_PAGE_SIZE = 10;
@@ -41,6 +41,17 @@ async function resolveOrganizationId(user, requestedId) {
   const organization = await User.findOne({ _id: requestedId, role: 'organization' });
   if (!organization) throw httpError(404, 'Organization not found.');
   return organization.id;
+}
+
+/** Attendance totals over a period, summed month by month so each month pays at most 26 days. */
+function monthlyAttendance(statusesByMonth = new Map()) {
+  const total = { presentDays: 0, absentDays: 0, halfDays: 0, paidLeaves: 0, otherLeaves: 0, paidDays: 0 };
+  for (const statuses of statusesByMonth.values()) {
+    const counts = summarizeAttendance(statuses, 0);
+    for (const key of Object.keys(total)) total[key] += counts[key];
+  }
+  total.paidDays = Math.round((total.paidDays + Number.EPSILON) * 100) / 100;
+  return total;
 }
 
 async function calculatePayroll(user, options = {}) {
@@ -88,9 +99,11 @@ async function calculatePayroll(user, options = {}) {
   for (const record of attendance) {
     const employeeId = String(record.employeeId);
     if (!countsAttendanceOn(employeesById.get(employeeId), record.date)) continue;
-    const statuses = attendanceByEmployee.get(employeeId) || [];
-    statuses.push(isAttendanceStatus(record.status) ? record.status : 'absent');
-    attendanceByEmployee.set(employeeId, statuses);
+    const byMonth = attendanceByEmployee.get(employeeId) || new Map();
+    const month = String(record.date || '').slice(0, 7);
+    if (!byMonth.has(month)) byMonth.set(month, []);
+    byMonth.get(month).push(isAttendanceStatus(record.status) ? record.status : 'absent');
+    attendanceByEmployee.set(employeeId, byMonth);
   }
 
   const payableEmployees = employees.filter((employee) => (
@@ -98,7 +111,7 @@ async function calculatePayroll(user, options = {}) {
   ));
 
   const lines = payableEmployees.map((employee) => {
-    const counts = summarizeAttendance(attendanceByEmployee.get(String(employee._id)) || [], 0);
+    const counts = monthlyAttendance(attendanceByEmployee.get(String(employee._id)));
     const { paidDays } = counts;
     const dailySalary = Number(employee.dailySalary) || 0;
     const currency = !employee.currency || employee.currency === 'NRI' ? 'INR' : employee.currency;
@@ -225,7 +238,7 @@ function wageRates(settings) {
 
 /** Payroll with the same bonus, EPF, ESI and net pay as the location FORM XVII register. */
 async function calculatePayrollWithDeductions(user, options = {}) {
-  const settings = await getDocumentSettings('wageRegister');
+  const settings = await getSettingsFor('wageRegister', String(options.toDate || '').slice(0, 7));
   return calculatePayroll(user, { ...options, wageRates: wageRates(settings) });
 }
 
@@ -274,7 +287,7 @@ async function calculateWageRegister(user, options = {}) {
     calculatePayroll(user, { organizationId, locationId: options.locationId, fromDate, toDate }),
     Location.findOne({ _id: options.locationId, organizationId }).lean(),
     User.findOne({ _id: organizationId, role: 'organization' }).select('organizationName').lean(),
-    getDocumentSettings('wageRegister'),
+    getSettingsFor('wageRegister', month),
   ]);
   if (!location) throw httpError(404, 'Location not found for this organization.');
 
@@ -377,8 +390,8 @@ async function calculateBankPayments(user, options = {}) {
   const [locations, organizations, wageSettings, letter] = await Promise.all([
     Location.find(locationFilter).lean(),
     User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) }).select('_id organizationName').lean(),
-    getDocumentSettings('wageRegister'),
-    getDocumentSettings('bankLetter'),
+    getSettingsFor('wageRegister', options.month),
+    getSettingsFor('bankLetter'),
   ]);
   if (options.locationId && locations.length === 0) throw httpError(404, 'Location not found for this organization.');
   const rates = wageRates(wageSettings);

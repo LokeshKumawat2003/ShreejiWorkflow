@@ -8,8 +8,7 @@ async function signIn(req, res) {
 }
 
 async function signUp(req, res) {
-  const { token, user } = await register(req.body || {});
-  setAuthCookie(res, token);
+  const { user } = await register(req.body || {});
   return res.status(201).json({ user });
 }
 

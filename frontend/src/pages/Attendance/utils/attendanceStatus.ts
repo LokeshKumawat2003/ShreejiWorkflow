@@ -36,6 +36,15 @@ export const REGISTER_MARK_META = Object.fromEntries([
   ['', NOT_MARKED_META],
 ]) as Record<AttendanceRegisterMark, MarkStyle>;
 
+// A month counts at most 26 working days, even when it has 27 days other than Sundays.
+export const MAX_MONTH_WORKING_DAYS = 26;
+
+/** Register "Total" column: present days plus half of the half days, capped at 26. */
+export function presentTotal(days: readonly string[]) {
+	const total = days.reduce((sum, mark) => sum + (mark === 'P' ? 1 : mark === 'HD' ? 0.5 : 0), 0);
+	return Math.min(MAX_MONTH_WORKING_DAYS, total);
+}
+
 export function statusLabel(status: UploadMarkStatus | null) {
   if (!status) return 'Not marked';
   if (status === 'needs_review') return NEEDS_REVIEW_META.label;

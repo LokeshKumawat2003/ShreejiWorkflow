@@ -15,6 +15,7 @@ import {
   type EmployeeSummary,
 } from '../../../services/employeeService';
 import type { Employee, EmployeeStatus } from '../../../types';
+import { useDataChanged } from '../../../utils/dataSync';
 
 const PAGE_SIZE = 10;
 
@@ -35,6 +36,7 @@ export function useEmployees(organizationId?: string, activeOnly = false, locati
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  useDataChanged(['masterData', 'organizations'], () => setRefreshVersion((current) => current + 1));
 
   useEffect(() => {
     let isActive = true;

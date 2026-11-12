@@ -17,7 +17,6 @@ import {
   Radio,
   RadioGroup,
   Stack,
-  Switch,
   Text,
   useBreakpointValue,
 } from '@chakra-ui/react';
@@ -46,8 +45,6 @@ type AssignPostDialogProps = {
   onSelect: (selection: PostSelection) => void;
 };
 
-const ORGANIZATION_ONLY = 'organization-only';
-
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
@@ -62,7 +59,6 @@ function matchingWorkNames(organization: User, designation: string) {
 function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPostDialogProps) {
   const modalSize = useBreakpointValue({ base: 'full', md: '2xl', lg: '3xl' }) ?? '3xl';
   const [search, setSearch] = useState('');
-  const [onlyMatching, setOnlyMatching] = useState(true);
   const [organizations, setOrganizations] = useState<User[]>([]);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [organizationError, setOrganizationError] = useState('');
@@ -70,14 +66,13 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
   const [locations, setLocations] = useState<OrganizationLocation[]>([]);
   const [isLoadingLocations, setIsLoadingLocations] = useState(false);
   const [locationError, setLocationError] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState(ORGANIZATION_ONLY);
+  const [selectedLocation, setSelectedLocation] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setSearch('');
-    setOnlyMatching(true);
     setOrganization(null);
-    setSelectedLocation(ORGANIZATION_ONLY);
+    setSelectedLocation('');
   }, [isOpen]);
 
   useEffect(() => {
@@ -91,7 +86,7 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
       sort: 'name-asc',
       page: 1,
       limit: 100,
-      ...(onlyMatching ? { designation } : {}),
+      designation,
     }, controller.signal)
       .then((result) => setOrganizations(result.organizations))
       .catch((error: unknown) => {
@@ -101,7 +96,7 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
         if (!controller.signal.aborted) setIsLoadingOrganizations(false);
       });
     return () => controller.abort();
-  }, [designation, isOpen, onlyMatching, organization, search]);
+  }, [designation, isOpen, organization, search]);
 
   useEffect(() => {
     const organizationId = organization?.id || organization?._id;
@@ -111,7 +106,10 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
     setLocationError('');
     setLocations([]);
     void listOrganizationLocations(organizationId, { designation, status: 'active', limit: 100 }, controller.signal)
-      .then((result) => setLocations(result.locations))
+      .then((result) => {
+        setLocations(result.locations);
+        if (result.locations.length === 1) setSelectedLocation(result.locations[0].id);
+      })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setLocationError(errorMessage(error, 'Unable to load locations.'));
       })
@@ -132,21 +130,21 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
 
   function chooseOrganization(item: User) {
     setOrganization(item);
-    setSelectedLocation(ORGANIZATION_ONLY);
+    setSelectedLocation('');
   }
 
   function confirm() {
-    if (!organization) return;
     const location = locations.find(({ id }) => id === selectedLocation);
+    if (!organization || !location) return;
     onSelect({
       organizationId: organization.id || organization._id || '',
       organizationName: organization.organizationName || organization.name || '',
       governmentType: organization.governmentType || '',
       area: organization.area || '',
-      locationId: location?.id || '',
-      locationName: location?.name || '',
-      workName: location?.workName || '',
-      location: location || null,
+      locationId: location.id,
+      locationName: location.name,
+      workName: location.workName || '',
+      location,
     });
     onClose();
   }
@@ -162,35 +160,28 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
           <Text mt={0.5} fontSize="sm" fontWeight="400" color="slate.500">
             {organization
               ? `Choose a ${designation} location at ${organization.organizationName}.`
-              : `Choose an organization that has a post for ${designation}.`}
+              : `Only organizations with a ${designation} location are listed.`}
           </Text>
         </ModalHeader>
         <ModalCloseButton top={5} right={5} borderRadius="md" />
         <ModalBody pt={3} pb={6} px={{ base: 4, md: 6 }}>
           {!organization ? (
             <Stack spacing={4}>
-              <Stack direction={{ base: 'column', sm: 'row' }} spacing={3} align={{ sm: 'center' }}>
-                <Input
-                  flex="1"
-                  aria-label="Search organizations"
-                  placeholder="Search organizations"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                <HStack as="label" spacing={2} flexShrink={0} cursor="pointer">
-                  <Switch colorScheme="brand" isChecked={onlyMatching} onChange={(event) => setOnlyMatching(event.target.checked)} />
-                  <Text fontSize="sm" color="slate.600">Only with this post</Text>
-                </HStack>
-              </Stack>
+              <Input
+                aria-label="Search organizations"
+                placeholder="Search organizations"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
               {organizationError ? (
                 <Alert status="error" borderRadius="md"><AlertIcon />{organizationError}</Alert>
               ) : isLoadingOrganizations ? (
                 <ListSkeleton rows={4} rowHeight="56px" />
               ) : organizations.length === 0 ? (
                 <Text py={3} fontSize="sm" color="slate.500">
-                  {onlyMatching
-                    ? `No active organization has a post for ${designation}. Add it under the organization's Posts, or turn off the filter.`
-                    : 'No active organizations match this search.'}
+                  {search
+                    ? `No active organization with a ${designation} location matches this search.`
+                    : `No active organization has a ${designation} location yet. Add a ${designation} location to an organization first.`}
                 </Text>
               ) : (
                 <Stack spacing={2}>
@@ -267,14 +258,9 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
                     ))}
                     {locations.length === 0 ? (
                       <Text fontSize="sm" color="slate.500">
-                        This organization has no active {designation} location yet. You can still add the employee to the organization and place them later.
+                        This organization has no active {designation} location any more. Choose another organization.
                       </Text>
                     ) : null}
-                    <Box px={3} py={2.5} border="1px dashed" borderColor="slate.300" borderRadius="md">
-                      <Radio value={ORGANIZATION_ONLY} colorScheme="brand">
-                        <Text fontSize="sm" color="slate.700">Organization only (choose a location later)</Text>
-                      </Radio>
-                    </Box>
                   </Stack>
                 </RadioGroup>
               )}
@@ -283,7 +269,7 @@ function AssignPostDialog({ isOpen, designation, onClose, onSelect }: AssignPost
         </ModalBody>
         <ModalFooter gap={3} px={{ base: 4, md: 6 }} py={4} borderTop="1px solid" borderColor="slate.100" bg="slate.50">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button colorScheme="brand" isDisabled={!organization || isLoadingLocations || Boolean(locationError)} onClick={confirm}>
+          <Button colorScheme="brand" isDisabled={!organization || isLoadingLocations || Boolean(locationError) || !locations.some(({ id }) => id === selectedLocation)} onClick={confirm}>
             Assign post
           </Button>
         </ModalFooter>

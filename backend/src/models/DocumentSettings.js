@@ -4,7 +4,7 @@ const documentSettingsSchema = new mongoose.Schema(
 	{
 		key: { type: String, required: true, unique: true, enum: ['salarySlip', 'appointmentLetter', 'wageRegister', 'bankLetter', 'invoice'] },
 		values: { type: mongoose.Schema.Types.Mixed, default: {} },
-		// Earlier invoice rate values, each valid from `fromMonth` up to the month before `toMonth` (YYYY-MM).
+		// Earlier invoice / wage register rate values, each valid from `fromMonth` up to the month before `toMonth` (YYYY-MM).
 		rateHistory: {
 			type: [{
 				_id: false,

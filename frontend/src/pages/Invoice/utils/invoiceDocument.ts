@@ -67,7 +67,8 @@ export function computeTotals(items: InvoiceItem[], gstRate: number): InvoiceTot
 	const serviceTotal = round(service.reduce((sum, item) => sum + item.amount, 0));
 	const supplyTotal = round(supply.reduce((sum, item) => sum + item.amount, 0));
 	const grandTotal = round(serviceTotal + supplyTotal);
-	const gstAmount = round(serviceTotal * (gstRate / 100));
+	// Worked in paise so an exact half paisa (e.g. 18% of 454599.25 = 81827.865) rounds up instead of drifting down.
+	const gstAmount = Math.round((Math.round(serviceTotal * 100) * gstRate) / 100) / 100;
 	return {
 		serviceQty: round(service.reduce((sum, item) => sum + item.qty, 0), 3),
 		serviceTotal,

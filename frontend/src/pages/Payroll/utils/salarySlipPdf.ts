@@ -140,7 +140,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
     import('jspdf'),
     import('jspdf-autotable'),
     loadDocumentSettings('salary-slip'),
-    loadDocumentSettings('wage-register'),
+    loadDocumentSettings('wage-register', toDate.slice(0, 7)),
   ]);
   const rates: SalarySlipRates = {
     bonusRate: rateOf(register.bonusRate),

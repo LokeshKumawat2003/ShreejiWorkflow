@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
 const { normalizeEmail, publicUser } = require('../utils/user');
@@ -139,8 +140,11 @@ async function listOrganizations(options = {}) {
 
   if (status !== 'all') filter.status = status;
 
+  // With a designation, only organizations that have an active location for it, so an employee can be placed there.
   const designation = typeof options.designation === 'string' ? options.designation.trim().replace(/\s+/g, ' ').slice(0, 100) : '';
-  if (designation) filter['posts.designations'] = new RegExp(`^${escapeRegex(designation)}$`, 'i');
+  if (designation) {
+    filter._id = { $in: await Location.distinct('organizationId', { status: 'active', designation: new RegExp(`^${escapeRegex(designation)}$`, 'i') }) };
+  }
 
   if (normalizedSearch) {
     const pattern = new RegExp(escapeRegex(normalizedSearch), 'i');
@@ -253,7 +257,7 @@ async function updateOrganization(id, input) {
   const organization = await User.findOneAndUpdate(
     { _id: id, role: 'organization' },
     Object.keys(removals).length ? { $set: updates, $unset: removals } : { $set: updates },
-    { new: true, runValidators: true },
+    { returnDocument: 'after', runValidators: true },
   );
   if (!organization) {
     throw httpError(404, 'Organization not found.');

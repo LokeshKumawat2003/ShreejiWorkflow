@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { listMasterData } from '../services/masterDataService';
 import type { MasterDataItem, MasterDataType } from '../types';
+import { useDataChanged } from '../utils/dataSync';
 
 export type MasterDataOptions = Record<MasterDataType, MasterDataItem[]>;
 
@@ -11,11 +12,13 @@ function useMasterDataOptions(isEnabled = true) {
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState('');
 	const [isLoaded, setIsLoaded] = useState(false);
+	const [reloadVersion, setReloadVersion] = useState(0);
+	useDataChanged(['masterData'], () => setReloadVersion((current) => current + 1));
 
 	useEffect(() => {
 		if (!isEnabled) return undefined;
 		const controller = new AbortController();
-		setIsLoading(true);
+		setIsLoading(reloadVersion === 0);
 		setError('');
 		void listMasterData({ status: 'active' }, controller.signal)
 			.then((items) => {
@@ -31,7 +34,7 @@ function useMasterDataOptions(isEnabled = true) {
 				if (!controller.signal.aborted) setIsLoading(false);
 			});
 		return () => controller.abort();
-	}, [isEnabled]);
+	}, [isEnabled, reloadVersion]);
 
 	return { options, isLoading, isLoaded, error };
 }

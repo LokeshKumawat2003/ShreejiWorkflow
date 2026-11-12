@@ -25,7 +25,7 @@ import {
   type AttendanceStatus,
 } from '../../../services/attendanceService';
 import { exportRegisterExcel, exportRegisterPdf } from '../utils/attendanceRegisterExport';
-import { ATTENDANCE_STATUS_META, ATTENDANCE_STATUS_OPTIONS, REGISTER_MARK_META } from '../utils/attendanceStatus';
+import { ATTENDANCE_STATUS_META, ATTENDANCE_STATUS_OPTIONS, REGISTER_MARK_META, presentTotal } from '../utils/attendanceStatus';
 import AttendanceUploadDialog from './AttendanceUploadDialog';
 
 type AttendanceRegisterGridProps = {
@@ -305,7 +305,7 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
         return {
           ...row,
           days,
-          totalPresent: days.filter((value) => value === 'P').length + days.filter((value) => value === 'HD').length * 0.5,
+          totalPresent: presentTotal(days),
         };
       }),
     });

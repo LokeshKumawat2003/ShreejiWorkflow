@@ -7,7 +7,7 @@ const {
   signOut,
   signUp,
 } = require('../controllers/authController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { forgotPasswordLimiters, loginLimiters, resetPasswordLimiters } = require('../middleware/rateLimit');
 const { httpError } = require('../utils/httpError');
 const mongoose = require('mongoose');
@@ -22,7 +22,8 @@ function requireDatabase(req, res, next) {
 }
 
 router.post('/login', ...loginLimiters, requireDatabase, signIn);
-router.post('/register', requireDatabase, signUp);
+// Accounts are only created by a signed-in admin; there is no public signup.
+router.post('/register', requireAuth, requireRole('admin'), requireDatabase, signUp);
 router.post('/logout', signOut);
 router.post('/forgot-password', ...forgotPasswordLimiters, requireDatabase, forgotPassword);
 router.post('/reset-password', ...resetPasswordLimiters, requireDatabase, resetPasswordWithToken);

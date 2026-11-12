@@ -639,7 +639,10 @@ export async function bulkMarkAttendance(input: {
   uploadId?: string;
   entries: { employeeId: string; status: AttendanceStatus; date?: string; replace?: boolean; mark?: string }[];
 }) {
-  const { data } = await api.post<AttendanceBulkResponse>('/attendance/bulk', input);
+  const { data } = await api.post<AttendanceBulkResponse>('/attendance/bulk', {
+    ...input,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   return data;
 }
 
@@ -670,7 +673,7 @@ export async function markAttendance(input: {
     };
   }>(
     '/attendance',
-    input,
+    { ...input, timeZone: input.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone },
   );
   return data.attendance;
 }

@@ -2,6 +2,7 @@ import { Box, Image, SimpleGrid, Text } from '@chakra-ui/react';
 import { FormInput, FormTextarea } from '../../../components/ui';
 import useDocumentSettings from '../hooks/useDocumentSettings';
 import DocumentSettingsLayout, { FormSection, PaperPreview } from './DocumentSettingsLayout';
+import RateHistoryList from './RateHistoryList';
 import SignatureUploadField from './SignatureUploadField';
 
 const previewHeadings = ['S.no.', 'Name', 'Post', 'Days', 'Wages', 'Wages', 'Bonus', 'Total', 'EPF', 'ESI', 'Gross'];
@@ -73,6 +74,17 @@ function WageRegisterSettingsPanel() {
 					<FormInput label="EPF wage ceiling" inputMode="numeric" maxLength={12} value={values.epfWageCeiling} helperText="EPF is charged on wages up to this amount; above it EPF stays fixed. Leave blank for no limit." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
 					<FormInput label="ESI wage ceiling" inputMode="numeric" maxLength={12} value={values.esiWageCeiling} helperText="ESI is charged on wages up to this amount; above it ESI stays fixed. Leave blank for no limit." onChange={(event) => setField('esiWageCeiling', event.target.value)} />
 				</SimpleGrid>
+				<FormInput
+					label="Rates effective from (month)"
+					type="month"
+					value={values.ratesEffectiveFrom}
+					helperText="When you change the rates or ceilings above, payroll, wage register, bank list and salary slips from this month on use the new values. Older months keep the values that were valid then. Leave as is to start from the current month."
+					onChange={(event) => setField('ratesEffectiveFrom', event.target.value)}
+				/>
+				<RateHistoryList
+					history={settings.rateHistory}
+					describe={(old) => `Bonus ${old.bonusRate}% · EPF ${old.epfRate}% (ceiling ${old.epfWageCeiling || 'none'}) · ESI ${old.esiRate}% (ceiling ${old.esiWageCeiling || 'none'})`}
+				/>
 			</FormSection>
 			<FormSection title="Signature">
 				<FormInput label="Company line" maxLength={120} value={values.signatoryCompany} helperText="Printed under the signature, e.g. FOR:-SHREEJI CARETAKER COMPANY" onChange={(event) => setField('signatoryCompany', event.target.value)} />

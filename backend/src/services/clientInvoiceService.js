@@ -309,7 +309,7 @@ async function saveInvoiceSetup(user, organizationId, locationId, input = {}) {
     labourQtyType: LABOUR_QTY_SOURCES.has(input.labourQtyType) ? input.labourQtyType : '',
     items: parseSetupItems(input.items, input.autoLabour !== false),
   };
-  const setup = await InvoiceSetup.findOneAndUpdate({ locationId: location._id }, { $set: values }, { new: true, upsert: true, runValidators: true }).lean();
+  const setup = await InvoiceSetup.findOneAndUpdate({ locationId: location._id }, { $set: values }, { returnDocument: 'after', upsert: true, runValidators: true }).lean();
   const settings = await getDocumentSettings('invoice');
   return { setup: publicSetup(setup, location, settings) };
 }
@@ -354,7 +354,8 @@ function computeTotals(items, gstRate) {
   const serviceTotal = round(service.reduce((sum, item) => sum + item.amount, 0));
   const supplyTotal = round(supply.reduce((sum, item) => sum + item.amount, 0));
   const grandTotal = round(serviceTotal + supplyTotal);
-  const gstAmount = round(serviceTotal * (gstRate / 100));
+  // Worked in paise so an exact half paisa (e.g. 18% of 454599.25 = 81827.865) rounds up instead of drifting down.
+  const gstAmount = Math.round(Math.round(serviceTotal * 100) * gstRate / 100) / 100;
   return {
     serviceQty: round(service.reduce((sum, item) => sum + item.qty, 0), 3),
     serviceTotal,
@@ -675,6 +676,7 @@ async function deleteInvoice(user, organizationId, locationId, id) {
 }
 
 module.exports = {
+  computeTotals,
   deleteInvoice,
   getInvoiceSetup,
   listInvoices,

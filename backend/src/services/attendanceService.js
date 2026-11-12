@@ -5,7 +5,7 @@ const AttendanceUpload = require('../models/AttendanceUpload');
 const Employee = require('../models/Employee');
 const Location = require('../models/Location');
 const User = require('../models/User');
-const { ATTENDANCE_STATUSES, MAX_MONTH_WORKING_DAYS, STATUS_CODES, summarizeAttendance } = require('../utils/attendanceStatus');
+const { ATTENDANCE_STATUSES, MAX_MONTH_WORKING_DAYS, PAID_DAY_VALUE, STATUS_CODES, summarizeAttendance } = require('../utils/attendanceStatus');
 const { canMarkAttendanceOn, countsAttendanceOn, hasJoinedBy, isSunday } = require('../utils/employeeStatus');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
@@ -414,6 +414,62 @@ async function getAttendanceUploadFile(user, uploadId) {
   };
 }
 
+const OVER_MONTH_LIMIT_REASON = `Left blank: the month already has ${MAX_MONTH_WORKING_DAYS} paid days.`;
+
+/**
+ * Leaves sheet readings blank from the day an employee would pass MAX_MONTH_WORKING_DAYS paid days in the month,
+ * counting days already saved first. Days already saved are not read from the sheet, so they are skipped.
+ */
+function limitReadingsToMonth(readings, existing) {
+  let paidDays = existing.reduce((sum, status) => sum + (PAID_DAY_VALUE[status] || 0), 0);
+  readings.forEach((reading, index) => {
+    if (!reading || existing[index]) return;
+    const value = PAID_DAY_VALUE[reading.status] || 0;
+    if (paidDays + value > MAX_MONTH_WORKING_DAYS) {
+      readings[index] = { ...reading, status: null, confidence: 'high', suggested: null, reason: OVER_MONTH_LIMIT_REASON };
+      return;
+    }
+    paidDays += value;
+  });
+}
+
+/**
+ * Splits attendance about to be written into the days that keep each employee within MAX_MONTH_WORKING_DAYS paid
+ * days a month and the days that would pass it. Days already saved and not being overwritten count first; then
+ * the new days are taken in date order.
+ */
+async function keepWithinMonthLimit(organizationId, writes) {
+  if (!writes.some((entry) => PAID_DAY_VALUE[entry.status])) return { kept: writes, overLimit: [] };
+  const months = [...new Set(writes.map((entry) => entry.date.slice(0, 7)))];
+  const saved = await Attendance.find({
+    organizationId,
+    employeeId: { $in: [...new Set(writes.map((entry) => String(entry.employeeId)))] },
+    $or: months.map((month) => ({ date: { $gte: `${month}-01`, $lte: `${month}-31` } })),
+  }).select('employeeId date status').lean();
+  const writeKeys = new Set(writes.map((entry) => `${String(entry.employeeId)}|${entry.date}`));
+  const savedStatus = new Map();
+  const paidByMonth = new Map();
+  const addPaid = (key, value) => paidByMonth.set(key, (paidByMonth.get(key) || 0) + value);
+  for (const record of saved) {
+    const key = `${String(record.employeeId)}|${record.date}`;
+    savedStatus.set(key, record.status);
+    if (!writeKeys.has(key)) addPaid(`${String(record.employeeId)}|${String(record.date).slice(0, 7)}`, PAID_DAY_VALUE[record.status] || 0);
+  }
+  const overLimit = new Set();
+  for (const entry of [...writes].sort((left, right) => left.date.localeCompare(right.date))) {
+    const key = `${String(entry.employeeId)}|${entry.date}`;
+    const monthKey = `${String(entry.employeeId)}|${entry.date.slice(0, 7)}`;
+    const value = PAID_DAY_VALUE[entry.status] || 0;
+    if ((paidByMonth.get(monthKey) || 0) + value > MAX_MONTH_WORKING_DAYS) {
+      overLimit.add(entry);
+      addPaid(monthKey, PAID_DAY_VALUE[savedStatus.get(key)] || 0);
+      continue;
+    }
+    addPaid(monthKey, value);
+  }
+  return { kept: writes.filter((entry) => !overLimit.has(entry)), overLimit: [...overLimit] };
+}
+
 async function parseAttendanceMonth(user, input = {}) {
   requireAdmin(user);
   const selected = parseMonthInput(input.month);
@@ -483,6 +539,7 @@ async function parseAttendanceMonth(user, input = {}) {
       const existing = Array.from({ length: lastImportableDay }, (_, index) => (
         employee ? existingByKey.get(`${String(employee._id)}|${index + 1}`) || null : null
       ));
+      if (employee) limitReadingsToMonth(readings, existing);
       return {
         extractedName: row.extractedName,
         extractedParentName: row.extractedParentName || '',
@@ -566,16 +623,18 @@ async function bulkMarkAttendance(user, input = {}) {
     employeeId: { $in: [...candidateIds] },
   }).select('employeeId date').lean();
   const existingKeys = new Set(existing.map((record) => `${String(record.employeeId)}|${record.date}`));
-  const toInsert = [];
-  const toUpdate = [];
+  const writes = [];
   let skippedDuplicates = 0;
-
   for (const entry of accepted) {
-    if (existingKeys.has(`${entry.employeeId}|${entry.date}`)) {
-      if (entry.replace) toUpdate.push(entry);
-      else skippedDuplicates += 1;
-      continue;
-    }
+    if (!existingKeys.has(`${entry.employeeId}|${entry.date}`)) writes.push({ ...entry, isNew: true });
+    else if (entry.replace) writes.push(entry);
+    else skippedDuplicates += 1;
+  }
+  const { kept, overLimit } = await keepWithinMonthLimit(organizationId, writes);
+  const toInsert = [];
+  const toUpdate = kept.filter((entry) => !entry.isNew);
+
+  for (const entry of kept.filter((item) => item.isNew)) {
     toInsert.push({
       organizationId,
       employeeId: entry.employeeId,
@@ -616,7 +675,14 @@ async function bulkMarkAttendance(user, input = {}) {
     );
   }
 
-  return { saved, updated, skippedDuplicates, skippedInvalid, skippedBlocked };
+  return {
+    saved,
+    updated,
+    skippedDuplicates,
+    skippedInvalid,
+    skippedBlocked,
+    ...(overLimit.length > 0 ? { skippedOverLimit: overLimit.length } : {}),
+  };
 }
 
 const REGISTER_CONTRACTOR = {

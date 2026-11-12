@@ -577,6 +577,8 @@ export type AttendanceBulkResponse = {
   skippedDuplicates: number;
   skippedInvalid: number;
   skippedBlocked?: number;
+  /** Days left blank because the employee already had 26 paid days in that month. */
+  skippedOverLimit?: number;
 };
 
 export async function parseAttendanceSheet(

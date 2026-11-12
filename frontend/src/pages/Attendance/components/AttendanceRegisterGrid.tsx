@@ -667,6 +667,7 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
             description: [
               result.updated ? `${result.updated} updated.` : '',
               result.skippedBlocked ? `${result.skippedBlocked} skipped for blocked employees.` : '',
+              result.skippedOverLimit ? `${result.skippedOverLimit} left blank because the month already has 26 paid days.` : '',
             ].filter(Boolean).join(' ') || undefined,
             status: 'success',
             position: 'top',

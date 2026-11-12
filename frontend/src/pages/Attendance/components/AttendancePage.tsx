@@ -332,6 +332,7 @@ function AttendancePage({ role, organizationId, locationId }: AttendancePageProp
               result.skippedDuplicates ? `${result.skippedDuplicates} duplicate${result.skippedDuplicates === 1 ? '' : 's'} skipped` : '',
               result.skippedInvalid ? `${result.skippedInvalid} invalid` : '',
               result.skippedBlocked ? `${result.skippedBlocked} skipped for blocked employees` : '',
+              result.skippedOverLimit ? `${result.skippedOverLimit} left blank because the month already has 26 paid days` : '',
             ].filter(Boolean);
             toast({
               title: `${result.saved} attendance record${result.saved === 1 ? '' : 's'} saved`,

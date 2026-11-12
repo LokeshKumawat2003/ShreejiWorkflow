@@ -5,7 +5,7 @@ const Employee = require('../src/models/Employee');
 const Location = require('../src/models/Location');
 const User = require('../src/models/User');
 const MasterData = require('../src/models/MasterData');
-const { bulkMarkAttendance, currentDateInTimeZone, markAttendance } = require('../src/services/attendanceService');
+const { bulkMarkAttendance, currentDateInTimeZone, markAttendance, parseAttendanceMonth } = require('../src/services/attendanceService');
 const { computeTotals } = require('../src/services/clientInvoiceService');
 const { createLocation, updateLocation } = require('../src/services/locationService');
 const { listOrganizations } = require('../src/services/organizationService');
@@ -250,4 +250,90 @@ test('invoice GST rounds an exact half paisa up', () => {
   assert.equal(totals.netPayable, 537327.12);
   assert.equal(computeTotals([{ section: 'service', qty: 1, amount: 1000.05 }], 12).gstAmount, 120.01);
   assert.equal(computeTotals([{ section: 'service', qty: 1, amount: 100 }], 2.5).gstAmount, 2.5);
+});
+
+// October 2026 has 27 days other than Sundays.
+const OCTOBER_WORKING_DATES = Array.from({ length: 31 }, (_, index) => `2026-10-${String(index + 1).padStart(2, '0')}`)
+  .filter((date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0);
+
+function stubLocationEmployee(t) {
+  stub(t, User, { findOne: async () => ({ id: organizationId }) });
+  stub(t, Location, { findOne: async () => ({ _id: locationId, organizationId, designation: 'mali' }) });
+  stub(t, Employee, {
+    find: (filter) => {
+      if (filter.locationId) return { distinct: async () => [employeeId] };
+      return { sort: () => ({ lean: async () => [{ _id: employeeId, name: 'Bikash Sherpa', status: 'active' }] }) };
+    },
+  });
+}
+
+test('saving attendance leaves days blank once the month has 26 paid days', async (t) => {
+  assert.equal(OCTOBER_WORKING_DATES.length, 27);
+  stubLocationEmployee(t);
+  const saved = OCTOBER_WORKING_DATES.slice(0, 25).map((date) => ({ employeeId, date, status: 'present' }));
+  let inserted = [];
+  stub(t, Attendance, {
+    find: (filter) => ({ select() { return this; }, lean: async () => (filter.$or ? saved : []) }),
+    insertMany: async (docs) => { inserted = docs; return docs; },
+  });
+
+  const result = await bulkMarkAttendance(admin, {
+    organizationId,
+    locationId,
+    timeZone: 'Asia/Kolkata',
+    entries: [
+      { employeeId, status: 'present', date: OCTOBER_WORKING_DATES[26] },
+      { employeeId, status: 'half_day', date: OCTOBER_WORKING_DATES[25] },
+    ],
+  });
+  assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 0, skippedInvalid: 0, skippedBlocked: 0, skippedOverLimit: 1 });
+  assert.deepEqual(inserted.map(({ date, status }) => [date, status]), [[OCTOBER_WORKING_DATES[25], 'half_day']]);
+});
+
+test('absences are saved even after the month has 26 paid days', async (t) => {
+  stubLocationEmployee(t);
+  const saved = OCTOBER_WORKING_DATES.slice(0, 26).map((date) => ({ employeeId, date, status: 'present' }));
+  let inserted = [];
+  stub(t, Attendance, {
+    find: (filter) => ({ select() { return this; }, lean: async () => (filter.$or ? saved : []) }),
+    insertMany: async (docs) => { inserted = docs; return docs; },
+  });
+
+  const result = await bulkMarkAttendance(admin, {
+    organizationId,
+    locationId,
+    timeZone: 'Asia/Kolkata',
+    entries: [{ employeeId, status: 'absent', date: OCTOBER_WORKING_DATES[26] }],
+  });
+  assert.deepEqual(result, { saved: 1, updated: 0, skippedDuplicates: 0, skippedInvalid: 0, skippedBlocked: 0 });
+  assert.equal(inserted[0].status, 'absent');
+});
+
+test('a month sheet with 27 present days shows the 27th day blank', async (t) => {
+  stubLocationEmployee(t);
+  stub(t, Attendance, { find: () => ({ lean: async () => [] }) });
+  const XLSX = require('xlsx');
+  const days = Array.from({ length: 31 }, (_, index) => index + 1);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['S.no', 'Name of Employees', ...days],
+    [1, 'Bikash Sherpa', ...days.map(() => 'P')],
+  ]), 'Attendance');
+
+  const result = await parseAttendanceMonth(admin, {
+    organizationId,
+    locationId,
+    month: '2026-10',
+    timeZone: 'Asia/Kolkata',
+    file: {
+      originalname: 'attendance.xlsx',
+      mimetype: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }),
+    },
+  });
+  const [row] = result.rows;
+  assert.equal(row.marks.filter((mark) => mark === 'present').length, 26);
+  assert.equal(row.marks[30], null);
+  assert.equal(row.details[30].mark, 'P');
+  assert.equal(row.details[30].reason, 'Left blank: the month already has 26 paid days.');
 });

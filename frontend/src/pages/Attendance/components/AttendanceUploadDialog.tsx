@@ -76,7 +76,7 @@ type AttendanceUploadDialogProps = {
   organizationId: string;
   locationId: string;
   onClose: () => void;
-  onSaved: (result: { date: string; saved: number; updated?: number; skippedDuplicates: number; skippedInvalid: number; skippedBlocked?: number }) => void;
+  onSaved: (result: { date: string; saved: number; updated?: number; skippedDuplicates: number; skippedInvalid: number; skippedBlocked?: number; skippedOverLimit?: number }) => void;
 };
 
 function todayLocalDate() {

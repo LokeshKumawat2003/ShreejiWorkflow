@@ -22,4 +22,4 @@ export { AppShellSkeleton, ChartSkeleton, DetailsSkeleton, ListSkeleton } from '
 export { default as StatCard } from './StatCard';
 export { default as StatStrip, type StatStripItem } from './StatStrip';
 export { default as StatusBadge } from './StatusBadge';
-export { default as TableFooter } from './TableFooter';
+export { default as TableFooter } from './TableFooter';export { HeaderBreadcrumb, HeaderCard, HeaderDetail, headerButton } from './EntityHeader';

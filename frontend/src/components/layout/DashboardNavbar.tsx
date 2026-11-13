@@ -21,15 +21,17 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../../services/api';
 import type { UserRole } from '../../types';
+import NotificationBell from './NotificationBell';
 
 type DashboardNavbarProps = {
   onOpenSidebar: () => void;
   title: string;
   userName: string;
   role: UserRole;
+  onOpenTickets: () => void;
 };
 
-function DashboardNavbar({ onOpenSidebar, title, userName, role }: DashboardNavbarProps) {
+function DashboardNavbar({ onOpenSidebar, title, userName, role, onOpenTickets }: DashboardNavbarProps) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -80,7 +82,7 @@ function DashboardNavbar({ onOpenSidebar, title, userName, role }: DashboardNavb
 
       {/* Right section */}
       <HStack spacing={{ base: 2, md: 4 }}>
-
+        <NotificationBell role={role} onOpenTickets={onOpenTickets} />
 
         <Box
           h="30px"

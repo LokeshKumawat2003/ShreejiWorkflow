@@ -118,6 +118,7 @@ function DashboardPage({ role }: DashboardPageProps) {
           userName={user.name || user.email}
           role={role}
           onOpenSidebar={sidebar.onOpen}
+          onOpenTickets={() => setActiveTab('Issue reports')}
         />
         <Box
           as="main"

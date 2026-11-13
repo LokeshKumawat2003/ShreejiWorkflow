@@ -3,7 +3,9 @@ const User = require('../models/User');
 const { Counter, Ticket, TICKET_PRIORITIES, TICKET_STATUSES, TICKET_TYPES } = require('../models/Ticket');
 const { httpError } = require('../utils/httpError');
 const { escapeRegex } = require('../utils/validation');
+const { notify } = require('./notificationService');
 
+const STATUS_LABELS = { open: 'open', in_progress: 'in progress', resolved: 'resolved', closed: 'closed' };
 const TICKET_PAGE_SIZE = 10;
 const MAX_TICKET_PAGE_SIZE = 100;
 
@@ -110,6 +112,16 @@ async function createTicket(user, input) {
 	const fields = validateTicketInput(input);
 	const ticket = await Ticket.create({ ...fields, organizationId: user.id, ticketNumber: await nextTicketNumber() });
 	const organization = await User.findById(user.id).select('name organizationName email');
+	const organizationName = organization?.organizationName || organization?.name || organization?.email || 'An organization';
+	await notify({
+		audience: 'admin',
+		organizationId: user.id,
+		kind: 'ticket_created',
+		ticketId: ticket._id,
+		ticketNumber: ticket.ticketNumber,
+		title: `${organizationName} reported an issue`,
+		message: ticket.subject.slice(0, 300),
+	});
 	return publicTicket({ ...ticket.toObject(), organizationId: organization || ticket.organizationId });
 }
 
@@ -124,11 +136,14 @@ async function updateTicket(user, ticketId, input = {}) {
 		}
 	}
 
+	let statusChanged = false;
+	let replied = false;
 	if (input.status !== undefined) {
 		if (!TICKET_STATUSES.includes(input.status)) throw httpError(400, 'Select a valid status.');
 		if (input.status !== ticket.status) {
 			ticket.status = input.status;
 			ticket.resolvedAt = ['resolved', 'closed'].includes(input.status) ? new Date() : null;
+			statusChanged = true;
 		}
 	}
 	if (input.adminResponse !== undefined) {
@@ -137,10 +152,22 @@ async function updateTicket(user, ticketId, input = {}) {
 		if (response !== ticket.adminResponse) {
 			ticket.adminResponse = response;
 			ticket.respondedAt = response ? new Date() : null;
+			replied = Boolean(response);
 		}
 	}
 
 	await ticket.save();
+	if (user.role === 'admin' && (statusChanged || replied)) {
+		await notify({
+			audience: 'organization',
+			organizationId: ticket.organizationId,
+			kind: 'ticket_updated',
+			ticketId: ticket._id,
+			ticketNumber: ticket.ticketNumber,
+			title: replied ? 'Admin replied to your issue' : `Your issue is now ${STATUS_LABELS[ticket.status] || ticket.status}`,
+			message: (replied ? ticket.adminResponse : ticket.subject).slice(0, 300),
+		});
+	}
 	await ticket.populate('organizationId', 'name organizationName email');
 	return publicTicket(ticket);
 }

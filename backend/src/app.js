@@ -10,6 +10,7 @@ const employeeRoutes = require('./routes/employeeRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const locationRoutes = require('./routes/locationRoutes');
 const masterDataRoutes = require('./routes/masterDataRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const organizationRoutes = require('./routes/organizationRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
@@ -66,6 +67,7 @@ function createApp() {
   app.use('/api/dashboard', dashboardRoutes);
   app.use('/api/employees', employeeRoutes);
   app.use('/api/master-data', masterDataRoutes);
+  app.use('/api/notifications', notificationRoutes);
   app.use('/api/organizations', invoiceRoutes);
   app.use('/api/organizations', locationRoutes);
   app.use('/api/organizations', organizationRoutes);

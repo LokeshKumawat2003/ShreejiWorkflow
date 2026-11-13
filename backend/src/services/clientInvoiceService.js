@@ -105,9 +105,9 @@ function rateRules(settings) {
     epf,
     esic,
     bonus,
+    overhead: percent(settings.overheadRate),
     service,
-    loading: (epf + esic + bonus) / 100,
-    serviceCharge: service / 100,
+    epfCeiling: percent(settings.epfWageCeiling),
     relieving: percent(settings.relievingRate) / 100,
     monthDays: Math.max(1, Math.round(percent(settings.monthDays)) || 26),
   };
@@ -115,6 +115,24 @@ function rateRules(settings) {
 
 function dailyWageOf(line) {
   return line.dailySalary > 0 ? line.dailySalary : (line.basicPay || 0) + (line.dearnessAllowance || 0);
+}
+
+/** EPF is charged on wages up to the monthly ceiling; a day line uses ceiling ÷ paid days in a month. */
+function epfCapPerUnit(item, rules) {
+  if (!rules.epfCeiling) return Infinity;
+  return isMonthly(item) ? rules.epfCeiling : rules.epfCeiling / rules.monthDays;
+}
+
+/** One unit (day or month) of a labour line: wages, statutory loadings, overhead on those, then service charge. */
+function unitParts(item, wage, rules) {
+  const wages = wage * (isMonthly(item) ? rules.monthDays : 1);
+  const epf = (Math.min(wages, epfCapPerUnit(item, rules)) * rules.epf) / 100;
+  const esic = (wages * rules.esic) / 100;
+  const bonus = (wages * rules.bonus) / 100;
+  const statutory = wages + epf + esic + bonus;
+  const overhead = (statutory * rules.overhead) / 100;
+  const service = ((statutory + overhead) * rules.service) / 100;
+  return { wages, epf, esic, bonus, overhead, service, total: statutory + overhead + service };
 }
 
 /** Employees, man-days and the man-day weighted daily wage for one skill category (blank = everyone). */
@@ -132,7 +150,7 @@ function groupStats(lines, skillCategory) {
     if (line.designation) designations.set(line.designation, (designations.get(line.designation) || 0) + 1);
   }
   const designation = [...designations.entries()].sort((left, right) => right[1] - left[1]).map(([name]) => name).join(' & ');
-  return { count: working.length || group.length, manDays, wage, designation };
+  return { count: working.length || group.length, manDays, wage, designation, working };
 }
 
 function isMonthly(item) {
@@ -140,23 +158,96 @@ function isMonthly(item) {
 }
 
 function autoRate(item, stats, rules) {
-  const days = isMonthly(item) ? rules.monthDays : 1;
-  const wages = stats.wage * days;
-  const withStatutory = wages * (1 + rules.loading);
-  return { wages: round(wages), rate: round(withStatutory * (1 + rules.serviceCharge)) };
+  const parts = unitParts(item, stats.wage, rules);
+  return { wages: round(parts.wages), rate: round(parts.total) };
 }
 
 function rateDetail(source, item, stats, rules, auto) {
   if (source === 'fixed') return 'Fixed rate from setup';
   if (!stats.wage) return 'No daily wage on these employees — set it on the employee or skill category';
   const base = isMonthly(item) ? `${stats.wage.toFixed(2)} × ${rules.monthDays} days = ${auto.wages.toFixed(2)}` : stats.wage.toFixed(2);
-  const parts = [`EPF ${rules.epf}%`, `ESIC ${rules.esic}%`, `Bonus ${rules.bonus}%`, rules.service ? `Service ${rules.service}%` : ''].filter(Boolean).join(' + ');
+  const parts = [
+    `EPF ${rules.epf}%${rules.epfCeiling ? ` (ceiling ${rules.epfCeiling})` : ''}`,
+    `ESIC ${rules.esic}%`,
+    `Bonus ${rules.bonus}%`,
+    rules.overhead ? `Overhead ${rules.overhead}%` : '',
+    rules.service ? `Service ${rules.service}%` : '',
+  ].filter(Boolean).join(' + ');
   const detail = `${base} + ${parts}`;
   return source === 'relieving' ? `${round(rules.relieving * 100, 4)}% of (${detail})` : detail;
 }
 
 function statutoryText(rules) {
-  return [`EPF@${rules.epf}%`, `ESIC@${rules.esic}%`, `Bonus@${rules.bonus}%`, rules.service ? `Service charge@${rules.service}%` : ''].filter(Boolean).join(', ');
+  return [
+    `EPF@${rules.epf}%`,
+    `ESIC@${rules.esic}%`,
+    `Bonus@${rules.bonus}%`,
+    rules.overhead ? `Overhead@${rules.overhead}%` : '',
+    rules.service ? `Service charge@${rules.service}%` : '',
+  ].filter(Boolean).join(', ');
+}
+
+function amountRate(amount, qty, perUnit) {
+  return qty ? round(amount / qty) : round(perUnit);
+}
+
+/**
+ * EPF on man-days is worked per employee: each one's month of wages is capped at the ceiling.
+ * When everyone is over the ceiling the line reads as the capped amount spread over full months.
+ */
+function epfLine(item, stats, rules, qty, parts) {
+  const perUnit = round(parts.epf);
+  if (item.qtySource !== 'mandays' || !rules.epfCeiling || !stats.working.length) {
+    return { qty, qtyDecimals: qtyDecimalsFor(item), rate: perUnit, amount: round(qty * parts.epf), capped: false };
+  }
+  const monthWages = stats.working.map((line) => dailyWageOf(line) * line.paidDays);
+  const amount = round(monthWages.reduce((sum, wages) => sum + Math.min(wages, rules.epfCeiling), 0) * rules.epf / 100);
+  if (monthWages.every((wages) => wages >= rules.epfCeiling)) {
+    const fullQty = stats.working.length * rules.monthDays;
+    return { qty: fullQty, qtyDecimals: 0, rate: amountRate(amount, fullQty, 0), amount, capped: true };
+  }
+  return { qty, qtyDecimals: qtyDecimalsFor(item), rate: amountRate(amount, qty, perUnit), amount, capped: false };
+}
+
+/** A labour line itemised as separate wage, EPF, ESIC, bonus, overhead and service charge rows. */
+function breakupItems(item, description, stats, rules, qty) {
+  const parts = unitParts(item, stats.wage, rules);
+  const who = `${item.skillCategory ? `${item.skillCategory} ` : ''}Manpower`;
+  const decimals = qtyDecimalsFor(item);
+  const row = (component, text, values, detail) => ({
+    description: text,
+    unit: item.unit || '',
+    qtyDecimals: decimals,
+    ...values,
+    section: 'service',
+    component,
+    qtySource: item.qtySource || 'manual',
+    skillCategory: item.skillCategory || '',
+    rateSource: 'auto',
+    rateDetail: detail,
+  });
+  const share = (amount, perUnit) => ({ qty, rate: amountRate(amount, qty, perUnit), amount });
+
+  const wages = round(qty * parts.wages);
+  const epf = epfLine(item, stats, rules, qty, parts);
+  const esic = round(qty * parts.esic);
+  const bonus = round(qty * parts.bonus);
+  const overheadBase = wages + round(qty * parts.epf) + esic + bonus;
+  const overhead = round(overheadBase * rules.overhead / 100);
+  const service = round((overheadBase + overhead) * rules.service / 100);
+  const cap = rules.epfCeiling ? round(rules.epfCeiling * rules.epf / 100) : 0;
+  const epfText = epf.capped
+    ? `EPF / EDLI @ ${rules.epf}% for ${who} @${cap}/- Per Month ( Ceiling upto ${rules.epfCeiling}/- )`
+    : `EPF / EDLI @ ${rules.epf}% for ${who}`;
+
+  return [
+    row('wage', description, { qty, rate: round(parts.wages), amount: wages }, isMonthly(item) ? `Daily wage ${stats.wage.toFixed(2)} × ${rules.monthDays} days` : 'Daily wage'),
+    rules.epf ? row('epf', epfText, { qty: epf.qty, qtyDecimals: epf.qtyDecimals, rate: epf.rate, amount: epf.amount }, `${rules.epf}% of wages${rules.epfCeiling ? `, capped at ${rules.epfCeiling} per month` : ''}`) : null,
+    rules.esic ? row('esic', `ESIC @ ${rules.esic}% for ${who}`, share(esic, parts.esic), `${rules.esic}% of wages`) : null,
+    rules.bonus ? row('bonus', `BONUS @ ${rules.bonus}% for ${who}`, share(bonus, parts.bonus), `${rules.bonus}% of wages`) : null,
+    rules.overhead ? row('overhead', `Overhead Charge @ ${rules.overhead}%`, share(overhead, parts.overhead), `${rules.overhead}% of wages + EPF + ESIC + bonus`) : null,
+    rules.service ? row('service', `Service Charge @ ${rules.service}% ( Excluding GST )`, share(service, parts.service), `${rules.service}% of wages + EPF + ESIC + bonus + overhead`) : null,
+  ].filter(Boolean);
 }
 
 /** Bracketed working printed under the description, e.g. "(Supervisor & Cook @781.00= 20306/- PM, EPF@13%, ...)". */
@@ -210,6 +301,7 @@ function publicSetup(setup, location, settings) {
       billMonth: item.billMonth || '',
     })),
     autoLabour: setup.autoLabour !== false,
+    rateBreakup: setup.rateBreakup !== false,
     labourQtyType: LABOUR_QTY_SOURCES.has(setup.labourQtyType) ? setup.labourQtyType : '',
     defaultLabourQty: labourQtyDefault(settings),
     defaultVendorCode: settings.vendorCode,
@@ -233,6 +325,7 @@ async function loadSetup(location) {
     gstRate: 18,
     firstRaBillNo: 1,
     autoLabour: true,
+    rateBreakup: true,
     labourQtyType: '',
     items: defaultItems([]).filter((item) => item.section === 'supply'),
   };
@@ -306,6 +399,7 @@ async function saveInvoiceSetup(user, organizationId, locationId, input = {}) {
     gstRate: round(number(input.gstRate, 'Tax rate', { max: 100, fallback: 18 })),
     firstRaBillNo: Math.round(number(input.firstRaBillNo, 'First RA bill number', { min: 1, max: 100000, fallback: 1 })),
     autoLabour: input.autoLabour !== false,
+    rateBreakup: input.rateBreakup !== false,
     labourQtyType: LABOUR_QTY_SOURCES.has(input.labourQtyType) ? input.labourQtyType : '',
     items: parseSetupItems(input.items, input.autoLabour !== false),
   };
@@ -348,6 +442,11 @@ async function nextRaBillNo(location, setup, excludeId) {
   return last && last.raBillNo >= first ? last.raBillNo + 1 : first;
 }
 
+/** EPF, ESIC, bonus, overhead and service charge rows repeat the man-days, so only the wage row counts toward the total quantity. */
+function isLabourQty(item) {
+  return !item.component || item.component === 'wage';
+}
+
 function computeTotals(items, gstRate) {
   const service = items.filter((item) => item.section === 'service');
   const supply = items.filter((item) => item.section === 'supply');
@@ -357,7 +456,7 @@ function computeTotals(items, gstRate) {
   // Worked in paise so an exact half paisa (e.g. 18% of 454599.25 = 81827.865) rounds up instead of drifting down.
   const gstAmount = Math.round(Math.round(serviceTotal * 100) * gstRate / 100) / 100;
   return {
-    serviceQty: round(service.reduce((sum, item) => sum + item.qty, 0), 3),
+    serviceQty: round(service.filter(isLabourQty).reduce((sum, item) => sum + item.qty, 0), 3),
     serviceTotal,
     supplyTotal,
     grandTotal,
@@ -394,6 +493,7 @@ function publicInvoice(invoice) {
       rate: item.rate,
       amount: item.amount,
       section: item.section,
+      component: item.component || '',
     })),
     serviceQty: invoice.serviceQty,
     serviceTotal: invoice.serviceTotal,
@@ -492,10 +592,13 @@ function quantityOf(item, stats, rules) {
 
 function computedItems(setup, lines, settings, month) {
   const rules = rateRules(settings);
-  return sortedItems(effectiveItems(setup, lines, settings, month).map((item) => {
+  return sortedItems(effectiveItems(setup, lines, settings, month).flatMap((item) => {
     const stats = groupStats(lines, item.skillCategory || '');
     const qty = quantityOf(item, stats, rules);
     const source = rateSourceOf(item);
+    if (setup.rateBreakup !== false && source === 'auto' && item.section !== 'supply' && stats.wage) {
+      return breakupItems(item, fillDescription(item.description, stats, rules, item), stats, rules, qty);
+    }
     const auto = autoRate(item, stats, rules);
     const rate = source === 'fixed' ? item.rate || 0 : source === 'relieving' ? round(auto.rate * rules.relieving) : auto.rate;
     const working = item.explain === false ? '' : explanation(source, item, stats, rules, auto);
@@ -606,9 +709,16 @@ async function saveInvoice(user, organizationId, locationId, month, input = {}) 
   if (submitted.length !== computed.length) throw httpError(409, 'The invoice setup has changed. Press "Refill from attendance" and save again.');
   const items = submitted.map((item, index) => {
     const source = computed[index];
-    const alreadyBilled = existing?.items?.[index]?.rate === item.rate;
+    const billed = existing?.items?.[index];
+    if (source.component) {
+      // Breakup rows are worked from attendance and wages; a saved row is kept as billed unless it changed.
+      const keep = billed && billed.component === source.component && billed.qty === item.qty && billed.rate === item.rate;
+      const { qty, qtyDecimals, rate, amount } = keep ? billed : source;
+      return { ...item, section: source.section, component: source.component, qty, qtyDecimals, rate, amount };
+    }
+    const alreadyBilled = billed?.rate === item.rate;
     const rate = source.rateSource === 'fixed' || alreadyBilled ? item.rate : source.rate;
-    return { ...item, section: source.section, rate, amount: round(item.qty * rate) };
+    return { ...item, section: source.section, component: '', rate, amount: round(item.qty * rate) };
   });
   const gstRate = setup.gstRate ?? 18;
 

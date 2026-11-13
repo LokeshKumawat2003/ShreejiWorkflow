@@ -98,6 +98,7 @@ function toInput(setup: InvoiceSetup): InvoiceSetupInput {
 		gstRate: setup.gstRate,
 		firstRaBillNo: setup.firstRaBillNo,
 		autoLabour: setup.autoLabour,
+		rateBreakup: setup.rateBreakup !== false,
 		labourQtyType: setup.labourQtyType ?? '',
 		items: setup.items.map((item) => ({ ...item, frequency: item.frequency ?? 'monthly', billMonth: item.billMonth ?? '', rateSource: item.rateSource === 'fixed' && item.section !== 'supply' ? 'auto' : item.rateSource })),
 	};
@@ -208,6 +209,17 @@ function InvoiceSetupDialog({ isOpen, organizationId, locationId, setup, skillCa
 								<FormInput label="First RA bill no." type="number" min={1} value={values.firstRaBillNo} onChange={(event) => setField('firstRaBillNo', Number(event.target.value))} />
 							</SimpleGrid>
 						</SimpleGrid>
+
+						<Flex p={3} justify="space-between" align="center" gap={3} border="1px solid" borderColor="slate.200" borderRadius="md">
+							<Box>
+								<Text fontWeight="700" color="slate.900">Itemised rate breakup</Text>
+								<Text fontSize="xs" color="slate.600">
+									Each labour line prints as separate rows: wages, EPF / EDLI, ESIC, bonus, overhead and service charge (rows with 0% are left out).
+									Turn off to print one all-inclusive rate per line.
+								</Text>
+							</Box>
+							<Switch colorScheme="brand" isChecked={values.rateBreakup} onChange={(event) => setField('rateBreakup', event.target.checked)} />
+						</Flex>
 
 						<Box p={3} border="1px solid" borderColor="brand.100" bg="brand.50" borderRadius="md">
 							<Flex justify="space-between" align="center" gap={3}>

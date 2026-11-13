@@ -9,6 +9,7 @@ const invoiceItemSchema = new mongoose.Schema(
     rate: { type: Number, min: 0, default: 0 },
     amount: { type: Number, min: 0, default: 0 },
     section: { type: String, enum: ['service', 'supply'], default: 'service' },
+    component: { type: String, enum: ['', 'wage', 'epf', 'esic', 'bonus', 'overhead', 'service'], default: '' },
   },
   { _id: false },
 );

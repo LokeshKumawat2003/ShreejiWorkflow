@@ -196,7 +196,7 @@ function LocationInvoicePage({ organizationId, locationId }: LocationInvoicePage
 			const items = current.items.map((item, position) => {
 				if (position !== index) return item;
 				const next = { ...item, ...patch };
-				return { ...next, amount: round(next.qty * next.rate) };
+				return 'qty' in patch || 'rate' in patch ? { ...next, amount: round(next.qty * next.rate) } : next;
 			});
 			return { ...current, items };
 		});
@@ -473,7 +473,7 @@ function LocationInvoicePage({ organizationId, locationId }: LocationInvoicePage
 					locationId={locationId}
 					setup={preview.setup}
 					skillCategories={preview.attendance.categories.map((category) => category.skillCategory)}
-					autoLabourLines={preview.items.filter((item) => item.section === 'service' && item.rateSource === 'auto')}
+					autoLabourLines={preview.items.filter((item) => item.section === 'service' && item.rateSource === 'auto' && (!item.component || item.component === 'wage'))}
 					monthDays={preview.settings.monthDays || '26'}
 					onClose={() => setIsSetupOpen(false)}
 					onSaved={setupSaved}

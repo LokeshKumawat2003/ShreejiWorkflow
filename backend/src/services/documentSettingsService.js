@@ -6,7 +6,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Values that price an invoice or a wage register; earlier values are kept so old months use old rates. */
 const RATE_FIELDS = {
-	invoice: ['epfRate', 'esicRate', 'bonusRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
+	invoice: ['epfRate', 'epfWageCeiling', 'esicRate', 'bonusRate', 'overheadRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
 	wageRegister: ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling', 'overtimeHoursPerDay', 'overtimeRateMultiplier'],
 };
 
@@ -103,6 +103,8 @@ const DOCUMENT_FIELDS = {
 		epfRate: { label: 'EPF on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '13' },
 		esicRate: { label: 'ESIC on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '3.25' },
 		bonusRate: { label: 'Bonus on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '8.33' },
+		epfWageCeiling: { label: 'EPF wage ceiling per month', max: 12, number: { min: 0, max: 10000000 }, blankUsesDefault: true, default: '0' },
+		overheadRate: { label: 'Overhead charge (%)', max: 10, number: { min: 0, max: 100 }, blankUsesDefault: true, default: '0' },
 		serviceChargeRate: { label: 'Service charge (%)', max: 10, number: { min: 0, max: 100 }, default: '0' },
 		relievingRate: { label: 'Relieving charge (% of rate)', max: 10, number: { min: 0, max: 100 }, default: '16.6667' },
 		monthDays: { label: 'Paid days in a month', max: 3, number: { min: 1, max: 31 }, default: '26' },

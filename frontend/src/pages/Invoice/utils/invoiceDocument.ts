@@ -61,6 +61,11 @@ export function amountInWords(value: number) {
 	return `${rupeesInWords(rupees)} Rupees${paise ? ` & ${rupeesInWords(paise)} Paise` : ''} Only`;
 }
 
+/** EPF, ESIC, bonus, overhead and service charge rows repeat the man-days, so only the wage row counts toward the total quantity. */
+function isLabourQty(item: InvoiceItem) {
+	return !item.component || item.component === 'wage';
+}
+
 export function computeTotals(items: InvoiceItem[], gstRate: number): InvoiceTotals {
 	const service = items.filter((item) => item.section === 'service');
 	const supply = items.filter((item) => item.section === 'supply');
@@ -70,7 +75,7 @@ export function computeTotals(items: InvoiceItem[], gstRate: number): InvoiceTot
 	// Worked in paise so an exact half paisa (e.g. 18% of 454599.25 = 81827.865) rounds up instead of drifting down.
 	const gstAmount = Math.round((Math.round(serviceTotal * 100) * gstRate) / 100) / 100;
 	return {
-		serviceQty: round(service.reduce((sum, item) => sum + item.qty, 0), 3),
+		serviceQty: round(service.filter(isLabourQty).reduce((sum, item) => sum + item.qty, 0), 3),
 		serviceTotal,
 		supplyTotal,
 		grandTotal,
@@ -107,12 +112,13 @@ export function tableRows(doc: InvoiceDocument) {
 		amount: money(item.amount),
 		isTotal: false,
 	});
+	const itemised = service.some((item) => item.component);
 	const rows = service.map((item, index) => itemRow(item, index + 1));
 	const totalSerial = service.length + 1;
-	const qtyDecimals = Math.max(0, ...service.map((item) => item.qtyDecimals));
+	const qtyDecimals = Math.max(0, ...service.filter(isLabourQty).map((item) => item.qtyDecimals));
 	rows.push({
 		serial: String(totalSerial),
-		description: `Grand Total Service Part S.No. 1 to ${service.length}`,
+		description: itemised ? `Total Wages Service GST Part ( S.No. 1 To ${service.length} )` : `Grand Total Service Part S.No. 1 to ${service.length}`,
 		unit: '',
 		qty: quantity(doc.serviceQty, qtyDecimals),
 		rate: '',
@@ -122,7 +128,11 @@ export function tableRows(doc: InvoiceDocument) {
 	supply.forEach((item, index) => rows.push(itemRow(item, totalSerial + 1 + index)));
 	const lastSerial = totalSerial + supply.length;
 
-	const summary: InvoiceSummaryRow[] = [
+	const summary: InvoiceSummaryRow[] = itemised ? [
+		{ label: 'TOTAL', amount: money(doc.grandTotal), isFinal: false },
+		{ label: `${doc.gstLabel} @${Number(doc.gstRate)}% On item No.${totalSerial}`, amount: money(doc.gstAmount), isFinal: false },
+		{ label: 'NET PAYABLE AMOUNT', amount: money(doc.netPayable), isFinal: true },
+	] : [
 		{ label: `Total S.No. 1 to ${lastSerial}`, amount: money(doc.grandTotal), isFinal: false },
 		{ label: `${doc.gstLabel}@${Number(doc.gstRate)}% On S.No. ${totalSerial}`, amount: money(doc.gstAmount), isFinal: false },
 		{ label: 'Total Payable Amount', amount: money(doc.netPayable), isFinal: true },

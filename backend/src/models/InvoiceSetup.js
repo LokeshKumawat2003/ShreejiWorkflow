@@ -31,6 +31,7 @@ const invoiceSetupSchema = new mongoose.Schema(
     gstRate: { type: Number, min: 0, max: 100, default: 18 },
     firstRaBillNo: { type: Number, min: 1, default: 1 },
     autoLabour: { type: Boolean, default: true },
+    rateBreakup: { type: Boolean, default: true },
     labourQtyType: { type: String, enum: ['', 'mandays', 'manmonths', 'persons'], default: '' },
     items: { type: [setupItemSchema], default: [] },
   },

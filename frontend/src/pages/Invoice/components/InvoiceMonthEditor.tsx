@@ -1,7 +1,7 @@
 import { RepeatIcon } from '@chakra-ui/icons';
 import { Box, Flex, Input, SimpleGrid, Stack, Text, Textarea } from '@chakra-ui/react';
 import { ActionButton, FormInput } from '../../../components/ui';
-import type { InvoiceItem } from '../../../services/invoiceService';
+import { COMPONENT_LABELS, type InvoiceItem } from '../../../services/invoiceService';
 import { money } from '../utils/invoiceDocument';
 
 export type InvoiceDraft = {
@@ -51,7 +51,7 @@ function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChang
 				<Flex justify="space-between" align="center" mb={3} gap={3} flexWrap="wrap">
 					<Box>
 						<Text fontWeight="700" color="slate.900">Lines for {periodLabel}</Text>
-						<Text fontSize="xs" color="slate.500">Labour rates are calculated from employee wages and Settings → Invoice and cannot be typed. Amount = qty × rate.</Text>
+						<Text fontSize="xs" color="slate.500">Labour rates are calculated from employee wages and Settings → Invoice and cannot be typed. Wages, EPF, ESIC, bonus, overhead and service charge rows take their quantity from attendance.</Text>
 					</Box>
 					<ActionButton size="sm" tone="neutral" leftIcon={<RepeatIcon />} onClick={onRefill}>
 						Refill from attendance
@@ -87,10 +87,14 @@ function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChang
 								/>
 							</Box>
 							<Text gridColumn={{ md: 'span 2' }} fontSize="xs" fontWeight="700" color={item.section === 'supply' ? 'orange.600' : 'brand.600'} textTransform="uppercase" letterSpacing="0.05em">
-								{item.section === 'supply' ? 'Supply item' : 'Labour'}
+								{item.section === 'supply' ? 'Supply item' : item.component ? COMPONENT_LABELS[item.component] : 'Labour'}
 							</Text>
 							<Input {...cellField} aria-label="Unit" maxLength={20} value={item.unit} onChange={(event) => onItemChange(index, { unit: event.target.value })} />
-							<Input {...cellField} aria-label="Quantity" type="number" min={0} step="0.001" value={item.qty} onChange={(event) => onItemChange(index, { qty: Number(event.target.value) || 0 })} />
+							{item.component ? (
+								<Text textAlign="center" fontSize="sm" fontWeight="600" color="slate.700" title="From attendance — press Refill from attendance to update">{item.qty}</Text>
+							) : (
+								<Input {...cellField} aria-label="Quantity" type="number" min={0} step="0.001" value={item.qty} onChange={(event) => onItemChange(index, { qty: Number(event.target.value) || 0 })} />
+							)}
 							{isFixedRate(item) ? (
 								<Input {...cellField} aria-label="Rate" type="number" min={0} step="0.01" value={item.rate} onChange={(event) => onItemChange(index, { rate: Number(event.target.value) || 0 })} />
 							) : (
@@ -99,7 +103,7 @@ function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChang
 							<Text gridColumn={{ md: 'span 2' }} textAlign="right" fontWeight="700" color="slate.900" fontSize="sm">₹{money(item.amount)}</Text>
 							{item.rateDetail ? (
 								<Text gridColumn={{ base: 'span 2', md: 'span 12' }} fontSize="xs" color={item.rate === 0 && item.section === 'service' ? 'orange.600' : 'slate.500'}>
-									Rate {money(item.rate)} = {item.rateDetail}
+									{item.component && item.component !== 'wage' ? `Amount ₹${money(item.amount)} = ${item.rateDetail}` : `Rate ${money(item.rate)} = ${item.rateDetail}`}
 								</Text>
 							) : null}
 						</SimpleGrid>

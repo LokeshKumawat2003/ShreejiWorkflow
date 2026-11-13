@@ -73,6 +73,8 @@ export type InvoiceSettings = {
 	epfRate: string;
 	esicRate: string;
 	bonusRate: string;
+	epfWageCeiling: string;
+	overheadRate: string;
 	serviceChargeRate: string;
 	relievingRate: string;
 	monthDays: string;
@@ -170,6 +172,8 @@ export const INVOICE_DEFAULTS: InvoiceSettings = {
 	epfRate: '13',
 	esicRate: '3.25',
 	bonusRate: '8.33',
+	epfWageCeiling: '0',
+	overheadRate: '0',
 	serviceChargeRate: '0',
 	relievingRate: '16.6667',
 	monthDays: '26',

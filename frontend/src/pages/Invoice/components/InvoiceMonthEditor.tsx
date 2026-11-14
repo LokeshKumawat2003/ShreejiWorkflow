@@ -24,6 +24,10 @@ export function isFixedRate(item: InvoiceItem) {
 	return item.rateSource === 'fixed' && item.section === 'supply';
 }
 
+function isBreakupRow(item: InvoiceItem) {
+	return Boolean(item.component);
+}
+
 const cellField = { size: 'sm', bg: 'white', borderColor: 'slate.200', borderRadius: '8px' } as const;
 
 function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChange, onRefill }: InvoiceMonthEditorProps) {
@@ -77,6 +81,9 @@ function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChang
 							bg={item.section === 'supply' ? 'orange.50' : 'slate.50'}
 						>
 							<Box gridColumn={{ base: 'span 2', md: 'span 5' }}>
+								{isBreakupRow(item) ? (
+									<Text px={3} py={2} fontSize="sm" fontWeight="500" color="slate.800" whiteSpace="pre-wrap">{item.description}</Text>
+								) : (
 								<Textarea
 									{...cellField}
 									rows={Math.min(5, Math.max(2, item.description.split('\n').reduce((count, part) => count + Math.ceil(Math.max(1, part.length) / 48), 0)))}
@@ -85,11 +92,16 @@ function InvoiceMonthEditor({ periodLabel, draft, isSaved, onChange, onItemChang
 									value={item.description}
 									onChange={(event) => onItemChange(index, { description: event.target.value })}
 								/>
+								)}
 							</Box>
 							<Text gridColumn={{ md: 'span 2' }} fontSize="xs" fontWeight="700" color={item.section === 'supply' ? 'orange.600' : 'brand.600'} textTransform="uppercase" letterSpacing="0.05em">
 								{item.section === 'supply' ? 'Supply item' : item.component ? COMPONENT_LABELS[item.component] : 'Labour'}
 							</Text>
-							<Input {...cellField} aria-label="Unit" maxLength={20} value={item.unit} onChange={(event) => onItemChange(index, { unit: event.target.value })} />
+							{isBreakupRow(item) ? (
+								<Text textAlign="center" fontSize="sm" color="slate.700">{item.unit}</Text>
+							) : (
+								<Input {...cellField} aria-label="Unit" maxLength={20} value={item.unit} onChange={(event) => onItemChange(index, { unit: event.target.value })} />
+							)}
 							{item.component ? (
 								<Text textAlign="center" fontSize="sm" fontWeight="600" color="slate.700" title="From attendance — press Refill from attendance to update">{item.qty}</Text>
 							) : (

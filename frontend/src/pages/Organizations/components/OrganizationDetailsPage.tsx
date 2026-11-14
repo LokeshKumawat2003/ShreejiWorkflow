@@ -47,7 +47,12 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
     {
       key: 'work',
       header: 'Work name',
-      render: (location) => <EntityCell name={location.workName || location.name} subtitle={location.opNumber ? `PO ${location.opNumber}` : 'No PO number'} />,
+      render: (location) => (
+        <EntityCell
+          name={location.workName || location.name}
+          subtitle={location.workName && location.workName !== location.name ? location.name : undefined}
+        />
+      ),
     },
     {
       key: 'designation',
@@ -55,14 +60,12 @@ function OrganizationDetailsPage({ organization, isLoading, onBack, onEdit, loca
       render: (location) => <Text color="slate.700" textTransform="capitalize">{location.designation}</Text>,
     },
     {
-      key: 'address',
-      header: 'Address',
+      key: 'po',
+      header: 'PO number',
       hideBelow: 'md',
-      render: (location) => (
-        <Text color="slate.600" maxW="380px" noOfLines={2}>
-          {location.address || location.name}
-        </Text>
-      ),
+      render: (location) => (location.opNumber
+        ? <Text color="slate.800" fontWeight="500" fontFamily="mono" whiteSpace="nowrap">{location.opNumber}</Text>
+        : <Text color="slate.400">Not added</Text>),
     },
     { key: 'status', header: 'Status', render: (location) => <StatusBadge status={location.status} /> },
     {

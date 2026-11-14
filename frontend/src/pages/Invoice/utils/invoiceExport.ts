@@ -43,7 +43,7 @@ export async function exportInvoicePdf(invoice: InvoiceDocument, action: PdfActi
 	leftLine(header.period, 10.5);
 
 	const bodyRows: RowInput[] = rows.map((row) => {
-		const style = row.isTotal ? { fontStyle: 'bold' as const } : {};
+		const style = row.isBold ? { fontStyle: 'bold' as const } : {};
 		return [
 			{ content: row.serial, styles: style },
 			{ content: row.description, styles: style },
@@ -161,7 +161,7 @@ export async function exportInvoiceExcel(invoice: InvoiceDocument) {
 		]);
 		row.height = Math.max(18, item.description.split('\n').reduce((count, part) => count + Math.max(1, Math.ceil(part.length / 52)), 0) * 13);
 		row.eachCell({ includeEmpty: true }, (cell, column) => {
-			cell.font = font(9, { bold: item.isTotal });
+			cell.font = font(9, { bold: item.isBold });
 			cell.border = border;
 			cell.alignment = { horizontal: column === 2 ? 'left' : column === 6 ? 'right' : 'center', vertical: 'middle', wrapText: column === 2 };
 			if (column === 4 && item.qty !== '') cell.numFmt = item.qty.includes('.') ? `0.${'0'.repeat(item.qty.split('.')[1].length)}` : '0';

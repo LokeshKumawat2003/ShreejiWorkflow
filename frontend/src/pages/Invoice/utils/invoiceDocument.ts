@@ -29,6 +29,7 @@ export type InvoiceTableRow = {
 	rate: string;
 	amount: string;
 	isTotal: boolean;
+	isBold: boolean;
 };
 
 export type InvoiceSummaryRow = { label: string; amount: string; isFinal: boolean };
@@ -111,6 +112,7 @@ export function tableRows(doc: InvoiceDocument) {
 		rate: money(item.rate),
 		amount: money(item.amount),
 		isTotal: false,
+		isBold: item.component === 'wage',
 	});
 	const itemised = service.some((item) => item.component);
 	const rows = service.map((item, index) => itemRow(item, index + 1));
@@ -124,6 +126,7 @@ export function tableRows(doc: InvoiceDocument) {
 		rate: '',
 		amount: money(doc.serviceTotal),
 		isTotal: true,
+		isBold: true,
 	});
 	supply.forEach((item, index) => rows.push(itemRow(item, totalSerial + 1 + index)));
 	const lastSerial = totalSerial + supply.length;

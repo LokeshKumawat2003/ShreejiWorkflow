@@ -18,6 +18,10 @@ import {
 	StatStrip,
 	TableFooter,
 	WalletIcon,
+	CalendarArt,
+	HourglassArt,
+	PeopleArt,
+	WalletArt,
 	type DataTableColumn,
 } from '../../components/ui';
 import { ApiError } from '../../services/api';
@@ -311,10 +315,10 @@ function BankInvoicePage() {
 
 			<StatStrip
 				items={[
-					{ label: 'Pending locations', value: locationsData ? locationsData.summary.pending : null, helper: 'With payments, not printed yet', color: 'orange.400', icon: <MapPinIcon boxSize={5} /> },
-					{ label: 'Printed letters', value: batchesLoading ? null : printedCount, helper: locationsData ? `${locationsData.summary.printed} locations covered` : 'This month', color: 'green.500', icon: <CheckCircleIcon /> },
-					{ label: 'Selected employees', value: summary ? summary.employees : selected.length === 0 ? 0 : null, helper: `${selected.length} location${selected.length === 1 ? '' : 's'} selected`, color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
-					{ label: 'Selected amount', value: summary ? formatAmount(summary.total) : selected.length === 0 ? formatAmount(0) : null, helper: locationsData ? locationsData.periodLabel : 'Net payable', color: 'green.500', icon: <WalletIcon boxSize={5} /> },
+					{ label: 'Pending locations', value: locationsData ? locationsData.summary.pending : null, helper: 'With payments, not printed yet', color: 'orange.500', icon: <MapPinIcon boxSize={5} />, art: <HourglassArt /> },
+					{ label: 'Printed letters', value: batchesLoading ? null : printedCount, helper: locationsData ? `${locationsData.summary.printed} locations covered` : 'This month', color: 'blue.500', icon: <CheckCircleIcon />, art: <CalendarArt /> },
+					{ label: 'Selected employees', value: summary ? summary.employees : selected.length === 0 ? 0 : null, helper: `${selected.length} location${selected.length === 1 ? '' : 's'} selected`, color: 'brand.500', icon: <PeopleIcon boxSize={5} />, art: <PeopleArt palette="brand" /> },
+					{ label: 'Selected amount', value: summary ? formatAmount(summary.total) : selected.length === 0 ? formatAmount(0) : null, helper: locationsData ? locationsData.periodLabel : 'Net payable', color: 'green.500', icon: <WalletIcon boxSize={5} />, art: <WalletArt /> },
 				]}
 			/>
 
@@ -409,7 +413,7 @@ function BankInvoicePage() {
 					title="Printed history"
 					subtitle={locationsData ? `Letters printed for ${locationsData.periodLabel}. Cancel a letter to make its locations pending again.` : 'Letters printed this month'}
 					actions={(
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
 							Back to payment list
 						</ActionButton>
 					)}
@@ -435,13 +439,13 @@ function BankInvoicePage() {
 						: data ? `${data.periodLabel} · ${payable} of ${summary?.employees ?? 0} employees go on the letter · printing marks the selected locations as printed` : 'Loading…'}
 				actions={(
 					<>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
 							Excel
 						</ActionButton>
-						<ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
+						<ActionButton size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
 							PDF
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
 							Print
 						</ActionButton>
 					</>

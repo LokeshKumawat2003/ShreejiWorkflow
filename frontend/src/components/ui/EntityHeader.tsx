@@ -82,21 +82,27 @@ type HeaderCardProps = {
 	actions?: ReactNode;
 	details: ReactNode;
 	footer?: ReactNode;
+	art?: ReactNode;
 	display?: ResponsiveValue<string>;
 };
 
-export function HeaderCard({ name, status, subtitle, actions, details, footer, display }: HeaderCardProps) {
+export function HeaderCard({ name, status, subtitle, actions, details, footer, art, display }: HeaderCardProps) {
 	return (
 		<Box display={display} bg="white" border="1px solid" borderColor="slate.200" borderRadius="xl" boxShadow="0 1px 3px rgba(15, 23, 42, 0.05)">
 			<Flex
+				position="relative"
+				overflow="hidden"
+				borderTopRadius="xl"
+				bgGradient={art ? 'linear(to-r, #fdfcff 35%, brand.50)' : undefined}
+				_before={art ? { content: '""', position: 'absolute', left: 0, top: 0, bottom: 0, w: '3px', bg: 'brand.500' } : undefined}
 				px={{ base: 4, md: 6 }}
-				py={{ base: 4, md: 5 }}
+				py={{ base: 4, md: art ? 6 : 5 }}
 				direction={{ base: 'column', md: 'row' }}
 				align={{ base: 'flex-start', md: 'center' }}
 				justify="space-between"
 				gap={4}
 			>
-				<Flex align="center" gap={4} minW={0}>
+				<Flex position="relative" align="center" gap={4} minW={0}>
 					<Flex
 						align="center"
 						justify="center"
@@ -110,9 +116,10 @@ export function HeaderCard({ name, status, subtitle, actions, details, footer, d
 					>
 						{initials(name)}
 					</Flex>
+					{art ? null : <Box w="1px" h="44px" bg="slate.200" flexShrink={0} />}
 					<Box minW={0}>
-						<HStack spacing={2.5} flexWrap="wrap">
-							<Heading as="h1" fontSize={{ base: '18px', md: '20px' }} lineHeight="1.3" fontWeight="700" color="slate.900" noOfLines={1}>
+						<HStack spacing={3} flexWrap="wrap">
+							<Heading as="h1" fontSize={{ base: '18px', md: art ? '22px' : '20px' }} lineHeight="1.3" fontWeight="700" color="slate.900" noOfLines={1}>
 								{name}
 							</Heading>
 							<StatusBadge status={status} />
@@ -120,7 +127,24 @@ export function HeaderCard({ name, status, subtitle, actions, details, footer, d
 						<Text mt={0.5} fontSize="sm" color="slate.500" noOfLines={1}>{subtitle}</Text>
 					</Box>
 				</Flex>
-				{actions ? <HStack spacing={2} flexShrink={0} flexWrap="wrap" rowGap={2}>{actions}</HStack> : null}
+				{art ? (
+					<Box
+						ml="auto"
+						alignSelf="flex-end"
+						mb={{ md: -6 }}
+						mr={actions ? 2 : 6}
+						display={{ base: 'none', lg: 'block' }}
+						color="brand.400"
+						opacity={0.8}
+						pointerEvents="none"
+						flexShrink={1}
+						minW={0}
+						overflow="hidden"
+					>
+						{art}
+					</Box>
+				) : null}
+				{actions ? <HStack position="relative" spacing={2} flexShrink={0} flexWrap="wrap" rowGap={2}>{actions}</HStack> : null}
 			</Flex>
 
 			<SimpleGrid
@@ -154,21 +178,19 @@ type HeaderDetailProps = {
 
 export function HeaderDetail({ icon, label, value, isLoading = false, capitalize = false }: HeaderDetailProps) {
 	return (
-		<Box minW={0} pr={4}>
-			<HStack spacing={2.5}>
-				<Flex w="16px" justify="center" color="brand.500" flexShrink={0}>{icon}</Flex>
+		<Flex minW={0} pr={4} gap={3} align="flex-start">
+			<Flex w="20px" h="20px" mt="1px" align="center" justify="center" color="brand.500" flexShrink={0} fontSize="md" sx={{ '& svg': { boxSize: '18px' } }}>{icon}</Flex>
+			<Box minW={0}>
 				<Text fontSize="xs" color="slate.500">{label}</Text>
-			</HStack>
-			<Box pl="26px" mt={1}>
 				{isLoading ? (
-					<Skeleton h="16px" w="70%" borderRadius="sm" />
+					<Skeleton mt={1} h="16px" w="120px" borderRadius="sm" />
 				) : (
-					<Text fontSize="sm" fontWeight="600" color={value ? 'slate.900' : 'slate.400'} noOfLines={1} title={value} textTransform={capitalize ? 'capitalize' : undefined}>
+					<Text mt={0.5} fontSize="sm" fontWeight="600" color={value ? 'slate.900' : 'slate.400'} noOfLines={1} title={value} textTransform={capitalize ? 'capitalize' : undefined}>
 						{value || 'Not added'}
 					</Text>
 				)}
 			</Box>
-		</Box>
+		</Flex>
 	);
 }
 
@@ -176,7 +198,7 @@ export const headerButton = {
 	size: 'sm',
 	h: '36px',
 	px: 3.5,
-	borderRadius: 'lg',
+	borderRadius: '10px',
 	fontSize: 'sm',
 	fontWeight: '600',
 	iconSpacing: 2,

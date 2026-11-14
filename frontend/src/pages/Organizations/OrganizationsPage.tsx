@@ -1,6 +1,7 @@
 import { AddIcon } from '@chakra-ui/icons';
-import { Box, Button, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
+import { Box, Button, Flex, Heading, HStack, Stack, Text, useDisclosure, useToast } from '@chakra-ui/react';
 import { useState } from 'react';
+import { BuildingIcon } from '../../components/ui';
 import { ApiError } from '../../services/api';
 import type { CreateOrganizationInput, UpdateOrganizationInput } from '../../services/organizationService';
 import type { OrganizationLocation, User } from '../../types';
@@ -182,17 +183,36 @@ function OrganizationsPage() {
       ) : (
         <Stack spacing={6}>
           <HStack justify="space-between" align="center" flexWrap="wrap" gap={4}>
-            <Box>
-              <Heading size="lg" color="slate.900" lineHeight="1.15">Organizations</Heading>
-              <Text mt={1} fontSize="sm" color="slate.500">Manage organization accounts and access</Text>
-            </Box>
+            <HStack spacing={4}>
+              <Flex
+                boxSize={{ base: '48px', md: '56px' }}
+                flexShrink={0}
+                align="center"
+                justify="center"
+                borderRadius="16px"
+                bgGradient="linear(135deg, brand.400, brand.600)"
+                color="white"
+                boxShadow="0 8px 20px rgba(79, 70, 229, 0.28)"
+              >
+                <BuildingIcon boxSize={6} />
+              </Flex>
+              <Box>
+                <Heading fontSize={{ base: '24px', md: '30px' }} fontWeight="800" color="slate.900" lineHeight="1.15" letterSpacing="-0.02em">Organizations</Heading>
+                <Text mt={1} fontSize="sm" color="slate.500">Manage organization accounts and access</Text>
+              </Box>
+            </HStack>
             <Button
-              h="40px"
+              h="44px"
               px={5}
-              borderRadius="full"
               fontSize="sm"
-              leftIcon={<AddIcon boxSize={2.5} />}
-              colorScheme="brand"
+              fontWeight="600"
+              color="white"
+              bgGradient="linear(to-r, brand.500, brand.600)"
+              boxShadow="0 6px 16px rgba(79, 70, 229, 0.3)"
+              leftIcon={<AddIcon boxSize={3} />}
+              iconSpacing={2.5}
+              _hover={{ bgGradient: 'linear(to-r, brand.600, brand.700)' }}
+              _active={{ bgGradient: 'linear(to-r, brand.600, brand.700)' }}
               onClick={createDialog.onOpen}
             >
               Create organization

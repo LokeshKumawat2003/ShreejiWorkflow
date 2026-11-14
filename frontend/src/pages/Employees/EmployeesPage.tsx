@@ -212,17 +212,17 @@ function EmployeesPage({ role, organizationId, organizationName, currentUserId }
             </Box>
             <HStack flexWrap="wrap" gap={3}>
               {role === 'admin' && organizationId && (
-                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} variant="outline" onClick={assignmentDialog.onOpen}>
+                <Button h="40px" px={5} fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} variant="outline" onClick={assignmentDialog.onOpen}>
                   Assign existing employee
                 </Button>
               )}
               {role === 'admin' && (
-                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AttachmentIcon boxSize={3} />} variant="outline" onClick={importDialog.onOpen}>
+                <Button h="40px" px={5} fontSize="sm" leftIcon={<AttachmentIcon boxSize={3} />} variant="outline" onClick={importDialog.onOpen}>
                   Import from Excel
                 </Button>
               )}
               {role === 'admin' && (
-                <Button h="40px" px={5} borderRadius="full" fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
+                <Button h="40px" px={5} fontSize="sm" leftIcon={<AddIcon boxSize={2.5} />} colorScheme="brand" onClick={openCreateDialog}>
                   Add Employee
                 </Button>
               )}

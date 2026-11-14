@@ -1,7 +1,7 @@
-import { CalendarIcon, TimeIcon } from '@chakra-ui/icons';
+﻿import { CalendarIcon, TimeIcon } from '@chakra-ui/icons';
 import { Stack, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
 import { useState } from 'react';
-import { BuildingIcon, FileIcon, HeaderBreadcrumb, HeaderCard, HeaderDetail, MapPinIcon, PeopleIcon } from '../../../components/ui';
+import { BuildingIcon, FileIcon, HeaderBreadcrumb, HeaderCard, HeaderDetail, MapPinIcon, PeopleIcon, SiteArt } from '../../../components/ui';
 import type { OrganizationLocation, User } from '../../../types';
 import AttendanceRegisterGrid from '../../Attendance/components/AttendanceRegisterGrid';
 import AttendanceHistory from '../../Attendance/components/AttendanceHistory';
@@ -37,11 +37,12 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 					display={isViewingEmployee ? 'none' : 'block'}
 					name={location.name}
 					status={location.status}
-					subtitle={`${organization.organizationName || ''}${workName ? `  •  ${workName}` : ''}`}
+					subtitle={[organization.organizationName, workName, organization.email].filter(Boolean).join('  •  ')}
+					art={<SiteArt />}
 					details={(
 						<>
 							<HeaderDetail icon={<BuildingIcon boxSize={3.5} />} label="Organization" value={organization.organizationName} />
-							<HeaderDetail icon={<Text as="span" fontSize="xs" fontWeight="700" lineHeight="1">#</Text>} label="PO number" value={location.opNumber} />
+							<HeaderDetail icon={<Text as="span" fontSize="lg" fontWeight="700" lineHeight="1">#</Text>} label="PO number" value={location.opNumber} />
 							<HeaderDetail icon={<PeopleIcon boxSize={3.5} />} label="Designation" value={location.designation} capitalize />
 							<HeaderDetail icon={<MapPinIcon boxSize={3.5} />} label="Address" value={location.address} />
 						</>
@@ -59,8 +60,9 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 								<Tab
 									key={tab.label}
 									position="relative"
-									h="48px"
-									px={3}
+									zIndex={0}
+									h="52px"
+									px={4}
 									gap={2}
 									flexShrink={0}
 									fontSize="sm"
@@ -80,10 +82,22 @@ function LocationWorkspacePage({ organization, location, onBack }: LocationWorks
 										bg: 'transparent',
 										transition: 'background 0.15s',
 									}}
+									_before={{
+										content: '""',
+										position: 'absolute',
+										left: 0,
+										right: 0,
+										top: '7px',
+										bottom: '7px',
+										borderRadius: '10px',
+										bg: 'transparent',
+										transition: 'background 0.15s',
+										zIndex: -1,
+									}}
 									_selected={{
-										color: 'slate.900',
+										color: 'brand.600',
 										fontWeight: '600',
-										'& > svg, & > span': { color: 'brand.600' },
+										_before: { bg: 'brand.50' },
 										_after: { bg: 'brand.500' },
 									}}
 								>

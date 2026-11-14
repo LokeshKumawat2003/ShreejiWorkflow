@@ -10,6 +10,10 @@ import {
 	StatStrip,
 	TableFooter,
 	WalletIcon,
+	CalendarArt,
+	HourglassArt,
+	PeopleArt,
+	WalletArt,
 	type DataTableColumn,
 } from '../../../components/ui';
 import type { PayrollLine, PayrollResponse } from '../../../services/attendanceService';
@@ -143,6 +147,7 @@ export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null })
 					helper: 'Included in this run',
 					color: 'brand.500',
 					icon: <PeopleIcon boxSize={5} />,
+					art: <PeopleArt palette="brand" />,
 				},
 				{
 					label: 'Total payable',
@@ -150,6 +155,7 @@ export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null })
 					helper: payroll?.netTotals ? 'Net of EPF and ESI, incl. bonus' : 'Gross pay for the period',
 					color: 'green.500',
 					icon: <WalletIcon boxSize={5} />,
+					art: <WalletArt />,
 				},
 				{
 					label: 'Paid days',
@@ -157,14 +163,16 @@ export function PayrollSummary({ payroll }: { payroll: PayrollResponse | null })
 					helper: employees ? `Avg ${(paidDays / employees).toFixed(1)} per employee` : 'No attendance yet',
 					color: 'blue.500',
 					icon: <CalendarIcon />,
+					art: <CalendarArt />,
 				},
 				{
 					label: 'Attendance',
 					value: ready ? (present + absent ? `${Math.round((present / (present + absent)) * 100)}%` : '—') : null,
 					helper: `${present} present · ${absent} absent`,
-					color: 'orange.400',
+					color: 'orange.500',
 					icon: <CheckCircleIcon />,
 					share: present + absent ? present / (present + absent) : null,
+					art: <HourglassArt />,
 				},
 			]}
 		/>

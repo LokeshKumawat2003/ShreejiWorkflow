@@ -8,7 +8,9 @@ import {
   FilterBar,
   FilterField,
   FilterSelect,
+  CheckArt,
   IconAction,
+  PeopleArt,
   PeopleIcon,
   PrintIcon,
   SearchInput,
@@ -103,7 +105,7 @@ function EmployeeTable({
     {
       key: 'employee',
       header: 'Employee',
-      render: (employee) => <EntityCell name={employee.name} subtitle={employee.email} />,
+      render: (employee) => <EntityCell shape="circle" name={employee.name} subtitle={employee.email} />,
     },
     {
       key: 'phone',
@@ -135,9 +137,9 @@ function EmployeeTable({
       header: 'Actions',
       align: 'right',
       render: (employee) => (
-        <HStack justify="flex-end" spacing={1.5}>
+        <HStack justify="flex-end" spacing={2}>
           {role === 'admin' && (
-            <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} onClick={() => onEdit(employee)} />
+            <IconAction label={`Edit ${employee.name}`} icon={<EditIcon />} tone="primary" onClick={() => onEdit(employee)} />
           )}
           {onViewLetter && (
             <IconAction label={`View appointment letter: ${employee.name}`} icon={<ViewIcon />} onClick={() => onViewLetter(employee)} />
@@ -146,10 +148,10 @@ function EmployeeTable({
             <IconAction label={`Appointment letter: ${employee.name}`} icon={<DownloadIcon />} tone="primary" onClick={() => onDownloadLetter(employee)} />
           )}
           {onPrintLetter && (
-            <IconAction label={`Print appointment letter: ${employee.name}`} icon={<PrintIcon />} onClick={() => onPrintLetter(employee)} />
+            <IconAction label={`Print appointment letter: ${employee.name}`} icon={<PrintIcon />} color="slate.700" onClick={() => onPrintLetter(employee)} />
           )}
           {onMove && (
-            <IconAction label={`Move ${employee.name} to another location`} icon={<RepeatIcon />} onClick={() => onMove(employee)} />
+            <IconAction label={`Move ${employee.name} to another location`} icon={<RepeatIcon />} color="slate.700" onClick={() => onMove(employee)} />
           )}
           {onDelete && (
             <IconAction label={`${deleteLabel}: ${employee.name}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(employee)} />
@@ -163,21 +165,23 @@ function EmployeeTable({
     <Stack spacing={4}>
       <StatStrip
         items={[
-          { label: 'Total Employees', value: summary?.total, helper: scopeLabel, color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
+          { label: 'Total Employees', value: summary?.total, helper: scopeLabel, color: 'brand.500', icon: <PeopleIcon boxSize={5} />, art: <PeopleArt palette="brand" /> },
           {
             label: 'Active',
             value: summary?.active,
             helper: 'Currently assigned',
             color: 'green.500',
             icon: <CheckCircleIcon boxSize={5} />,
+            art: <CheckArt />,
             share: summary?.total ? summary.active / summary.total : null,
           },
           {
             label: 'Inactive',
             value: summary?.inactive,
             helper: 'Not active',
-            color: 'red.400',
+            color: 'red.500',
             icon: <NotAllowedIcon boxSize={5} />,
+            art: <PeopleArt palette="red" single />,
             share: summary?.total ? summary.inactive / summary.total : null,
           },
         ]}

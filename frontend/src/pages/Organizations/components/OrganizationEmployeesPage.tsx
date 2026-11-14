@@ -171,10 +171,29 @@ function OrganizationEmployeesPage({ organizationId, organizationName, location,
             title={`Employee roster · ${organizationName}`}
             actions={(
               <>
-                <ActionButton tone="neutral" size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={assignmentDialog.onOpen}>
+                <ActionButton
+                  tone="neutral"
+                  size="sm"
+                  h="38px"
+                  px={4}
+                  bg="white"
+                  color="slate.800"
+                  boxShadow="0 1px 3px rgba(15, 23, 42, 0.06)"
+                  leftIcon={<AddIcon boxSize={2.5} />}
+                  onClick={assignmentDialog.onOpen}
+                >
                   Assign existing
                 </ActionButton>
-                <ActionButton size="sm" leftIcon={<AddIcon boxSize={2.5} />} onClick={openCreateDialog}>
+                <ActionButton
+                  size="sm"
+                  h="38px"
+                  px={4}
+                  bgGradient="linear(to-r, brand.400, brand.600)"
+                  boxShadow="0 6px 14px rgba(79, 70, 229, 0.28)"
+                  _hover={{ bgGradient: 'linear(to-r, brand.500, brand.700)' }}
+                  leftIcon={<AddIcon boxSize={2.5} />}
+                  onClick={openCreateDialog}
+                >
                   Add employee
                 </ActionButton>
               </>

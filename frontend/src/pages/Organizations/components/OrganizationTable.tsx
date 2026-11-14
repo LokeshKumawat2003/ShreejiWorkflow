@@ -1,18 +1,21 @@
 import { DeleteIcon, EditIcon } from '@chakra-ui/icons';
-import { HStack, Text } from '@chakra-ui/react';
+import { Box, Flex, HStack, SimpleGrid, Skeleton, Text } from '@chakra-ui/react';
+import { useState, type ReactNode } from 'react';
 import {
-  BuildingIcon,
   ContentCard,
   DataTable,
   EntityCell,
   FilterBar,
   FilterField,
   FilterSelect,
+  FolderIcon,
   IconAction,
   SearchInput,
   StatusBadge,
   TableFooter,
+  ViewToggle,
   type DataTableColumn,
+  type TableView,
 } from '../../../components/ui';
 import type { User } from '../../../types';
 
@@ -72,13 +75,14 @@ function OrganizationTable({
   onDelete,
 }: OrganizationTableProps) {
   const isFiltered = Boolean(search.trim()) || statusFilter !== 'all';
+  const [view, setView] = useState<TableView>('list');
 
   const columns: DataTableColumn<User>[] = [
     {
       key: 'organization',
       header: 'Organization',
       render: (organization) => (
-        <EntityCell name={organization.organizationName || organization.name || organization.email} subtitle={organization.email} />
+        <EntityCell shape="circle" name={organization.organizationName || organization.name || organization.email} subtitle={organization.email} />
       ),
     },
     {
@@ -98,20 +102,89 @@ function OrganizationTable({
       key: 'actions',
       header: 'Actions',
       align: 'right',
-      render: (organization) => (
-        <HStack justify="flex-end" spacing={1.5}>
-          <IconAction label={`Edit ${organization.organizationName}`} icon={<EditIcon />} onClick={() => onEdit(organization)} />
-          <IconAction label={`Delete ${organization.organizationName}`} icon={<DeleteIcon />} tone="danger" onClick={() => onDelete(organization)} />
-        </HStack>
-      ),
+      render: (organization) => rowActions(organization),
     },
   ];
+
+  function rowActions(organization: User) {
+    return (
+      <HStack justify="flex-end" spacing={2}>
+        <IconAction label={`Edit ${organization.organizationName}`} icon={<EditIcon />} tone="primary" w="34px" minW="34px" h="34px" onClick={(event) => { event.stopPropagation(); onEdit(organization); }} />
+        <IconAction label={`Delete ${organization.organizationName}`} icon={<DeleteIcon />} tone="danger" w="34px" minW="34px" h="34px" onClick={(event) => { event.stopPropagation(); onDelete(organization); }} />
+      </HStack>
+    );
+  }
+
+  const footer = (
+    <TableFooter
+      page={page}
+      pageSize={pageSize}
+      total={total}
+      totalPages={totalPages}
+      noun={total === 1 ? 'organization' : 'organizations'}
+      isDisabled={isLoading || Boolean(loadError)}
+      onPageChange={onPageChange}
+    />
+  );
+
+  let gridBody: ReactNode = null;
+  if (view === 'grid') {
+    if (loadError) {
+      gridBody = <Text px={5} py={8} color="red.600" fontSize="sm">{loadError}</Text>;
+    } else if (isLoading && organizations.length === 0) {
+      gridBody = (
+        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={4} p={{ base: 4, md: 5 }}>
+          {[0, 1, 2].map((index) => <Skeleton key={index} h="132px" borderRadius="14px" />)}
+        </SimpleGrid>
+      );
+    } else if (organizations.length === 0) {
+      gridBody = (
+        <Box px={5} py={10} textAlign="center">
+          <Text fontWeight="600" color="slate.800">{isFiltered ? 'No matching organizations' : 'No organizations yet'}</Text>
+          {isFiltered ? <Text mt={1} fontSize="sm" color="slate.500">Try a different search or status filter.</Text> : null}
+        </Box>
+      );
+    } else {
+      gridBody = (
+        <SimpleGrid columns={{ base: 1, md: 2, xl: 3 }} spacing={4} p={{ base: 4, md: 5 }} opacity={isLoading ? 0.6 : 1}>
+          {organizations.map((organization) => (
+            <Box
+              key={organization.id || organization._id || organization.email}
+              role="button"
+              tabIndex={0}
+              p={4}
+              bg="white"
+              border="1px solid"
+              borderColor="slate.200"
+              borderRadius="14px"
+              cursor="pointer"
+              transition="box-shadow 0.15s, border-color 0.15s"
+              _hover={{ borderColor: 'brand.200', boxShadow: '0 6px 16px rgba(15, 23, 42, 0.07)' }}
+              onClick={() => onView(organization)}
+              onKeyDown={(event) => { if (event.key === 'Enter') onView(organization); }}
+            >
+              <EntityCell shape="circle" minW="0" name={organization.organizationName || organization.name || organization.email} subtitle={organization.email} />
+              <Flex mt={4} pt={3} borderTop="1px solid" borderColor="slate.100" justify="space-between" align="center" gap={3}>
+                <Box minW={0}>
+                  <Text fontSize="xs" color="slate.500">Account holder</Text>
+                  <Text fontSize="sm" fontWeight="600" color={organization.name ? 'slate.800' : 'slate.400'} noOfLines={1}>{organization.name || 'Not added'}</Text>
+                </Box>
+                <StatusBadge status={organization.status} />
+              </Flex>
+              <Box mt={3}>{rowActions(organization)}</Box>
+            </Box>
+          ))}
+        </SimpleGrid>
+      );
+    }
+  }
 
   return (
     <ContentCard
       noPadding
-      icon={<BuildingIcon boxSize={5} />}
+      icon={<FolderIcon boxSize={5} />}
       title="Organization directory"
+      actions={<ViewToggle value={view} onChange={setView} />}
       subtitle={isLoading && total === 0 ? 'Loading organizations…' : `${total} ${total === 1 ? 'organization' : 'organizations'}${isFiltered ? ' match your filters' : ''}`}
       toolbar={(
         <FilterBar
@@ -135,27 +208,24 @@ function OrganizationTable({
         </FilterBar>
       )}
     >
-      <DataTable
-        columns={columns}
-        rows={organizations}
-        rowKey={(organization) => organization.id || organization._id || organization.email}
-        onRowClick={onView}
-        isLoading={isLoading}
-        error={loadError}
-        emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}
-        emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
-        footer={(
-          <TableFooter
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            totalPages={totalPages}
-            noun={total === 1 ? 'organization' : 'organizations'}
-            isDisabled={isLoading || Boolean(loadError)}
-            onPageChange={onPageChange}
-          />
-        )}
-      />
+      {view === 'grid' ? (
+        <>
+          {gridBody}
+          {footer}
+        </>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={organizations}
+          rowKey={(organization) => organization.id || organization._id || organization.email}
+          onRowClick={onView}
+          isLoading={isLoading}
+          error={loadError}
+          emptyTitle={isFiltered ? 'No matching organizations' : 'No organizations yet'}
+          emptyDescription={isFiltered ? 'Try a different search or status filter.' : undefined}
+          footer={footer}
+        />
+      )}
     </ContentCard>
   );
 }

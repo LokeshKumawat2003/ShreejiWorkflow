@@ -65,7 +65,6 @@ function DashboardNavbar({ onOpenSidebar, title, userName, role, onOpenTickets }
           variant="ghost"
           size="sm"
           color="#475569"
-          borderRadius="lg"
           onClick={onOpenSidebar}
           _hover={{ bg: '#F1F5F9' }}
         />
@@ -97,7 +96,6 @@ function DashboardNavbar({ onOpenSidebar, title, userName, role, onOpenTickets }
               variant="ghost"
               h="44px"
               px={{ base: 1, sm: 2 }}
-              borderRadius="lg"
               aria-label="Open profile details"
               _hover={{ bg: '#F8FAFC' }}
             >

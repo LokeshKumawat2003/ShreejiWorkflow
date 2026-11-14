@@ -192,7 +192,6 @@ function DashboardSidebar({ activeTab, onSelectTab, onNavigate, userName, role }
                 icon={<SettingsIcon boxSize={3.5} />}
                 size="sm"
                 variant="ghost"
-                borderRadius="full"
                 color="slate.400"
                 _hover={{ bg: 'white', color: 'brand.600', boxShadow: 'sm' }}
                 onClick={() => selectTab('Settings')}

@@ -5,6 +5,7 @@ type EntityCellProps = {
 	name: string;
 	subtitle?: ReactNode;
 	minW?: string;
+	shape?: 'square' | 'circle';
 };
 
 const palette = ['brand', 'blue', 'teal', 'green', 'orange', 'pink', 'purple', 'cyan'];
@@ -23,7 +24,7 @@ function colorOf(name: string) {
 	return palette[hash % palette.length];
 }
 
-function EntityCell({ name, subtitle, minW = '200px' }: EntityCellProps) {
+function EntityCell({ name, subtitle, minW = '200px', shape = 'square' }: EntityCellProps) {
 	const color = colorOf(name);
 
 	return (
@@ -34,7 +35,7 @@ function EntityCell({ name, subtitle, minW = '200px' }: EntityCellProps) {
 				flexShrink={0}
 				w="40px"
 				h="40px"
-				borderRadius="12px"
+				borderRadius={shape === 'circle' ? 'full' : '12px'}
 				bg={`${color}.50`}
 				color={`${color}.600`}
 				border="1px solid"

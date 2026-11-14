@@ -66,6 +66,66 @@ export const FileIcon = createIcon({
 	),
 });
 
+export const BoxIcon = createIcon({
+	displayName: 'BoxIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M12 1.8 21 6.6v10.8l-9 4.8-9-4.8V6.6l9-4.8Zm-6.4 5.5L12 10.7l6.4-3.4L12 3.9 5.6 7.3ZM5 9v7.2l6 3.2v-7.2L5 9Zm8 10.4 6-3.2V9l-6 3.2v7.2Z"
+		/>
+	),
+});
+
+export const PercentIcon = createIcon({
+	displayName: 'PercentIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="currentColor"
+			d="M18.3 4.3a1 1 0 0 1 1.4 1.4l-14 14a1 1 0 0 1-1.4-1.4l14-14ZM7 3.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm10 8a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"
+		/>
+	),
+});
+
+export const MoreVerticalIcon = createIcon({
+	displayName: 'MoreVerticalIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path fill="currentColor" d="M12 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z" />
+	),
+});
+
+export const FolderIcon = createIcon({
+	displayName: 'FolderIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path fill="currentColor" d="M3 6.5A2.5 2.5 0 0 1 5.5 4h4.09a2 2 0 0 1 1.42.59L12.4 6h6.1A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-11Z" />
+	),
+});
+
+export const ListIcon = createIcon({
+	displayName: 'ListIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path fill="currentColor" d="M4 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 6a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm1 5a1 1 0 1 0 0 2h14a1 1 0 1 0 0-2H5Z" />
+	),
+});
+
+export const GridIcon = createIcon({
+	displayName: 'GridIcon',
+	viewBox: '0 0 24 24',
+	path: (
+		<path
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinejoin="round"
+			d="M4 4h6.5v6.5H4V4Zm9.5 0H20v6.5h-6.5V4ZM4 13.5h6.5V20H4v-6.5Zm9.5 0H20V20h-6.5v-6.5Z"
+		/>
+	),
+});
+
 export const BuildingIcon = createIcon({
 	displayName: 'BuildingIcon',
 	viewBox: '0 0 24 24',

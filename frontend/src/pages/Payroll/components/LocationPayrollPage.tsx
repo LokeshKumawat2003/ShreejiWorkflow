@@ -16,16 +16,20 @@ import {
 import { useEffect, useState } from 'react';
 import {
 	ActionButton,
+	CalendarArt,
 	ContentCard,
 	DataTable,
 	EntityCell,
 	FilterBar,
 	FilterField,
 	FilterInput,
+	PeopleArt,
 	PeopleIcon,
 	PrintIcon,
+	ReceiptArt,
 	StatStrip,
 	TableFooter,
+	WalletArt,
 	WalletIcon,
 	type DataTableColumn,
 } from '../../../components/ui';
@@ -228,21 +232,23 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 		<Stack spacing={5}>
 			<StatStrip
 				items={[
-					{ label: 'Employees', value: register ? totals?.employees ?? 0 : null, helper: 'On this location register', color: 'brand.500', icon: <PeopleIcon boxSize={5} /> },
-					{ label: 'Working days', value: register ? totals?.workingDays ?? 0 : null, helper: 'Present days in the month', color: 'blue.500', icon: <CalendarIcon /> },
+					{ label: 'Employees', value: register ? totals?.employees ?? 0 : null, helper: 'On this location register', color: 'brand.500', icon: <PeopleIcon boxSize={5} />, art: <PeopleArt palette="brand" /> },
+					{ label: 'Working days', value: register ? totals?.workingDays ?? 0 : null, helper: 'Present days in the month', color: 'blue.500', icon: <CalendarIcon />, art: <CalendarArt /> },
 					{
 						label: 'Gross payment',
 						value: register ? formatAmount(totals?.grossPayment ?? 0) : null,
 						helper: register ? `Total wages ${formatAmount(totals?.totalWages ?? 0)}` : 'Net of EPF and ESI',
 						color: 'green.500',
 						icon: <WalletIcon boxSize={5} />,
+						art: <WalletArt />,
 					},
 					{
 						label: 'Deductions',
 						value: register ? formatAmount((totals?.epf ?? 0) + (totals?.esi ?? 0)) : null,
 						helper: register ? `EPF ${formatAmount(totals?.epf ?? 0)} · ESI ${formatAmount(totals?.esi ?? 0)}` : 'EPF and ESI',
-						color: 'orange.400',
+						color: 'orange.500',
 						icon: <CheckCircleIcon />,
+						art: <ReceiptArt />,
 					},
 				]}
 			/>
@@ -254,16 +260,16 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 				subtitle={register ? `Period ${register.periodLabel} · calculated from attendance` : 'Monthly wage register for this location'}
 				actions={(
 					<>
-						<ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'slips'} onClick={() => void runExport('slips')}>
+						<ActionButton size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'slips'} onClick={() => void runExport('slips')}>
 							Salary slips
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
 							Excel
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
 							PDF
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
 							Print
 						</ActionButton>
 					</>

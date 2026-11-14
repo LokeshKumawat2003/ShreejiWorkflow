@@ -1,4 +1,4 @@
-import { CalendarIcon, CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, InfoOutlineIcon, ViewIcon } from '@chakra-ui/icons';
+﻿import { CalendarIcon, CheckCircleIcon, DeleteIcon, DownloadIcon, EditIcon, InfoOutlineIcon, ViewIcon } from '@chakra-ui/icons';
 import {
 	Alert,
 	AlertIcon,
@@ -13,6 +13,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
 	ActionButton,
+	BoxArt,
+	BoxIcon,
+	CalendarArt,
 	ConfirmDialog,
 	ContentCard,
 	DataTable,
@@ -21,9 +24,13 @@ import {
 	FilterField,
 	FilterInput,
 	IconAction,
+	PeopleIcon,
+	PercentArt,
+	PercentIcon,
 	PrintIcon,
 	StatStrip,
 	TableFooter,
+	WalletArt,
 	WalletIcon,
 	type DataTableColumn,
 } from '../../components/ui';
@@ -55,7 +62,6 @@ type Draft = InvoiceDraft;
 type ExportKind = 'pdf' | 'excel' | 'print';
 
 const INVOICES_PER_PAGE = 10;
-
 const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
 const ACTION_LABELS: Record<ClientInvoice['activity'][number]['action'], string> = { save: 'Saved', pdf: 'PDF', excel: 'Excel', print: 'Printed' };
 
@@ -330,35 +336,63 @@ function LocationInvoicePage({ organizationId, locationId }: LocationInvoicePage
 						helper: preview
 							? preview.attendance.categories.map((category) => `${category.skillCategory} ${category.manDays}`).join(' · ') || 'No attendance this month'
 							: 'From attendance',
+						helperIcon: <PeopleIcon boxSize={3.5} />,
 						color: 'blue.500',
 						icon: <CalendarIcon />,
+						art: <CalendarArt />,
 					},
-					{ label: 'Service part', value: document ? `₹${money(document.serviceTotal)}` : null, helper: document ? `Supply items ₹${money(document.supplyTotal)}` : 'Taxable total', color: 'brand.500', icon: <FileIcon boxSize={5} /> },
-					{ label: preview ? `${preview.setup.gstLabel} ${preview.setup.gstRate}%` : 'Tax', value: document ? `₹${money(document.gstAmount)}` : null, helper: 'On the service part', color: 'orange.400', icon: <CheckCircleIcon /> },
-					{ label: 'Net payable', value: document ? `₹${money(document.netPayable)}` : null, helper: preview?.invoice ? `Saved as ${preview.invoice.invoiceNumber}` : 'Not saved yet', color: 'green.500', icon: <WalletIcon boxSize={5} /> },
+					{
+						label: 'Service part',
+						value: document ? `₹${money(document.serviceTotal)}` : null,
+						helper: document ? `Supply items ₹${money(document.supplyTotal)}` : 'Taxable total',
+						helperIcon: <BoxIcon boxSize={3.5} />,
+						color: 'green.500',
+						icon: <BoxIcon boxSize={5} />,
+						art: <BoxArt />,
+					},
+					{
+						label: preview ? `${preview.setup.gstLabel} ${preview.setup.gstRate}%` : 'Tax',
+						value: document ? `₹${money(document.gstAmount)}` : null,
+						helper: 'On the service part',
+						helperIcon: <PercentIcon boxSize={3} />,
+						color: 'brand.500',
+						icon: <PercentIcon boxSize={5} />,
+						art: <PercentArt />,
+					},
+					{
+						label: 'Net payable',
+						value: document ? `₹${money(document.netPayable)}` : null,
+						helper: preview?.invoice ? `Saved as ${preview.invoice.invoiceNumber}` : 'Not saved yet',
+						helperIcon: preview?.invoice ? <CheckCircleIcon boxSize={3} /> : <InfoOutlineIcon boxSize={3} />,
+						color: preview?.invoice ? 'green.500' : 'orange.400',
+						icon: <WalletIcon boxSize={5} />,
+						art: <WalletArt />,
+					},
 				]}
 			/>
 
 			<ContentCard
+				id="invoice-breakup"
+				scrollMarginTop="80px"
 				noPadding
 				icon={<FileIcon boxSize={5} />}
 				title="Invoice breakup"
 				subtitle={preview ? `Period ${preview.period.label} · quantities from attendance` : 'Monthly client invoice for this location'}
 				actions={(
 					<>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<EditIcon />} isDisabled={!preview} onClick={() => openSetup(0)}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<EditIcon />} isDisabled={!preview} onClick={() => openSetup(0)}>
 							Invoice setup
 						</ActionButton>
-						<ActionButton size="sm" borderRadius="full" isDisabled={!canAct || !isDirty} isLoading={busy === 'save'} onClick={() => void save()}>
+						<ActionButton size="sm" isDisabled={!canAct || !isDirty} isLoading={busy === 'save'} onClick={() => void save()}>
 							{preview?.invoice ? 'Save changes' : 'Save invoice'}
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canAct} isLoading={busy === 'pdf'} onClick={() => void runExport('pdf')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canAct} isLoading={busy === 'pdf'} onClick={() => void runExport('pdf')}>
 							PDF
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canAct} isLoading={busy === 'excel'} onClick={() => void runExport('excel')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canAct} isLoading={busy === 'excel'} onClick={() => void runExport('excel')}>
 							Excel
 						</ActionButton>
-						<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canAct} isLoading={busy === 'print'} onClick={() => void runExport('print')}>
+						<ActionButton tone="neutral" size="sm" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canAct} isLoading={busy === 'print'} onClick={() => void runExport('print')}>
 							Print
 						</ActionButton>
 					</>
@@ -445,7 +479,7 @@ function LocationInvoicePage({ organizationId, locationId }: LocationInvoicePage
 				)}
 			</ContentCard>
 
-			<ContentCard noPadding icon={<FileIcon boxSize={5} />} title="Saved invoices" subtitle="One invoice per month for this location">
+			<ContentCard id="saved-invoices" scrollMarginTop="80px" noPadding icon={<FileIcon boxSize={5} />} title="Saved invoices" subtitle="One invoice per month for this location">
 				<DataTable
 					columns={historyColumns}
 					rows={invoices.slice((currentInvoicesPage - 1) * INVOICES_PER_PAGE, currentInvoicesPage * INVOICES_PER_PAGE)}

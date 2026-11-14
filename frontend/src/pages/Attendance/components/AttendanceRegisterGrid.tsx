@@ -13,7 +13,23 @@ import {
   useToast,
 } from '@chakra-ui/react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActionButton, FilterBar, FilterField, FilterInput, FilterSelect, Pagination, PeopleIcon, PrintIcon, SearchInput, StatCard } from '../../../components/ui';
+import {
+  AbsentArt,
+  ActionButton,
+  CalendarCheckArt,
+  ChartArt,
+  FilterBar,
+  FilterField,
+  FilterInput,
+  FilterSelect,
+  HourglassArt,
+  Pagination,
+  PeopleArt,
+  PeopleIcon,
+  PrintIcon,
+  SearchInput,
+  StatCard,
+} from '../../../components/ui';
 import { ApiError } from '../../../services/api';
 import {
   getAttendanceRegister,
@@ -363,12 +379,12 @@ function AttendanceRegisterGrid({ organizationId, locationId, readOnly = false }
 
   return (
     <Stack spacing={4}>
-      <SimpleGrid columns={{ base: 2, md: 5 }} spacing={3}>
-        <StatCard label="Employees" value={summary?.employees ?? 0} color="brand.500" icon={<PeopleIcon boxSize={5} />} helper="On this register" isLoading={!summary} />
-        <StatCard label="Present marks" value={summary?.present ?? 0} color="green.500" icon={<CheckCircleIcon />} helper="Of all days" share={markShare(summary?.present)} isLoading={!summary} />
-        <StatCard label="Absent marks" value={summary?.absent ?? 0} color="red.500" icon={<NotAllowedIcon />} helper="Of all days" share={markShare(summary?.absent)} isLoading={!summary} />
-        <StatCard label="Not marked" value={summary?.unmarked ?? 0} color="orange.400" icon={<TimeIcon />} helper="Still pending" share={markShare(summary?.unmarked)} isLoading={!summary} />
-        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" icon={<CalendarIcon />} helper="Present (½ for half days) ÷ working days" isLoading={!summary} />
+      <SimpleGrid columns={{ base: 1, sm: 2, lg: 3, xl: 5 }} spacing={3}>
+        <StatCard label="Employees" value={summary?.employees ?? 0} color="brand.500" icon={<PeopleIcon boxSize={5} />} helper="On this register" art={<PeopleArt palette="brand" />} isLoading={!summary} />
+        <StatCard label="Present marks" value={summary?.present ?? 0} color="green.500" icon={<CheckCircleIcon />} helper="Of all days" share={markShare(summary?.present)} art={<CalendarCheckArt />} isLoading={!summary} />
+        <StatCard label="Absent marks" value={summary?.absent ?? 0} color="red.500" icon={<NotAllowedIcon />} helper="Of all days" share={markShare(summary?.absent)} art={<AbsentArt />} isLoading={!summary} />
+        <StatCard label="Not marked" value={summary?.unmarked ?? 0} color="orange.400" icon={<TimeIcon />} helper="Still pending" share={markShare(summary?.unmarked)} art={<HourglassArt />} isLoading={!summary} />
+        <StatCard label="Attendance rate" value={attendanceRate} color="blue.500" icon={<CalendarIcon />} helper="Present (½ for half days) ÷ working days" art={<ChartArt />} isLoading={!summary} />
       </SimpleGrid>
 
       <Box bg="white" border="1px solid" borderColor="slate.200" borderRadius="lg" boxShadow="sm" overflow="hidden">

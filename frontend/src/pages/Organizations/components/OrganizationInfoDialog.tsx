@@ -165,7 +165,6 @@ function OrganizationInfoDialog({ isOpen, organization, onClose, onEdit }: Organ
 										icon={hasCopied ? <CheckIcon boxSize={3} /> : <CopyIcon boxSize={3.5} />}
 										size="sm"
 										variant="outline"
-										borderRadius="lg"
 										borderColor="slate.200"
 										color={hasCopied ? 'green.600' : 'slate.600'}
 										onClick={onCopy}

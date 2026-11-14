@@ -22,7 +22,6 @@ function ThemeToggle({ mode, onToggle }: ThemeToggleProps) {
       rightIcon={<ChevronDownIcon />}
       size="sm"
       variant="outline"
-      borderRadius="full"
       borderColor={isDark ? 'whiteAlpha.300' : 'slate.200'}
       color={isDark ? 'white' : 'slate.900'}
       bg={isDark ? 'whiteAlpha.100' : 'whiteAlpha.800'}

@@ -10,16 +10,12 @@ type ActionButtonProps = ButtonProps & {
 
 const toneStyles: Record<ActionButtonTone, ButtonProps> = {
   primary: { colorScheme: 'brand', variant: 'solid' },
-  neutral: {
-    variant: 'outline',
-    color: 'slate.900',
-    borderColor: 'slate.200',
-    _hover: { bg: 'slate.50' },
-  },
+  neutral: { variant: 'outline' },
   danger: {
+    colorScheme: 'red',
     variant: 'solid',
     bg: 'red.600',
-    color: 'white',
+    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)',
     _hover: { bg: 'red.700' },
     _active: { bg: 'red.800' },
   },

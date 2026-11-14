@@ -71,12 +71,12 @@ function DataTable<T>({
 										w={column.width}
 										textAlign={column.align}
 										display={display(column)}
-										bg="slate.50"
+										bg="#F5F5FF"
 										fontSize="11px"
 										fontWeight="700"
-										color="slate.500"
+										color="slate.600"
 										letterSpacing="0.06em"
-										borderColor="slate.200"
+										borderColor="brand.50"
 									>
 										{column.header}
 									</Th>

@@ -11,11 +11,11 @@ type PaginationProps = {
 const PAGE_WINDOW = 5;
 
 const navButtonStyles = {
-  h: '34px',
-  minW: '42px',
+  h: '32px',
+  minW: '32px',
   size: 'sm',
   variant: 'outline',
-  borderRadius: 'full',
+  bg: 'white',
   borderColor: 'slate.200',
   color: 'slate.600',
   fontSize: 'lg',
@@ -39,15 +39,15 @@ function Pagination({ currentPage, totalPages, onPageChange, isDisabled = false 
         key={pageNumber}
         aria-current={isCurrent ? 'page' : undefined}
         aria-label={`Page ${pageNumber}`}
-        h="34px"
-        minW="34px"
+        h="32px"
+        minW="32px"
         px={0}
         size="sm"
-        borderRadius="full"
         variant="ghost"
-        bg={isCurrent ? 'slate.900' : 'transparent'}
+        bg={isCurrent ? 'brand.500' : 'transparent'}
         color={isCurrent ? 'white' : 'slate.600'}
-        _hover={{ bg: isCurrent ? 'slate.800' : 'slate.100' }}
+        boxShadow={isCurrent ? '0 2px 6px rgba(79, 70, 229, 0.3)' : undefined}
+        _hover={{ bg: isCurrent ? 'brand.600' : 'slate.100' }}
         isDisabled={isDisabled}
         onClick={() => onPageChange(pageNumber)}
       >

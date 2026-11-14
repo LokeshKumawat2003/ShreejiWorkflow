@@ -176,7 +176,7 @@ function InvoiceDetailView({ invoice, employees, onEdit }: InvoiceDetailViewProp
 		<Stack spacing={6} px={{ base: 4, md: 5 }} py={5}>
 			<Box>
 				<SectionTitle action={(
-					<ActionButton size="sm" tone="neutral" borderRadius="full" leftIcon={<EditIcon />} onClick={onEdit}>
+					<ActionButton size="sm" tone="neutral" leftIcon={<EditIcon />} onClick={onEdit}>
 						Edit invoice lines
 					</ActionButton>
 				)}>

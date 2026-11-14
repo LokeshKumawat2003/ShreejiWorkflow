@@ -98,7 +98,6 @@ function NotificationBell({ role, onOpenTickets }: NotificationBellProps) {
 						icon={<BellIcon boxSize={5} />}
 						variant="ghost"
 						size="md"
-						borderRadius="full"
 						color="#475569"
 						_hover={{ bg: '#F1F5F9', color: '#0F172A' }}
 					/>

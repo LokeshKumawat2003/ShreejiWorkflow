@@ -31,9 +31,8 @@ function IconAction({ label, tone = 'default', ...buttonProps }: IconActionProps
 				fontSize="14px"
 				variant="outline"
 				bg="white"
-				borderRadius="9px"
 				borderColor="slate.200"
-				color={tone === 'danger' ? 'red.500' : 'slate.500'}
+				color={tone === 'danger' ? 'red.500' : tone === 'primary' ? 'brand.500' : 'slate.500'}
 				transition="all 0.15s ease"
 				_hover={{ ...toneHover[tone], transform: 'translateY(-1px)', boxShadow: 'sm' }}
 				_active={{ transform: 'translateY(0)' }}

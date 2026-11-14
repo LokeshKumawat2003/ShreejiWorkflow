@@ -13,6 +13,10 @@ import {
 	SearchInput,
 	StatStrip,
 	TableFooter,
+	ChartArt,
+	CheckArt,
+	ClockArt,
+	WarningArt,
 	type DataTableColumn,
 } from '../../components/ui';
 import { ApiError } from '../../services/api';
@@ -183,15 +187,16 @@ function TicketsPage({ role }: TicketsPageProps) {
 
 			<StatStrip
 				items={[
-					{ label: 'Total', value: summary?.total, helper: 'All tickets', color: 'brand.500', icon: <FileIcon boxSize={5} /> },
-					{ label: 'Open', value: summary?.open, helper: 'Waiting for admin', color: 'orange.400', icon: <WarningTwoIcon /> },
-					{ label: 'In progress', value: summary?.in_progress, helper: 'Being worked on', color: 'blue.500', icon: <TimeIcon /> },
+					{ label: 'Total', value: summary?.total, helper: 'All tickets', color: 'blue.500', icon: <FileIcon boxSize={5} />, art: <ChartArt /> },
+					{ label: 'Open', value: summary?.open, helper: 'Waiting for admin', color: 'orange.500', icon: <WarningTwoIcon />, art: <WarningArt /> },
+					{ label: 'In progress', value: summary?.in_progress, helper: 'Being worked on', color: 'brand.500', icon: <TimeIcon />, art: <ClockArt /> },
 					{
 						label: 'Resolved',
 						value: summary ? summary.resolved + summary.closed : undefined,
 						helper: 'Resolved or closed',
 						color: 'green.500',
 						icon: <CheckCircleIcon />,
+						art: <CheckArt />,
 					},
 				]}
 			/>
@@ -202,7 +207,7 @@ function TicketsPage({ role }: TicketsPageProps) {
 				title={isAdmin ? 'All tickets' : 'My tickets'}
 				subtitle="Click a ticket to see the full message and reply"
 				actions={(
-					<ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<RepeatIcon />} isLoading={isLoading} loadingText="Refreshing" onClick={reload}>
+					<ActionButton tone="neutral" size="sm" leftIcon={<RepeatIcon />} isLoading={isLoading} loadingText="Refreshing" onClick={reload}>
 						Refresh
 					</ActionButton>
 				)}

@@ -18,7 +18,7 @@ const pillTab = {
 	px: 4,
 	gap: 2,
 	flexShrink: 0,
-	borderRadius: 'full',
+	borderRadius: '10px',
 	fontSize: 'sm',
 	fontWeight: '600',
 	color: 'slate.600',

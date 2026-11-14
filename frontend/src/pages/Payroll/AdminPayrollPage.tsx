@@ -333,7 +333,7 @@ function AdminPayrollPage() {
           title="Printed history"
           subtitle={locationsData ? `Payroll exported for ${locationsData.periodLabel}. Cancel an entry to make its locations pending again.` : 'Payroll exported this month'}
           actions={(
-            <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
+            <ActionButton tone="neutral" size="sm" leftIcon={<WalletIcon boxSize={4} />} onClick={() => setShowHistory(false)}>
               Back to payroll results
             </ActionButton>
           )}
@@ -375,7 +375,7 @@ function AdminPayrollPage() {
                   <Box px={3} py={1} borderRadius="full" bg={selectedEmployees.size ? 'brand.500' : 'slate.100'} color={selectedEmployees.size ? 'white' : 'slate.500'} fontSize="xs" fontWeight="700">
                     {selectedEmployees.size} selected
                   </Box>
-                  <Button size="sm" variant="ghost" borderRadius="full" color="slate.600" isDisabled={selectedEmployees.size === 0} onClick={() => setSelectedEmployees(new Set())}>
+                  <Button size="sm" variant="ghost" color="slate.600" isDisabled={selectedEmployees.size === 0} onClick={() => setSelectedEmployees(new Set())}>
                     Clear
                   </Button>
                   <Text fontSize="xs" color="slate.500">Tick employees below; selections are kept across pages.</Text>
@@ -385,13 +385,13 @@ function AdminPayrollPage() {
           ) : undefined}
             actions={(
               <>
-              <ActionButton size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
+              <ActionButton size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'pdf'} onClick={() => void runExport('pdf')}>
                   Salary slips
                 </ActionButton>
-              <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
+              <ActionButton tone="neutral" size="sm" leftIcon={<DownloadIcon />} isDisabled={!canExport} isLoading={exporting === 'excel'} onClick={() => void runExport('excel')}>
                   Excel
                 </ActionButton>
-              <ActionButton tone="neutral" size="sm" borderRadius="full" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
+              <ActionButton tone="neutral" size="sm" leftIcon={<PrintIcon boxSize={4} />} isDisabled={!canExport} isLoading={exporting === 'print'} onClick={() => void runExport('print')}>
                   Print
                 </ActionButton>
               </>

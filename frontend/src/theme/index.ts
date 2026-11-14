@@ -4,6 +4,9 @@ const colors = {
   brand: {
     50: '#EEF2FF',
     100: '#E0E7FF',
+    200: '#C7D2FE',
+    300: '#A5B4FC',
+    400: '#818CF8',
     500: '#4F46E5',
     600: '#4338CA',
     700: '#3730A3',
@@ -24,6 +27,9 @@ const colors = {
   warning: '#D97706',
   danger: '#DC2626',
 };
+
+const BRAND_GRADIENT = `linear-gradient(90deg, ${colors.brand[500]}, ${colors.brand[600]})`;
+const BRAND_GRADIENT_HOVER = `linear-gradient(90deg, ${colors.brand[600]}, ${colors.brand[700]})`;
 
 const config: ThemeConfig = {
   initialColorMode: 'light',
@@ -56,19 +62,45 @@ export const theme = extendTheme({
   components: {
     Button: {
       baseStyle: {
-        borderRadius: 'md',
+        borderRadius: '10px',
         fontWeight: '600',
+        transition: 'background 0.15s, box-shadow 0.15s, transform 0.1s',
+        _active: { transform: 'translateY(1px)' },
       },
       variants: {
-        solid: {
-          bg: 'brand.500',
-          color: 'white',
-          _hover: { bg: 'brand.600' },
-        },
-        outline: {
-          borderColor: 'slate.200',
-          color: 'slate.900',
-        },
+        // Gradient is set through `bg` (not `bgGradient`) so a component's own `bg` prop still replaces it.
+        solid: ({ colorScheme }: { colorScheme: string }) => (colorScheme === 'gray' || colorScheme === 'brand'
+          ? {
+            bg: BRAND_GRADIENT,
+            color: 'white',
+            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
+            _hover: { bg: BRAND_GRADIENT_HOVER, boxShadow: '0 6px 16px rgba(79, 70, 229, 0.32)', _disabled: { bg: BRAND_GRADIENT, boxShadow: 'none' } },
+            _active: { bg: BRAND_GRADIENT_HOVER },
+          }
+          : {
+            bg: `${colorScheme}.500`,
+            color: 'white',
+            boxShadow: '0 4px 12px rgba(15, 23, 42, 0.12)',
+            _hover: { bg: `${colorScheme}.600`, _disabled: { bg: `${colorScheme}.500`, boxShadow: 'none' } },
+            _active: { bg: `${colorScheme}.700` },
+          }),
+        outline: ({ colorScheme }: { colorScheme: string }) => (colorScheme === 'gray'
+          ? {
+            bg: 'white',
+            borderColor: 'slate.200',
+            color: 'slate.800',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+            _hover: { bg: 'slate.50', borderColor: 'slate.300', color: 'slate.900' },
+            _active: { bg: 'slate.100' },
+          }
+          : {
+            bg: 'white',
+            borderColor: `${colorScheme}.200`,
+            color: `${colorScheme}.600`,
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+            _hover: { bg: `${colorScheme}.50`, borderColor: `${colorScheme}.300` },
+            _active: { bg: `${colorScheme}.100` },
+          }),
       },
     },
     Card: {

@@ -557,5 +557,6 @@ module.exports = {
   calculatePayrollWithDeductions,
   calculateWageRegister,
   setOvertimeHours,
+  wageRates,
   wageRegisterRow,
 };

@@ -13,6 +13,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { getDashboardPath } from '../../app/authorization';
+import AssistantWidget from '../../components/assistant/AssistantWidget';
 import DashboardNavbar from '../../components/layout/DashboardNavbar';
 import { AppShellSkeleton } from '../../components/ui';
 import DashboardSidebar from '../../components/layout/DashboardSidebar';
@@ -157,6 +158,7 @@ function DashboardPage({ role }: DashboardPageProps) {
           </Stack>
         </Box>
       </Flex>
+      <AssistantWidget />
     </Flex>
   );
 }

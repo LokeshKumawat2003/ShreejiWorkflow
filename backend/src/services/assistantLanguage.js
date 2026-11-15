@@ -20,9 +20,12 @@ function hasDevanagari(text) {
 /** Hindi / Hinglish / STT variants → English tokens appended for rule matching. */
 const INTENT_BRIDGES = [
   { add: ['payroll', 'generate'], when: ['पैरोल', 'पेरोल', 'पेरोल्', 'पेरॉल', 'पैरॉल', 'पेयरोल', 'petrol', 'पेट्रोल', 'pahalvan', 'pahalwan', 'pehalvan', 'pehelwan', 'पहलवान'] },
-  { add: ['disabled', 'inactive', 'locations', 'list', 'names'], when: ['डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'आईएनएक्टिव', 'इनएक्टिव', 'इनऐक्टिव', 'निष्क्रिय', 'deactive', 'deactivate', 'disabled', 'inactive', 'डिसेबल्ड'] },
-  { add: ['active', 'locations', 'list', 'names'], when: ['एक्टिव', 'ऐक्टिव', 'सक्रिय', 'enabled'] },
-  { add: ['attendance'], when: ['हाजिरी', 'हाज़िरी', 'हाजरी', 'hajiri', 'haziri', 'hajri', 'अटेंडेंस', 'अटेंडन्स'] },
+  // Status only — do not force "locations" here; "डीएक्टिवेट एम्पलाई" must stay an employee query.
+  { add: ['disabled', 'inactive'], when: ['डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट', 'आईएनएक्टिव', 'इनएक्टिव', 'इनऐक्टिव', 'निष्क्रिय', 'deactive', 'deactivate', 'deactivated', 'disabled', 'inactive', 'डिसेबल्ड', 'डिसेबल'] },
+  { add: ['active'], when: ['एक्टिव', 'ऐक्टिव', 'सक्रिय', 'enabled'] },
+  { add: ['disabled', 'inactive', 'locations', 'list', 'names'], when: ['डीएक्टिव लोकेशन', 'डीएक्टिव location', 'disabled location', 'inactive location', 'disabled locations', 'inactive locations'] },
+  { add: ['active', 'locations', 'list', 'names'], when: ['एक्टिव लोकेशन', 'एक्टिव location', 'active location', 'active locations'] },
+  { add: ['attendance'], when: ['हाजिरी', 'हाज़िरी', 'हाजरी', 'hajiri', 'haziri', 'hajri', 'अटेंडेंस', 'अटेंडन्स', 'एटर्नीज', 'एटर्नी', 'अटर्नीज', 'अटॉर्नीज', 'attorneys', 'attorney'] },
   { add: ['present'], when: ['उपस्थित', 'परसेंट', 'पर्सेंट', 'प्रसेंट', 'प्रजेंट', 'परेजेंट', 'प्रेजेंट'] },
   { add: ['absent'], when: ['अनुपस्थित', 'एब्सेंट', 'absant'] },
   { add: ['mark', 'attendance', 'present'], when: ['मार्क करके', 'मार्क कर दो', 'प्रजेंट मार्क', 'प्रेजेंट मार्क', 'हाजिरी लगा', 'attendance लगा'] },
@@ -40,13 +43,14 @@ const INTENT_BRIDGES = [
   { add: ['both', 'locations'], when: ['दोनों', 'dono', 'donon'] },
   { add: ['what can you do'], when: ['क्या कर सकती', 'क्या क्या कर', 'क्या-क्या कर', 'क्या कर सकते'] },
   { add: ['who are you'], when: ['कौन हो', 'परिचय'] },
-  { add: ['details', 'info'], when: ['who is', "who's", 'detailed', 'कौन है', 'कौन हैं', 'डिटेल', 'जानकारी'] },
+  { add: ['details', 'info'], when: ['who is', "who's", 'detailed', 'कौन है', 'कौन हैं', 'डिटेल', 'डिटेल्स', 'जानकारी'] },
+  { add: ['text', 'attendance'], when: ['टेक्स्ट में', 'टेक्स्ट मे', 'text में', 'text mein', 'in text', 'नॉर्मली टेक्स्ट', 'normal text'] },
   { add: ['subba'], when: ['सुबह', 'सुभ', 'सभा', 'सुब्बा', 'सुबा'] },
   { add: ['limbu'], when: ['नींबू', 'निम्बू', 'लिम्बू', 'लिम्बु'] },
   { add: ['uan', 'full form'], when: ['नीम का फुल', 'नीम फुल', 'uan full', 'यूएएन'] },
   { add: ['where', 'assign', 'location'], when: ['kahan', 'kaha', 'कहाँ', 'कहां', 'sign', 'assign', 'साइन', 'असाइन'] },
   { add: ['thank you'], when: ['धन्यवाद', 'शुक्रिया'] },
-  { add: ['names', 'list', 'tell'], when: ['नाम बताओ', 'नाम बताइए', 'नाम बताएं', 'बताओ', 'बताइए'] },
+  { add: ['names', 'list', 'tell'], when: ['नाम बताओ', 'नाम बताइए', 'नाम बताएं', 'नाम दो', 'नाम दे', 'नाम दे दो', 'बताओ', 'बताइए'] },
   { add: ['random'], when: ['रैंडम', 'रेंडम', 'randomly', 'कोई भी', 'खुद से'] },
   { add: ['rest', 'remaining', 'days'], when: ['बाकी सब', 'बाकी दिन', 'बचे हुए', 'baki sab', 'baaki'] },
   { add: ['both', 'locations', 'payroll', 'generate'], when: ['yeah ok both', 'ok both', 'both location', 'both locations'] },
@@ -148,13 +152,22 @@ function preferLang(inputLanguage, message, fallbackLang = 'hi') {
  * Keeps the user's text intact and appends English intent words.
  * Existing Hindi/English rules both keep working.
  */
+// "डीएक्टिवेट".includes("एक्टिव") is true — do not treat deactivate as active.
+const DEACTIVATE_MARKERS = [
+  'डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट',
+  'deactive', 'deactivate', 'deactivated', 'disabled', 'inactive', 'डिसेबल्ड', 'डिसेबल',
+];
+
 function enrichMessageForRules(message) {
   const text = String(message || '');
   if (!text.trim()) return text;
   const extras = [];
   const seen = new Set();
+  const deactivated = includesAny(text, DEACTIVATE_MARKERS);
   for (const bridge of INTENT_BRIDGES) {
     if (!includesAny(text, bridge.when)) continue;
+    // Skip bare "active" enrichment when the user said deactivate/disabled.
+    if (deactivated && bridge.add.includes('active') && !bridge.add.includes('disabled')) continue;
     for (const token of bridge.add) {
       const key = token.toLowerCase();
       if (seen.has(key) || includesAny(text, [token])) continue;

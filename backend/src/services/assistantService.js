@@ -44,7 +44,7 @@ const MONTHS = [
 
 const TYPE_KEYWORDS = [
   ['salary_slip', ['slip', 'slips', 'स्लिप', 'पर्ची', 'parchi', 'payslip']],
-  ['attendance_register', ['attendance', 'अटेंडेंस', 'अटेंडन्स', 'हाजिरी', 'हाज़िरी', 'उपस्थिति', 'hajiri', 'haziri', 'form xvi', 'musterroll', 'muster']],
+  ['attendance_register', ['attendance', 'attorneys', 'attorney', 'अटेंडेंस', 'अटेंडन्स', 'एटर्नीज', 'एटर्नी', 'अटर्नीज', 'अटॉर्नीज', 'हाजिरी', 'हाज़िरी', 'उपस्थिति', 'hajiri', 'haziri', 'form xvi', 'musterroll', 'muster']],
   ['wage_register', ['wage', 'wages', 'veggies', 'veggie', 'वेज', 'वेजेस', 'वेजस', 'वेजिस', 'वेजीज', 'वेतन रजिस्टर', 'form xvii', 'xvii']],
   ['payroll', ['payroll', 'payrol', 'payrole', 'पेरोल', 'पे रोल', 'पैरोल', 'पै रोल', 'पेरॉल', 'पैरॉल', 'पेयरोल', 'पे-रोल', 'पेरौल', 'पैरौल', 'पेट्रोल', 'पैट्रोल', 'petrol', 'salary', 'सैलरी', 'सेलरी', 'तनख्वाह', 'तनखा', 'वेतन', 'tankhwah', 'pagar', 'पगार']],
 ];
@@ -186,6 +186,62 @@ function parseMonth(text, currentMonth) {
   return null;
 }
 
+const RANGE_WORDS = ['se', 'sey', 'say', 'to', 'till', 'until', 'through', 'from', 'से', 'तक', 'तक की', 'तक का', 'लेकर'];
+
+/** Inclusive list of YYYY-MM values from start through end (max 12 months). */
+function monthsBetween(start, end) {
+  if (!isMonth(start) || !isMonth(end) || start > end) return [];
+  const list = [];
+  for (let cursor = start; cursor <= end && list.length < 12; cursor = shiftMonth(cursor, 1)) {
+    list.push(cursor);
+  }
+  return list;
+}
+
+/**
+ * "सितंबर से नवंबर" / "from Sep to Nov" → [2026-09, 2026-10, 2026-11].
+ * Returns null when there is no clear range (caller falls back to parseMonth).
+ */
+function parseMonthRange(text, currentMonth) {
+  const lower = String(text || '').toLowerCase();
+  if (!includesAny(lower, RANGE_WORDS)) return null;
+
+  const hits = [];
+  MONTHS.forEach((names, monthIndex) => {
+    let best = -1;
+    for (const name of names) {
+      let at = -1;
+      if (/^[a-z]+$/.test(name)) {
+        const match = lower.match(new RegExp(`(^|[^a-z])${name}(?=[^a-z]|$)`));
+        if (match) at = match.index + (match[1] ? match[1].length : 0);
+      } else {
+        at = lower.indexOf(name);
+      }
+      if (at >= 0 && (best < 0 || at < best)) best = at;
+    }
+    if (best >= 0) hits.push({ at: best, monthIndex });
+  });
+  hits.sort((left, right) => left.at - right.at);
+  if (hits.length < 2) return null;
+
+  const yearMatch = lower.match(/\b(20\d{2})\b/);
+  const [currentYear, currentMonthNumber] = currentMonth.split('-').map(Number);
+  const resolve = (monthIndex) => {
+    const year = yearMatch
+      ? Number(yearMatch[1])
+      : monthIndex + 1 > currentMonthNumber ? currentYear - 1 : currentYear;
+    return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+  };
+
+  let start = resolve(hits[0].monthIndex);
+  let end = resolve(hits[hits.length - 1].monthIndex);
+  if (end < start) end = shiftMonth(end, 12);
+  if (end > currentMonth) end = currentMonth;
+  if (start > end) return null;
+  const list = monthsBetween(start, end);
+  return list.length >= 2 ? list : null;
+}
+
 function parseType(text) {
   const lower = String(text || '').toLowerCase();
   for (const [type, keywords] of TYPE_KEYWORDS) {
@@ -194,7 +250,19 @@ function parseType(text) {
   return null;
 }
 
+function rejectsDocumentFormat(text) {
+  if (includesAny(text, [
+    'pdf nahi', 'pdf nahin', 'pdf नहीं', 'pdf नही', 'without pdf', 'no pdf', 'not pdf', 'pdf mat',
+    'पीडीएफ नहीं', 'पीडीएफ नही', 'पीडीएफ में नहीं', 'पीडीएफ में नही', 'पीडीएफ मत', 'pdf mein nahi', 'pdf me nahi',
+    'excel nahi', 'एक्सेल नहीं', 'without excel', 'no excel',
+  ])) return true;
+  // "पीडीएफ में नहीं चाहिए" — only when a format word is present with negation.
+  if (!includesAny(text, [...PDF_WORDS, ...EXCEL_WORDS])) return false;
+  return includesAny(text, ['नहीं चाहिए', 'नही चाहिए', 'nahi chahiye', 'मत चाहिए', "don't want", 'dont want', 'नहीं', 'नही', 'nahi', 'nahin', 'without', 'mat', 'मत']);
+}
+
 function parseFormat(text) {
+  if (rejectsDocumentFormat(text)) return null;
   if (includesAny(text, EXCEL_WORDS)) return 'excel';
   if (includesAny(text, PDF_WORDS)) return 'pdf';
   return null;
@@ -235,11 +303,13 @@ async function loadDirectory(user) {
 }
 
 const COMMON_WORDS = new Set([
-  'sabhi', 'saare', 'sabka', 'sabki', 'bana', 'bani', 'banao', 'bane', 'karo', 'kardo', 'karke', 'karna', 'wala', 'wali', 'wale', 'mujhe', 'mera', 'meri',
+  'sabhi', 'saare', 'sabka', 'sabki', 'bana', 'bani', 'banao', 'bane', 'karo', 'kardo', 'karke', 'karna', 'wala', 'wali', 'wale', 'mujhe', 'mera', 'meri', 'mere',
   'unka', 'unki', 'uska', 'uski', 'iska', 'iski', 'abhi', 'kaun', 'kaise', 'kuch', 'yaha', 'vaha', 'bhai', 'bata', 'batao', 'dena', 'dijiye', 'chahiye',
   'invoice', 'slip', 'sheet', 'month', 'mahina', 'mahine', 'total', 'paid', 'days', 'ki', 'hai', 'please', 'pura', 'poora', 'puri', 'poori',
-  'सभी', 'सारे', 'सबका', 'सबकी', 'बना', 'बनी', 'बनाओ', 'करो', 'करके', 'करना', 'वाला', 'वाली', 'वाले', 'मुझे', 'मेरा', 'मेरी', 'उनका', 'उसका', 'इसका',
+  'he', 'hey', 'are', 'isme', 'ismein', 'usme', 'usmein', 'yahan', 'yaha', 'vahan', 'do', 'de', 'dedo', 'btao', 'hamare', 'hamara', 'hamari',
+  'सभी', 'सारे', 'सबका', 'सबकी', 'बना', 'बनी', 'बनाओ', 'करो', 'करके', 'करना', 'वाला', 'वाली', 'वाले', 'मुझे', 'मेरा', 'मेरी', 'मेरे', 'उनका', 'उसका', 'इसका',
   'अभी', 'कौन', 'कैसे', 'कुछ', 'बताओ', 'देना', 'दीजिए', 'चाहिए', 'महीने', 'महीना', 'पूरा', 'पूरी', 'पूरे',
+  'हे', 'अरे', 'हमें', 'हमारे', 'हमारा', 'हमारी', 'इसमें', 'उसमें', 'यहाँ', 'यहां', 'वहाँ', 'वहां', 'दो', 'दे', 'देदो', 'बता',
 ]);
 
 /** Best-scoring entries whose name words appear in the text; several entries tie when the text is ambiguous. */
@@ -514,7 +584,19 @@ function smallTalkReply(entry, lang) {
 }
 
 const COUNT_WORDS = ['how many', 'number of', 'count', 'total', 'kitne', 'kitni', 'kitna', 'कितने', 'कितनी', 'कितना', 'कुल'];
-const LIST_WORDS = ['which', 'list', 'names', 'name of', 'kaun kaun', 'kon kon', 'kaun-kaun', 'naam batao', 'कौन कौन', 'कौन-कौन', 'कौन से', 'कौनसे', 'नाम बताओ', 'नाम बताइए', 'नाम बताएं', 'लिस्ट', 'सूची'];
+const LIST_WORDS = [
+  'which', 'list', 'names', 'name of', 'kaun kaun', 'kon kon', 'kaun-kaun', 'naam batao', 'naam do', 'naam de', 'names do', 'employee names',
+  'कौन कौन', 'कौन-कौन', 'कौन से', 'कौनसे', 'नाम बताओ', 'नाम बताइए', 'नाम बताएं', 'नाम दो', 'नाम दे', 'नाम दे दो', 'लिस्ट', 'सूची', 'सूचि',
+];
+const NAME_CUE_WORDS = [
+  'named', 'name of', 'naam ke', 'naam ka', 'naam ki', 'naam wala', 'naam wali', 'naam wale',
+  'नाम के', 'नाम का', 'नाम की', 'नाम वाला', 'नाम वाली', 'नाम वाले',
+];
+const DISABLED_STATUS_WORDS = [
+  'disabled', 'inactive', 'deactive', 'deactivated', 'deactivate', 'disable', 'in active', 'de active',
+  'डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट', 'इनएक्टिव', 'इनऐक्टिव', 'आईएनएक्टिव', 'आईनएक्टिव', 'इनेक्टिव', 'निष्क्रिय', 'डिसेबल्ड', 'डिसेबल',
+];
+const ACTIVE_STATUS_WORDS = ['active', 'enabled', 'एक्टिव', 'ऐक्टिव', 'सक्रिय', 'इनेबल्ड'];
 const DATA_TOPICS = [
   // "एंपलॉयर/employer" is common STT for "employee" — keep as topic words, never as person names.
   ['employee', ['employee', 'employees', 'employer', 'staff', 'worker', 'workers', 'karmachari', 'एम्प्लॉई', 'एम्प्लोई', 'इम्प्लॉई', 'एंप्लॉई', 'एम्पलाई', 'एम्प्लॉय', 'एंपलॉयर', 'एम्पलॉयर', 'एम्प्लॉयर', 'एम्पल', 'एंपल', 'एम्प्ल', 'एंप्ल', 'इम्पल', 'इंपल', 'इम्प्ल', 'कर्मचारी', 'स्टाफ', 'वर्कर', 'लोग']],
@@ -532,8 +614,9 @@ function counted(count, noun, lang = 'hi') {
 }
 
 const NOT_PERSON_NAMES = new Set([
-  'employee', 'employees', 'employer', 'staff', 'worker', 'workers', 'list', 'names', 'name', 'naam',
+  'employee', 'employees', 'employer', 'staff', 'worker', 'workers', 'list', 'names', 'name', 'naam', 'tell',
   'एम्प्लॉई', 'एम्प्लोई', 'एम्पलाई', 'एंप्लॉई', 'एंपलॉयर', 'एम्पलॉयर', 'एम्प्लॉयर', 'कर्मचारी', 'स्टाफ', 'नाम',
+  'लिस्ट', 'सूची', 'सूचि', 'बताओ', 'दो', 'दे',
 ]);
 
 function isNameToken(word) {
@@ -591,7 +674,17 @@ function listText(names) {
   return names.length > MAX_LISTED ? `${shown} (+${names.length - MAX_LISTED} और)` : shown;
 }
 
-const ATTENDANCE_WORDS = ['attendance', 'attendence', 'atendance', 'hajiri', 'haziri', 'hajri', 'अटेंडेंस', 'अटेंडन्स', 'अटेंडेन्स', 'हाजिरी', 'हाज़िरी', 'हाजरी', 'उपस्थिति'];
+const ATTENDANCE_WORDS = [
+  'attendance', 'attendence', 'atendance', 'attorneys', 'attorney', 'atendance', 'attendace',
+  'hajiri', 'haziri', 'hajri',
+  'अटेंडेंस', 'अटेंडन्स', 'अटेंडेन्स', 'एटर्नीज', 'एटर्नी', 'अटर्नीज', 'अटॉर्नीज', 'अटेंडन्ज', 'एटेंडेंस',
+  'हाजिरी', 'हाज़िरी', 'हाजरी', 'उपस्थिति',
+];
+const TEXT_REPLY_WORDS = [
+  'text', 'textual', 'in text', 'as text', 'in chat', 'chat me', 'chat mein', 'normally', 'normal text',
+  'टेक्स्ट', 'टेक्सट', 'लिख कर', 'लिखकर', 'यहाँ बताओ', 'यहां बताओ', 'चैट में', 'नॉर्मली', 'नार्मली', 'नॉर्मल', 'सामान्य',
+];
+const ATTENDANCE_REPORT_WORDS = ['report', 'reports', 'summary', 'रिपोर्ट', 'रिपोट', 'हिसाब', 'summary'];
 const PENDING_WORDS = [
   'pending', 'baki', 'baaki', 'remaining', 'not marked', 'unmarked', 'marked', 'complete', 'completed', 'done',
   'lagi ya nahi', 'lagai ya nahi', 'lagi hai ya nahi', 'nahi lagi', 'nahi lagai', 'lagni', 'lagana', 'lagani', 'puri', 'poori', 'mark hui', 'kitne ki', 'kitni ki',
@@ -1600,33 +1693,208 @@ async function fullMonthSalaryReply(employeeId, month) {
 
 const TIMES_WORDS = ['baar', 'bar', 'times', 'din', 'dino', 'days', 'day', 'बार', 'दिन', 'दिनों', 'डेज', 'डे'];
 
-/** "पूजा कितने दिन present रही November में" — one employee's saved attendance counted by status. */
-async function answerEmployeeAttendance(user, message, directory, today) {
-  const status = includesAny(message, PRESENT_WORDS) ? 'present' : parseStatus(message);
-  if (!status && !includesAny(message, ATTENDANCE_WORDS)) return null;
-  if (!includesAny(message, COUNT_WORDS) && !includesAny(message, TIMES_WORDS) && !includesAny(message, ['kab', 'कब', 'which dates', 'तारीख'])) return null;
-  if (includesAny(message, MARK_WORDS) || includesAny(message, EDIT_WORDS) || parseType(message) || runKindOf(message)) return null;
-  const employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
-  if (employees.length === 0) return null;
-  const currentMonth = today.slice(0, 7);
-  const named = parseMonth(message, currentMonth) || currentMonth;
-  const month = named > currentMonth ? currentMonth : named;
-  if (employees.length > 1) {
+/** FORM XVI download for one employee — one PDF/Excel per month; ranges become month choices. */
+async function offerAttendanceDocuments(user, employee, months, directory, today, format = 'pdf') {
+  const fmt = format === 'excel' ? 'excel' : 'pdf';
+  const usable = months.filter((item) => item <= today.slice(0, 7));
+  if (usable.length === 0) {
+    return { reply: `${employee.name} के लिए कोई valid month नहीं मिला।` };
+  }
+  const withData = [];
+  for (const month of usable) {
+    const lastDay = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`;
+    const count = await Attendance.countDocuments({ employeeId: employee.id, date: { $gte: `${month}-01`, $lte: lastDay } });
+    if (count > 0) withData.push(month);
+  }
+  const targets = withData.length ? withData : usable.slice(-1);
+  const context = {
+    topic: 'employee_attendance',
+    employeeId: employee.id,
+    employeeName: employee.name,
+    month: targets[targets.length - 1],
+    months: usable,
+  };
+  if (targets.length === 1) {
     return {
-      reply: `${employees.length} employees मिले — किसकी ${monthLabel(month)} की attendance बताऊँ?`,
+      ...(await resolvePlan(user, {
+        type: 'attendance_register',
+        format: fmt,
+        month: targets[0],
+        employeeId: employee.id,
+        employeeName: employee.name,
+        organizationId: employee.organizationId || null,
+        locationId: employee.locationId || null,
+      }, directory, { today })),
+      context,
+    };
+  }
+  const fmtLabel = fmt === 'excel' ? 'Excel' : 'PDF';
+  return {
+    reply: say(
+      'hi',
+      `${employee.name} की attendance ${fmtLabel} एक महीने की बनती है। कौन-सा महीना download करें?`,
+      `${employee.name}'s attendance ${fmtLabel} is one month at a time. Which month should I download?`,
+    ),
+    choices: targets.slice(0, MAX_CHOICES).map((month) => choice(
+      monthLabel(month),
+      {
+        type: 'attendance_register',
+        format: fmt,
+        month,
+        employeeId: employee.id,
+        organizationId: employee.organizationId || null,
+        locationId: employee.locationId || null,
+      },
+    )),
+    context,
+  };
+}
+
+/** "पूजा कितने दिन present / सुरेश की attendance details text में" — one employee's attendance as chat text (not PDF). */
+async function answerEmployeeAttendance(user, message, directory, today, memory = null) {
+  const status = includesAny(message, PRESENT_WORDS) ? 'present' : parseStatus(message);
+  const hasAttendance = Boolean(status) || includesAny(message, ATTENDANCE_WORDS);
+  const currentMonth = today.slice(0, 7);
+  const askedMonth = parseMonth(message, currentMonth);
+  const explicitFormat = !rejectsDocumentFormat(message) && (
+    Boolean(parseFormat(message))
+    || includesAny(message, [...PDF_WORDS, ...EXCEL_WORDS, 'download', 'डाउनलोड', 'form xvi', 'form 16', 'muster', 'मस्टर', 'format', 'फॉर्मेट', 'फॉरमैट', 'फार्मेट'])
+  );
+  // "पीडीएफ फॉर्मेट दो" after a text attendance answer.
+  const pdfFollowUp = Boolean(
+    memory?.employeeId
+    && memory?.topic === 'employee_attendance'
+    && explicitFormat
+    && !includesAny(message, TEXT_REPLY_WORDS)
+    && !hasAttendance
+    && !includesAny(message, ATTENDANCE_REPORT_WORDS)
+    && words(message).length <= 8,
+  );
+  // "अक्टूबर मंथ की बताओ" after an attendance answer → same employee, new month.
+  const monthFollowUp = Boolean(
+    memory?.employeeId
+    && memory?.topic === 'employee_attendance'
+    && askedMonth
+    && !hasAttendance
+    && !explicitFormat
+    && !runKindOf(message)
+    && !includesAny(message, MARK_WORDS)
+    && !includesAny(message, EDIT_WORDS)
+    && matchLocations(message, directory).length === 0,
+  );
+  const textFollowUp = includesAny(message, TEXT_REPLY_WORDS)
+    && memory?.employeeId
+    && (memory.topic === 'employee_attendance' || includesAny(message, ATTENDANCE_WORDS) || includesAny(message, ATTENDANCE_REPORT_WORDS) || includesAny(message, REFERENCE_WORDS));
+  if (!hasAttendance && !textFollowUp && !monthFollowUp && !pdfFollowUp && !includesAny(message, ATTENDANCE_REPORT_WORDS)) return null;
+  if (includesAny(message, MARK_WORDS) || includesAny(message, EDIT_WORDS) || runKindOf(message)) return null;
+
+  // Explicit PDF/Excel wins over bare "रिपोर्ट" — unless user also asked for text / rejected PDF.
+  const forceText = includesAny(message, TEXT_REPLY_WORDS) || rejectsDocumentFormat(message);
+  const wantsText = forceText
+    || textFollowUp
+    || monthFollowUp
+    || (!explicitFormat && (
+      includesAny(message, DETAIL_WORDS)
+      || includesAny(message, TELL_WORDS)
+      || includesAny(message, ATTENDANCE_REPORT_WORDS)
+    ));
+  const wantsDocument = explicitFormat || (
+    !forceText
+    && includesAny(message, MAKE_WORDS)
+    && !wantsText
+  );
+
+  const wantsCount = includesAny(message, COUNT_WORDS)
+    || includesAny(message, TIMES_WORDS)
+    || includesAny(message, ['kab', 'कब', 'which dates', 'तारीख']);
+  if (!wantsText && !wantsDocument && !wantsCount && !status && !textFollowUp && !monthFollowUp && !pdfFollowUp) return null;
+
+  const monthRange = parseMonthRange(message, currentMonth);
+  const namedMonth = askedMonth || ((textFollowUp || monthFollowUp || pdfFollowUp) && memory?.month) || currentMonth;
+  const month = namedMonth > currentMonth ? currentMonth : namedMonth;
+  const months = monthRange
+    || (pdfFollowUp && Array.isArray(memory?.months) && memory.months.length ? memory.months : null)
+    || [month];
+
+  let employees = [];
+  // Pure follow-up keeps the last attendance employee.
+  if ((textFollowUp || monthFollowUp || pdfFollowUp) && memory?.employeeId && !hasAttendance) {
+    employees = [{
+      id: String(memory.employeeId),
+      name: memory.employeeName || '',
+      locationId: memory.locationId || '',
+      organizationId: memory.organizationId || '',
+    }];
+  } else {
+    employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
+    if (employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
+      employees = [{
+        id: String(memory.employeeId),
+        name: memory.employeeName || '',
+        locationId: memory.locationId || '',
+        organizationId: memory.organizationId || '',
+      }];
+    }
+  }
+  if (employees.length === 0) {
+    if ((wantsText || wantsDocument) && (hasAttendance || includesAny(message, ATTENDANCE_REPORT_WORDS))) {
+      return { reply: say(messageLang(message), 'किस employee की attendance चाहिए?', 'Whose attendance do you need?') };
+    }
+    return null;
+  }
+  if (employees.length > 1) {
+    const label = months.length > 1
+      ? `${monthLabel(months[0])} – ${monthLabel(months[months.length - 1])}`
+      : monthLabel(month);
+    return {
+      reply: `${employees.length} employees मिले — किसकी ${label} की attendance बताऊँ?`,
       choices: employees.slice(0, MAX_CHOICES).map((employee) => {
         const place = directory.locations.find((item) => item.id === employee.locationId);
         return choice(
           [employee.name, employee.parentName && `S/O ${employee.parentName}`, place && locationLabel(place)].filter(Boolean).join(' · '),
-          { type: 'employee_attendance', month, employeeId: employee.id, status: status || null },
+          wantsDocument
+            ? { type: 'attendance_register', format: parseFormat(message) || 'pdf', month: months[months.length - 1], employeeId: employee.id }
+            : { type: 'employee_attendance', month: months[months.length - 1], employeeId: employee.id, status: status || null },
         );
       }),
     };
   }
-  return { reply: await employeeAttendanceReply(employees[0].id, month, status, today) };
+  const [employee] = employees;
+  if (wantsDocument && !forceText) {
+    return offerAttendanceDocuments(user, employee, months, directory, today, parseFormat(message) || 'pdf');
+  }
+
+  const detailed = months.length === 1 && (wantsText || !status);
+  const filled = [];
+  const empty = [];
+  for (const item of months) {
+    const section = await employeeAttendanceReply(employee.id, item, status, today, { detailed: detailed || months.length <= 3 });
+    if (section.includes('कोई attendance नहीं')) empty.push(item);
+    else filled.push(section);
+  }
+  if (empty.length && months.length > 1) {
+    const emptyNote = empty.length === 1
+      ? `${employee.name} की ${monthLabel(empty[0])} की कोई attendance नहीं लगी है।`
+      : `${employee.name} की इन महीनों की कोई attendance नहीं: ${empty.map(monthLabel).join(', ')}।`;
+    filled.push(emptyNote);
+  } else if (empty.length && !filled.length) {
+    filled.push(...await Promise.all(empty.map((item) => employeeAttendanceReply(employee.id, item, status, today, { detailed: false }))));
+  }
+  return {
+    reply: filled.join('\n\n'),
+    context: {
+      topic: 'employee_attendance',
+      employeeId: employee.id,
+      employeeName: employee.name,
+      organizationId: employee.organizationId || '',
+      locationId: employee.locationId || '',
+      month: months[months.length - 1],
+      months,
+    },
+  };
 }
 
-async function employeeAttendanceReply(employeeId, month, status, today) {
+async function employeeAttendanceReply(employeeId, month, status, today, { detailed = false } = {}) {
   const employee = await Employee.findById(employeeId).select('name').lean();
   if (!employee) return 'Employee नहीं मिला।';
   const lastDay = `${month}-${String(daysInMonth(month)).padStart(2, '0')}`;
@@ -1647,6 +1915,12 @@ async function employeeAttendanceReply(employeeId, month, status, today) {
     lines.push(`${employee.name} की ${period} की attendance:`);
   }
   lines.push(`पूरा हिसाब: ${breakdown}${unmarked ? ` · ${unmarked} दिन attendance नहीं लगी` : ''}`);
+  if (detailed && !status) {
+    for (const item of ATTENDANCE_STATUSES) {
+      const dates = records.filter((record) => record.status === item).map((record) => Number(record.date.slice(8, 10)));
+      if (dates.length) lines.push(`${STATUS_LABELS[item]} (${dates.length}): ${dates.join(', ')}`);
+    }
+  }
   return lines.join('\n');
 }
 
@@ -2015,6 +2289,8 @@ const EMPTY_WORDS = ['nahi', 'nahin', 'nai', 'नहीं', 'नही', 'bina'
 /** "किन locations में employees assign हैं / नहीं हैं" — locations split by whether they have active employees. */
 async function answerLocationStaffing(user, message, directory) {
   if (!includesAny(message, DATA_TOPICS[1][1]) || !includesAny(message, STAFF_WORDS)) return null;
+  // "डीएक्टिवेट एम्पलाई" is a disabled-employee count/list, not assign staffing.
+  if (includesAny(message, DISABLED_STATUS_WORDS) || includesAny(message, ACTIVE_STATUS_WORDS)) return null;
   if (runKindOf(message) || parseType(message) || includesAny(message, ATTENDANCE_WORDS)) return null;
   if (matchLocations(message, directory).length) return null;
 
@@ -2085,11 +2361,17 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
   if (includesAny(message, ['work for', 'working for', 'काम करती', 'काम करते', 'kaam karti', 'kam karti'])) return null;
   let wantsCount = includesAny(message, COUNT_WORDS);
   let wantsList = includesAny(message, LIST_WORDS);
-  const topic = DATA_TOPICS.find(([, list]) => includesAny(message, list))?.[0];
-  // Bare "एंपलॉयर" / "employees" (no person name) → active employee count.
+  const wantsDisabled = includesAny(message, DISABLED_STATUS_WORDS);
+  let topic = DATA_TOPICS.find(([, list]) => includesAny(message, list))?.[0];
+  // Bare "डीएक्टिवेट" → disabled employees (say "डीएक्टिव लोकेशन" for locations).
+  if (wantsDisabled && !topic) topic = 'employee';
+  // Bare "एंपलॉयर" / "employees" (no person name) → list names if asked, else employee count.
   if (!wantsCount && !wantsList && topic === 'employee') {
     const bareBits = words(employeeSearchText(message)).filter(isNameToken);
-    if (bareBits.length === 0) wantsCount = true;
+    if (bareBits.length === 0) {
+      if (includesAny(message, ['naam', 'name', 'names', 'नाम', 'लिस्ट', 'सूची', 'सूचि', 'list'])) wantsList = true;
+      else wantsCount = true;
+    }
   }
   if (!wantsCount && !wantsList) return null;
   if (!topic) return null;
@@ -2100,8 +2382,9 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
     if (organizations.length === 1) [organization] = organizations;
   }
   const locations = topic === 'organization' ? [] : matchLocations(message, directory, organization?.id);
-  const location = locations.length === 1 ? locations[0] : null;
-  const scope = location ? `${locationLabel(location)} पर` : organization ? `${organization.name} में` : 'आपके dashboard में';
+  let location = locations.length === 1 ? locations[0] : null;
+  let scope = location ? `${locationLabel(location)} पर` : organization ? `${organization.name} में` : 'आपके dashboard में';
+  const employeeNoun = wantsDisabled ? 'disabled/inactive employee' : 'active employee';
 
   if (topic === 'organization') {
     const names = directory.organizations.map((item) => item.name);
@@ -2113,7 +2396,6 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
     const list = directory.locations.filter((item) => !organization || item.organizationId === organization.id);
     const active = list.filter((item) => item.status !== 'disabled');
     const disabled = list.filter((item) => item.status === 'disabled');
-    const wantsDisabled = includesAny(message, DISABLED_STATUS_WORDS);
     const named = (item) => (user.role === 'admin' ? `${locationLabel(item)} (${item.organizationName})` : locationLabel(item));
     if (wantsDisabled) {
       out.context = {
@@ -2138,7 +2420,16 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
     return wantsList && active.length ? `${base}: ${listText(active.map(locationLabel))}।` : `${base}।`;
   }
 
-  const filter = { status: { $ne: 'disabled' } };
+  if (locations.length > 1) {
+    const labels = locations.slice(0, MAX_LISTED).map(locationLabel);
+    return say(
+      lang,
+      `इन locations में से किसकी बात है: ${listText(labels)}?`,
+      `Which of these locations did you mean: ${listText(labels)}?`,
+    );
+  }
+
+  const filter = { status: wantsDisabled ? 'disabled' : { $ne: 'disabled' } };
   if (user.role !== 'admin') filter.organizationId = user.id;
   else if (organization) filter.organizationId = organization.id;
   else filter.organizationId = { $ne: null };
@@ -2149,39 +2440,77 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
   }
   // "दीपक शर्मा नाम के कितने employee" — every name part must match (AND), ignore enrich junk.
   const nameJunk = new Set([
-    'employee', 'employees', 'list', 'names', 'staff', 'worker', 'workers', 'generate', 'payroll', 'invoice', 'neft',
-    'employer', 'ampalyer', 'ampler', 'एंपलॉयर', 'एम्पलॉयर', 'एम्प्लॉयर', 'एम्प्लॉई', 'एम्पलाई', 'कर्मचारी',
+    'employee', 'employees', 'list', 'names', 'name', 'naam', 'staff', 'worker', 'workers', 'generate', 'payroll', 'invoice', 'neft',
+    'employer', 'ampalyer', 'ampler', 'tell', 'do', 'de',
+    'एंपलॉयर', 'एम्पलॉयर', 'एम्प्लॉयर', 'एम्प्लॉई', 'एम्पलाई', 'एंप्लॉई', 'कर्मचारी', 'लिस्ट', 'सूची', 'सूचि', 'नाम', 'दो', 'दे',
   ]);
+  for (const phrase of [...LIST_WORDS, ...COUNT_WORDS, ...ALL_WORDS, ...NAME_CUE_WORDS, ...DISABLED_STATUS_WORDS, ...ACTIVE_STATUS_WORDS]) {
+    phrase.split(/\s+/).forEach((part) => nameJunk.add(part.toLowerCase()));
+  }
   const nameBits = words(employeeSearchText(message))
     .filter(isNameToken)
     .filter((word) => !nameJunk.has(word) && !nameJunk.has(word.toLowerCase()) && !DATA_TOPICS[0][1].some((stem) => word.includes(stem) || stem.includes(word)));
+  const nameCue = includesAny(message, NAME_CUE_WORDS);
+
+  // Leftover tokens are often a location ("Oldest Board"), not a person name.
   if (nameBits.length > 0 && !location) {
     const label = nameBits.join(' ');
-    const matches = (await findEmployees(user, label)).filter((item) => item.status !== 'disabled');
-    const bitMatches = (item, bit) => personMessageKeys(item.name).has(nameKey(bit));
-    // "दीपक शर्मा" → must match Deepak AND Sharma, not Deepak OR Sharma.
-    const list = matches.filter((item) => nameBits.every((bit) => bitMatches(item, bit)));
-    if (list.length === 0) {
+    const placeGuess = matchLocations(label, directory, organization?.id);
+    if (placeGuess.length === 1) {
+      location = placeGuess[0];
+      scope = `${locationLabel(location)} पर`;
+      filter.organizationId = location.organizationId;
+      filter.locationId = location.id;
+      filter.designation = new RegExp(`^${escapeRegex(location.designation)}$`, 'i');
+    } else if (placeGuess.length > 1) {
+      const labels = placeGuess.slice(0, MAX_LISTED).map(locationLabel);
+      return say(
+        lang,
+        `इन locations में से किसकी बात है: ${listText(labels)}?`,
+        `Which of these locations did you mean: ${listText(labels)}?`,
+      );
+    } else {
+      const matches = (await findEmployees(user, label)).filter((item) => (wantsDisabled ? item.status === 'disabled' : item.status !== 'disabled'));
+      const bitMatches = (item, bit) => personMessageKeys(item.name).has(nameKey(bit));
+      // "दीपक शर्मा" → must match Deepak AND Sharma, not Deepak OR Sharma.
+      const list = matches.filter((item) => nameBits.every((bit) => bitMatches(item, bit)));
+      if (list.length > 0) {
+        const places = new Map(directory.locations.map((item) => [item.id, item]));
+        const lines = list.slice(0, MAX_EMPLOYEE_LIST).map((item, index) => {
+          const place = places.get(item.locationId);
+          const details = [item.designation, place && locationLabel(place)].filter(Boolean).join(', ');
+          return `${index + 1}. ${item.name}${details ? ` — ${details}` : ''}`;
+        });
+        return say(
+          lang,
+          `${scope} "${label}" नाम के ${list.length} ${wantsDisabled ? 'disabled ' : ''}employee:\n${lines.join('\n')}`,
+          `${scope} ${list.length} ${wantsDisabled ? 'disabled ' : ''}employee${list.length === 1 ? '' : 's'} named "${label}":\n${lines.join('\n')}`,
+        );
+      }
+      // Fillers / unknown place names must not become "employee not found".
+      if (nameCue) {
+        return say(lang, `${scope} "${label}" नाम का कोई employee नहीं मिला।`, `${scope} no employee named "${label}" was found.`);
+      }
+      if (wantsCount || wantsList || includesAny(message, ALL_WORDS)) {
+        return say(
+          lang,
+          `"${label}" नाम की कोई location नहीं मिली। पूरा location नाम बताइए।`,
+          `No location named "${label}" was found. Please give the full location name.`,
+        );
+      }
       return say(lang, `${scope} "${label}" नाम का कोई employee नहीं मिला।`, `${scope} no employee named "${label}" was found.`);
     }
-    const places = new Map(directory.locations.map((item) => [item.id, item]));
-    const lines = list.slice(0, MAX_EMPLOYEE_LIST).map((item, index) => {
-      const place = places.get(item.locationId);
-      const details = [item.designation, place && locationLabel(place)].filter(Boolean).join(', ');
-      return `${index + 1}. ${item.name}${details ? ` — ${details}` : ''}`;
-    });
-    return say(
-      lang,
-      `${scope} "${label}" नाम के ${list.length} employee:\n${lines.join('\n')}`,
-      `${scope} ${list.length} employee${list.length === 1 ? '' : 's'} named "${label}":\n${lines.join('\n')}`,
-    );
   }
   if (wantsList) {
     const [employees, total] = await Promise.all([
       Employee.find(filter).select('name designation locationId').sort({ name: 1 }).limit(MAX_EMPLOYEE_LIST).lean(),
       Employee.countDocuments(filter),
     ]);
-    if (total === 0) return `${scope} कोई active employee नहीं है।`;
+    if (total === 0) {
+      return wantsDisabled
+        ? `${scope} कोई disabled/inactive employee नहीं है।`
+        : `${scope} कोई active employee नहीं है।`;
+    }
     const places = new Map(directory.locations.map((item) => [item.id, item]));
     const lines = employees.map((item, index) => {
       const place = places.get(String(item.locationId));
@@ -2189,10 +2518,10 @@ async function answerDataQuestion(user, message, directory, out = {}, lang = 'hi
       return `${index + 1}. ${item.name}${details ? ` — ${details}` : ''}`;
     });
     const more = total > employees.length ? `\n(+${total - employees.length} और — पूरी list के लिए Employees page देखें)` : '';
-    return `${scope} ${counted(total, 'active employee')}:\n${lines.join('\n')}${more}`;
+    return `${scope} ${counted(total, employeeNoun)}:\n${lines.join('\n')}${more}`;
   }
   const total = await Employee.countDocuments(filter);
-  return `${scope} ${counted(total, 'active employee')}।`;
+  return `${scope} ${counted(total, employeeNoun)}।`;
 }
 const ABILITY_LABELS = {
   salary_slip: 'Salary Slip',
@@ -2301,6 +2630,9 @@ async function resolvePlan(user, draft, directory, { message = '', today }) {
       employeeIds: employee ? [employee.id] : null,
       title,
     },
+    context: employee
+      ? { topic: 'employee_attendance', employeeId: employee.id, employeeName: employee.name, month }
+      : undefined,
   };
 }
 
@@ -2344,11 +2676,6 @@ const MAKE_WORDS = [
   'बना', 'बनाओ', 'बना दो', 'बनाना', 'निकाल', 'निकालो', 'निकाल दो', 'चाहिए', 'कर दो', 'करो', 'दे दो', 'क्रिएट', 'जनरेट',
 ];
 const TELL_WORDS = ['batao', 'batana', 'bataiye', 'bata do', 'btao', 'detail', 'details', 'naam', 'names', 'show', 'बताओ', 'बताना', 'बताइए', 'बता दो', 'डिटेल', 'नाम', 'दिखाओ'];
-const DISABLED_STATUS_WORDS = [
-  'disabled', 'inactive', 'deactive', 'deactivated', 'deactivate', 'disable', 'in active', 'de active',
-  'डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट', 'इनएक्टिव', 'इनऐक्टिव', 'आईएनएक्टिव', 'आईनएक्टिव', 'इनेक्टिव', 'निष्क्रिय', 'डिसेबल्ड', 'डिसेबल',
-];
-const ACTIVE_STATUS_WORDS = ['active', 'enabled', 'एक्टिव', 'ऐक्टिव', 'सक्रिय', 'इनेबल्ड'];
 const FRESH_SCOPE_WORDS = [
   'dashboard', 'डैशबोर्ड', 'total', 'टोटल', 'कुल', 'all', 'sabhi', 'sab', 'सभी', 'सब', 'सारी', 'सारे', 'kitni', 'kitne', 'कितनी', 'कितने',
   ...DISABLED_STATUS_WORDS, ...ACTIVE_STATUS_WORDS,
@@ -2477,7 +2804,7 @@ const EMPLOYEE_FIELDS = [
   { id: 'address', hi: 'Address', en: 'Address', words: ['address', 'pata', 'पता', 'एड्रेस'] },
   { id: 'parent', hi: 'पिता/अभिभावक', en: 'Parent / guardian', words: ['father', 'parent', 'guardian', 'pita', 'पिता', 'अभिभावक', 'पापा'] },
   { id: 'wage', hi: 'Daily wage', en: 'Daily wage', words: ['daily wage', 'daily salary', 'दिहाड़ी', 'दैनिक वेतन', 'डेली वेज'] },
-  { id: 'basic', hi: 'Basic + DA', en: 'Basic + DA', words: ['basic pay', 'basic', 'dearness', 'बेसिक', 'डीए'] },
+  { id: 'basic', hi: 'Basic + DA', en: 'Basic + DA', words: ['basic pay', 'basic', 'dearness', 'dearness allowance', 'बेसिक', 'डी ए', 'डी.ए.'] },
   { id: 'epf', hi: 'EPF / ESIC लागू', en: 'EPF / ESIC applicable', words: ['epf', 'epfo', 'pf', 'पीएफ', 'ईपीएफ'] },
   { id: 'status', hi: 'Status', en: 'Status', words: ['status', 'active hai', 'disabled hai', 'स्टेटस'] },
   { id: 'organization', hi: 'Organization', en: 'Organization', words: ['organisation', 'organization', 'company name', 'ऑर्गेनाइजेशन', 'कंपनी का नाम'] },
@@ -2506,13 +2833,14 @@ function employeeSearchText(message) {
   for (const field of EMPLOYEE_FIELDS) {
     for (const phrase of field.words) phrase.split(/\s+/).forEach((part) => skip.add(part));
   }
-  for (const phrase of [...BANK_DETAIL_WORDS, ...AVAILABLE_WORDS, ...COUNT_WORDS, ...FULL_FORM_WORDS]) {
+  for (const phrase of [...BANK_DETAIL_WORDS, ...AVAILABLE_WORDS, ...COUNT_WORDS, ...LIST_WORDS, ...ALL_WORDS, ...NAME_CUE_WORDS, ...DISABLED_STATUS_WORDS, ...ACTIVE_STATUS_WORDS, ...ATTENDANCE_WORDS, ...ATTENDANCE_REPORT_WORDS, ...TEXT_REPLY_WORDS, ...FULL_FORM_WORDS]) {
     phrase.split(/\s+/).forEach((part) => skip.add(part));
   }
   [
     'kya', 'क्या', 'hai', 'ho', 'hain', 'है', 'हैं', 'हो', 'invoice', 'neft', 'bill', 'info',
-    'naam', 'name', 'नाम', 'full', 'form', 'फॉर्म', 'फुल', 'employee', 'employees', 'list', 'names',
-    'एम्पलाई', 'एम्प्लॉई', 'कर्मचारी', 'का', 'की', 'के', 'को', 'से', 'में', 'पर',
+    'naam', 'name', 'नाम', 'full', 'form', 'फॉर्म', 'फुल', 'employee', 'employees', 'list', 'names', 'tell',
+    'एम्पलाई', 'एम्प्लॉई', 'एंप्लॉई', 'कर्मचारी', 'लिस्ट', 'सूची', 'सूचि', 'का', 'की', 'के', 'को', 'से', 'में', 'पर',
+    'हे', 'अरे', 'मेरे', 'हमें', 'इसमें', 'उसमें', 'दो', 'दे',
   ].forEach((part) => skip.add(part));
   return words(message).filter((word) => !skip.has(word) && !/^\d+$/.test(word)).join(' ');
 }
@@ -3093,11 +3421,13 @@ async function respond(user, input, session, state = {}) {
   const memory = answerMemory(originalMessage, session);
   if (memory) return { reply: memory, source: 'data' };
 
-  // "aur September ka" / "October ki organisation" repeats the previous question for another month.
-  if (context?.query && words(message).length <= 5 && parseMonth(message, today.slice(0, 7))
-    && !runKindOf(message) && !parseType(message) && !includesAny(message, ATTENDANCE_WORDS) && !parseStatus(message)
-    && matchLocations(message, directory).length === 0) {
-    message = `${withoutMonth(context.query)} ${message}`;
+  // "aur September ka" / "अक्टूबर मंथ की बताओ" repeats the previous question for another month.
+  // Use originalMessage for the length check — enrich can append "names list tell" and blow the limit.
+  if (context?.query && words(originalMessage).length <= 8 && parseMonth(originalMessage, today.slice(0, 7))
+    && !runKindOf(originalMessage) && !parseType(originalMessage) && !includesAny(originalMessage, ATTENDANCE_WORDS) && !parseStatus(originalMessage)
+    && matchLocations(originalMessage, directory).length === 0) {
+    const merged = `${withoutMonth(context.query)} ${originalMessage}`;
+    message = enrichMessageForRules(merged);
   }
 
   if (includesAny(message, CAN_BE_MADE_WORDS) && includesAny(message, ['kya', 'kya kya', 'what', 'क्या', 'क्या-क्या'])
@@ -3160,6 +3490,10 @@ async function respond(user, input, session, state = {}) {
   const acronym = answerAcronym(message, lang);
   if (acronym) return { ...acronym, source: 'data' };
 
+  // Attendance text/count before profile details — "अटेंडेंस डिटेल्स / टेक्स्ट में" is not employee Basic+DA.
+  const employeeAttendanceEarly = await answerEmployeeAttendance(user, message, directory, today, session.context);
+  if (employeeAttendanceEarly) return { ...employeeAttendanceEarly, source: 'data' };
+
   const employeeDetails = await answerEmployeeDetails(user, message, directory, lang, session.context);
   if (employeeDetails) return { ...employeeDetails, source: 'data' };
 
@@ -3189,9 +3523,6 @@ async function respond(user, input, session, state = {}) {
     const kind = runRequest.plan.type === 'payroll_run' ? 'payroll' : 'bank';
     return { ...(await previewPaymentRun(kind, user, runRequest.plan, directory, lang)), source: 'data' };
   }
-
-  const employeeAttendance = await answerEmployeeAttendance(user, message, directory, today);
-  if (employeeAttendance) return { ...employeeAttendance, source: 'data' };
 
   const editRequest = await answerEditAttendance(user, message, directory, today);
   if (editRequest) {
@@ -3246,4 +3577,4 @@ async function respond(user, input, session, state = {}) {
   return { ...(await resolvePlan(user, draft, directory, { message, today })), source: 'rules' };
 }
 
-module.exports = { chat, deleteSession, getSession, parseCount, parseDates, parseFormat, parseMonth, parseStatus, parseType, skeleton };
+module.exports = { chat, deleteSession, getSession, parseCount, parseDates, parseFormat, parseMonth, parseMonthRange, parseStatus, parseType, skeleton };

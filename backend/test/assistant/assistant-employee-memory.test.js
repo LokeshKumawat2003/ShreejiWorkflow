@@ -19,6 +19,153 @@ const {
 const Employee = require('../../src/models/Employee');
 const bankInvoiceService = require('../../src/services/bankInvoiceService');
 
+test('kitne Name hai counts employees with that name', async () => {
+  const orgId = '507f1f77bcf86cd799439011';
+  const orgId2 = '507f1f77bcf86cd799439012';
+  const locId = '507f1f77bcf86cd799439022';
+  const directory = {
+    organizations: [
+      { id: orgId, name: 'NTPC Solapur', status: 'active' },
+      { id: orgId2, name: 'Powergrid Khetri', status: 'active' },
+    ],
+    locations: [{
+      id: locId, organizationId: orgId, organizationName: 'NTPC Solapur',
+      workName: 'Horticulture', name: 'Garden', designation: 'Mali', status: 'active', address: '',
+    }],
+  };
+  const rows = [
+    { _id: '507f1f77bcf86cd7994390a1', name: 'Amit Yadav', parentName: 'Ram Sharma', organizationId: orgId, locationId: locId, designation: 'Mali', status: 'active' },
+    { _id: '507f1f77bcf86cd7994390a2', name: 'Amit Yadav', parentName: 'Ram Sharma', organizationId: orgId2, locationId: locId, designation: 'Guard', status: 'active' },
+    { _id: '507f1f77bcf86cd7994390a3', name: 'Amit Reddy', parentName: 'Gopal', organizationId: orgId, locationId: locId, designation: 'Mali', status: 'active' },
+    { _id: '507f1f77bcf86cd7994390a4', name: 'Amit Iyer', parentName: 'Gopal Joshi', organizationId: orgId, locationId: locId, designation: 'Security', status: 'active' },
+    { _id: '507f1f77bcf86cd7994390a5', name: 'Rajesh Sharma', parentName: '', organizationId: orgId, locationId: locId, designation: 'Security', status: 'active' },
+    { _id: '507f1f77bcf86cd7994390a6', name: 'Ram Sharma', parentName: '', organizationId: orgId, locationId: locId, designation: 'Mali', status: 'active' },
+  ];
+  const originalFind = Employee.find;
+  Employee.find = () => ({
+    select() { return this; },
+    limit() { return this; },
+    lean: async () => rows,
+  });
+  try {
+    const amitYadav = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Amit Yadav hai',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(amitYadav);
+    assert.match(amitYadav.reply, /2 employee/i);
+    assert.doesNotMatch(amitYadav.reply, /Reddy|Iyer|Which document|didn't catch/i);
+
+    const amit = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Amit hai',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(amit);
+    assert.match(amit.reply, /4 employee/i);
+    assert.ok(Array.isArray(amit.choices));
+    assert.equal(amit.choices.length, 4);
+    assert.equal(amit.choices[0].plan.type, 'directory_select');
+    assert.equal(amit.choices[0].plan.selectionType, 'employee');
+    assert.ok(amit.choices.every((choice) => choice.plan.selectedId));
+
+    const reddy = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Amit Reddy hai',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(reddy);
+    assert.match(reddy.reply, /1 employee/i);
+    assert.doesNotMatch(reddy.reply, /Iyer/i);
+    assert.equal(reddy.choices?.length, 1);
+    assert.equal(reddy.choices[0].plan.selectedId, '507f1f77bcf86cd7994390a3');
+
+    const ayyar = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Amit Ayyar Hain',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(ayyar);
+    assert.match(ayyar.reply, /1 employee|Amit Iyer/i);
+    assert.doesNotMatch(ayyar.reply, /Reddy/i);
+
+    const rahul = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Rahul Sharma hai',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(rahul);
+    assert.match(rahul.reply, /नहीं मिला|No employee|0 employee|कोई employee नहीं/i);
+    assert.doesNotMatch(rahul.reply, /Rajesh Sharma|Ram Sharma/i);
+
+    const ram = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'kitne Ram Sharma hai',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(ram);
+    assert.match(ram.reply, /1 employee/i);
+    assert.doesNotMatch(ram.reply, /Rajesh Sharma|Which document|didn't catch|माफ़/i);
+  } finally {
+    Employee.find = originalFind;
+  }
+});
+
+test('name-count choice opens employee details from memory', async () => {
+  const orgId = '507f1f77bcf86cd799439011';
+  const locId = '507f1f77bcf86cd799439022';
+  const directory = {
+    organizations: [{ id: orgId, name: 'NTPC Solapur', status: 'active' }],
+    locations: [{
+      id: locId, organizationId: orgId, organizationName: 'NTPC Solapur',
+      workName: 'Horticulture', name: 'Garden', designation: 'Mali', status: 'active', address: '',
+    }],
+  };
+  const employeeId = '507f1f77bcf86cd7994390a4';
+  const originalFindById = Employee.findById;
+  Employee.findById = (id) => ({
+    select() { return this; },
+    lean: async () => ({
+      _id: employeeId,
+      name: 'Amit Iyer',
+      parentName: 'Gopal Joshi',
+      organizationId: orgId,
+      locationId: locId,
+      designation: 'Security',
+      status: 'active',
+      phone: '9999999999',
+    }),
+  });
+  try {
+    const details = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'details',
+      directory,
+      'en',
+      { topic: 'employee', employeeId },
+    );
+    assert.ok(details);
+    assert.match(details.reply, /Amit Iyer/i);
+    assert.match(details.reply, /details|Parent|Phone|Security/i);
+    assert.equal(details.context?.employeeId, employeeId);
+  } finally {
+    Employee.findById = originalFindById;
+  }
+});
+
 test('yadav employee details is not a memory question', () => {
   const replies = [
     'अमित यादव एम्पलाई की डिटेल्स दो',
@@ -113,7 +260,8 @@ test('uske mobile and aadhar card reuse remembered employee', async () => {
 
     const aadhaar = await answerEmployeeDetails(user, 'Uske Aadhar Card details', directory, 'en', memory);
     assert.ok(aadhaar);
-    assert.match(aadhaar.reply, /Aadhaar|123456789012|XXXXXXXX9012/i);
+    assert.match(aadhaar.reply, /Aadhaar.*123456789012/i);
+    assert.doesNotMatch(aadhaar.reply, /XXXXXXXX|Employees page/i);
     assert.doesNotMatch(aadhaar.reply, /Choudhary/i);
     assert.doesNotMatch(aadhaar.reply, /match this name/i);
   } finally {

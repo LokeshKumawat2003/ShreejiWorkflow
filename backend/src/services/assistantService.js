@@ -668,15 +668,20 @@ function isNameToken(word) {
 
 /** Person names only — skips d→r so "Dahal" does not equal "Rahul". */
 function personSkeleton(text) {
-  return transliterate(text)
+  const folded = transliterate(text)
     .toLowerCase()
     .replace(/[^a-z]/g, '')
     .replace(/h/g, '')
     .replace(/x/g, 'ks')
     .replace(/[cq]/g, 'k')
-    .replace(/w/g, 'v')
-    .replace(/[aeiouy]/g, '')
-    .replace(/(.)\1+/g, '');
+    .replace(/w/g, 'v');
+  // Collapse doubles to one letter ($1) — never delete them ('' made reddy→r and matched iyer).
+  let key = folded.replace(/[aeiouy]/g, '').replace(/(.)\1+/g, '$1');
+  // Short surnames (Iyer) lose all consonants under vowel-strip; keep folded form so Iyer≠Reddy.
+  if (key.length < 2) {
+    key = folded.replace(/(.)\1+/g, '$1');
+  }
+  return key;
 }
 
 // Speech/typing variants that should compare equal to the real surname.
@@ -690,6 +695,11 @@ const NAME_ALIASES = new Map([
   [personSkeleton('निम्बू'), personSkeleton('limbu')],
   [personSkeleton('निम्बु'), personSkeleton('limbu')],
   [personSkeleton('लिम्बू'), personSkeleton('limbu')],
+  // STT: Iyer ↔ Ayyar / Ayer (Reddy stays distinct — rd vs iyer).
+  [personSkeleton('ayyar'), personSkeleton('iyer')],
+  [personSkeleton('ayer'), personSkeleton('iyer')],
+  [personSkeleton('iyyer'), personSkeleton('iyer')],
+  [personSkeleton('iyar'), personSkeleton('iyer')],
 ]);
 
 function nameKey(word) {
@@ -706,6 +716,22 @@ function personMessageKeys(text) {
   });
   keys.delete('');
   return keys;
+}
+
+/** Every query name token must match a distinct token in the employee name (personSkeleton, not location skeleton). */
+function employeeNameCoversQuery(employeeName, queryBits) {
+  const parts = words(employeeName);
+  const bits = (queryBits || []).filter(Boolean);
+  if (!parts.length || !bits.length) return false;
+  const used = new Set();
+  return bits.every((bit) => {
+    const key = nameKey(bit);
+    if (!key) return false;
+    const index = parts.findIndex((part, partIndex) => !used.has(partIndex) && nameKey(part) === key);
+    if (index < 0) return false;
+    used.add(index);
+    return true;
+  });
 }
 
 function listText(names) {
@@ -1834,24 +1860,33 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
 
   // Explicit PDF/Excel wins over bare "रिपोर्ट" — unless user also asked for text / rejected PDF.
   const forceText = includesAny(message, TEXT_REPLY_WORDS) || rejectsDocumentFormat(message);
-  const wantsText = forceText
+  // "do / de / दो" = give me attendance text — not "create location FORM XVI".
+  const GIVE_ATTENDANCE_WORDS = [
+    'do', 'de', 'dedo', 'de do', 'do na', 'do mujhe', 'mujhe do', 'dikhao', 'dikhaao', 'show', 'give',
+    'दो', 'दे', 'दे दो', 'देदो', 'दो ना', 'मुझे दो', 'दिखाओ', 'दिखा दो',
+  ];
+  const registerCue = includesAny(message, [
+    'register', 'form xvi', 'form 16', 'muster', 'musterroll',
+    'रजिस्टर', 'मस्टर', 'फॉर्म xvi', 'formxvi',
+  ]);
+  let wantsText = forceText
     || textFollowUp
     || monthFollowUp
     || (!explicitFormat && (
       includesAny(message, DETAIL_WORDS)
       || includesAny(message, TELL_WORDS)
       || includesAny(message, ATTENDANCE_REPORT_WORDS)
+      || includesAny(message, GIVE_ATTENDANCE_WORDS)
     ));
-  const wantsDocument = explicitFormat || (
+  let wantsDocument = explicitFormat || (
     !forceText
-    && includesAny(message, MAKE_WORDS)
     && !wantsText
+    && (includesAny(message, MAKE_WORDS) || registerCue)
   );
 
   const wantsCount = includesAny(message, COUNT_WORDS)
     || includesAny(message, TIMES_WORDS)
     || includesAny(message, ['kab', 'कब', 'which dates', 'तारीख']);
-  if (!wantsText && !wantsDocument && !wantsCount && !status && !textFollowUp && !monthFollowUp && !pdfFollowUp) return null;
 
   const monthRange = parseMonthRange(message, currentMonth);
   const namedMonth = askedMonth || ((textFollowUp || monthFollowUp || pdfFollowUp) && memory?.month) || currentMonth;
@@ -1869,7 +1904,7 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
       locationId: memory.locationId || '',
       organizationId: memory.organizationId || '',
     }];
-  } else {
+  } else if (hasAttendance || wantsText || wantsDocument || wantsCount || status || includesAny(message, ATTENDANCE_REPORT_WORDS)) {
     employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
     if (employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
       employees = [{
@@ -1880,6 +1915,15 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
       }];
     }
   }
+
+  // "Rajesh Sharma ki attendance do" — named person + attendance → chat text, not location picker.
+  if (employees.length > 0 && hasAttendance && !explicitFormat && !registerCue && !includesAny(message, ALL_WORDS)) {
+    wantsText = true;
+    wantsDocument = false;
+  }
+
+  if (!wantsText && !wantsDocument && !wantsCount && !status && !textFollowUp && !monthFollowUp && !pdfFollowUp) return null;
+
   if (employees.length === 0) {
     if ((wantsText || wantsDocument) && (hasAttendance || includesAny(message, ATTENDANCE_REPORT_WORDS))) {
       return { reply: say(messageLang(message), 'किस employee की attendance चाहिए?', 'Whose attendance do you need?') };
@@ -3014,13 +3058,13 @@ const DETAIL_NOISE_WORDS = new Set([
 
 /** Any one employee field an admin (or that employee's organization) can ask for, in Hindi or English. */
 const EMPLOYEE_FIELDS = [
-  { id: 'aadhaar', hi: 'Aadhaar', en: 'Aadhaar', mask: true, words: ['aadhaar', 'aadhar', 'adhar', 'aadhaar number', 'aadhar number', 'aadhaar card', 'aadhar card', 'adhar card', 'uid', 'आधार', 'आधार नंबर', 'आधार नम्बर', 'आधार कार्ड', 'आधार कार्ड नंबर'] },
+  { id: 'aadhaar', hi: 'Aadhaar', en: 'Aadhaar', words: ['aadhaar', 'aadhar', 'adhar', 'aadhaar number', 'aadhar number', 'aadhaar card', 'aadhar card', 'adhar card', 'uid', 'आधार', 'आधार नंबर', 'आधार नम्बर', 'आधार कार्ड', 'आधार कार्ड नंबर'] },
   { id: 'phone', hi: 'Mobile', en: 'Mobile', words: ['mobile', 'mobile number', 'phone', 'phone number', 'contact', 'contact number', 'cell', 'mob', 'whatsapp', 'मोबाइल', 'मोबाइल नंबर', 'मोबाइल नम्बर', 'फोन', 'फोन नंबर', 'फ़ोन', 'संपर्क', 'व्हाट्सएप'] },
   { id: 'email', hi: 'Email', en: 'Email', words: ['email', 'e-mail', 'mail id', 'email id', 'ईमेल', 'इमेल', 'मेल आईडी', 'ईमेल आईडी'] },
   { id: 'uan', hi: 'UAN', en: 'UAN', words: ['uan', 'uan number', 'uan no', 'un number', 'un no', 'u n number', 'u.n.', 'यूएएन', 'यू एन', 'यूएन', 'यू ए एन'] },
   { id: 'esic', hi: 'ESIC no.', en: 'ESIC no.', words: ['esic', 'esi number', 'esi no', 'esic number', 'esic no', 'ईएसआईसी', 'ईएसआई', 'ई एस आई सी'] },
   { id: 'ifsc', hi: 'IFSC', en: 'IFSC', words: ['ifsc', 'ifsc code', 'ifs code', 'आईएफएससी', 'आई एफ एस सी', 'आई॰एफ॰एस॰सी'] },
-  { id: 'account', hi: 'Account', en: 'Account', mask: true, words: ['account number', 'account no', 'bank account', 'a/c', 'ac number', 'खाता नंबर', 'खाता नम्बर', 'अकाउंट नंबर', 'अकाउंट', 'खाता'] },
+  { id: 'account', hi: 'Account', en: 'Account', words: ['account number', 'account no', 'bank account', 'a/c', 'ac number', 'खाता नंबर', 'खाता नम्बर', 'अकाउंट नंबर', 'अकाउंट', 'खाता'] },
   { id: 'bank', hi: 'Bank', en: 'Bank', words: ['bank name', 'bank branch', 'bank', 'बैंक', 'बैंक का नाम', 'बैंक नेम', 'ब्रांच'] },
   { id: 'designation', hi: 'Designation', en: 'Designation', words: ['designation', 'destination', 'desination', 'destignation', 'job title', 'post', 'पद', 'पदनाम', 'डेजिग्नेशन', 'पोस्ट'] },
   { id: 'skill', hi: 'Skill', en: 'Skill', words: ['skill', 'skill category', 'skilled', 'स्किल', 'स्किल कैटेगरी'] },
@@ -3066,12 +3110,6 @@ function askedEmployeeFields(message) {
   const bareNumber = includesAny(text, ['number', 'no.', 'नंबर', 'नम्बर'])
     && !includesAny(text, ['how many', 'kitne', 'kitni', 'कितने', 'कितनी', 'account', 'aadhaar', 'aadhar', 'आधार', 'uan', 'un', 'esic', 'esi', 'ifsc']);
   return bareNumber ? EMPLOYEE_FIELDS.filter((field) => field.id === 'phone') : [];
-}
-
-function masked(value, keep = 4) {
-  const text = String(value || '').replace(/\s+/g, '');
-  if (!text) return '';
-  return text.length <= keep ? text : `${'X'.repeat(text.length - keep)}${text.slice(-keep)}`;
 }
 
 function shortDate(value) {
@@ -3122,9 +3160,9 @@ function parentNameMatches(parentName, parentFilter) {
   // so "Gopal Joshi" does not match "Gopal Mehta".
   return parentBits.every((bit) => {
     const key = nameKey(bit);
-    if (key.length < 2) return true;
+    if (!key) return false;
     if (keys.has(key)) return true;
-    return words(parent).some((part) => similarEnough(bit, part));
+    return words(parent).some((part) => nameKey(part) === key || similarEnough(bit, part));
   });
 }
 
@@ -3283,15 +3321,14 @@ async function answerSalaryAmount(user, message, directory, today, memory = null
 
 function employeeFieldValue(field, employee, placeText, organizationName, lang) {
   const yes = (value) => (lang === 'en' ? (value ? 'Yes' : 'No') : (value ? 'हाँ' : 'नहीं'));
-  const show = (value, mask) => (mask ? masked(value) : value);
   const values = {
-    aadhaar: show(employee.aadhaarNumber, true),
+    aadhaar: employee.aadhaarNumber || '',
     phone: employee.phone,
     email: employee.email,
     uan: employee.uan,
     esic: employee.esicNumber,
     ifsc: employee.bankRoutingCode,
-    account: show(employee.bankAccountNumber, true),
+    account: employee.bankAccountNumber || '',
     bank: [employee.bankName, employee.bankBranch].filter(Boolean).join(', '),
     designation: employee.designation,
     skill: employee.skillCategory,
@@ -3360,17 +3397,28 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     // nameBits already empty — memory path below
   }
   const named = nameBits.length > 0;
+  // "kitne Amit Yadav hai" / "how many Ram Sharma" — count people with that name.
+  const wantsNameCount = named
+    && includesAny(message, COUNT_WORDS)
+    && fields.length === 0
+    && !wantsDetails
+    && !wantsWhere
+    && !wantsBank
+    && !runKindOf(message)
+    && !parseType(message)
+    && !includesAny(message, ATTENDANCE_WORDS)
+    && !includesAny(message, INVOICE_WORDS);
   const bareName = named && words(message).length <= 5 && !fields.length && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable
     && !includesAny(message, COUNT_WORDS) && !runKindOf(message) && !parseType(message);
   // "Amit Yadav employee editor Store" — staff + person name even when enrich grows word count.
   const staffNameAsk = named && includesAny(message, STAFF_WORDS)
     && !includesAny(message, COUNT_WORDS) && !runKindOf(message) && !parseType(message)
     && !includesAny(message, ATTENDANCE_WORDS) && !includesAny(message, INVOICE_WORDS);
-  if (fields.length === 0 && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable && !bareName && !staffNameAsk && !parentFilter) {
+  if (fields.length === 0 && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable && !bareName && !staffNameAsk && !wantsNameCount && !parentFilter) {
     return null;
   }
-  if (fields.length === 0 && !wantsBank && !bareName && !staffNameAsk && (includesAny(message, ATTENDANCE_WORDS) || includesAny(message, INVOICE_WORDS))) return null;
-  if (runKindOf(message) && fields.length === 0 && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable && !bareName && !staffNameAsk) return null;
+  if (fields.length === 0 && !wantsBank && !bareName && !staffNameAsk && !wantsNameCount && (includesAny(message, ATTENDANCE_WORDS) || includesAny(message, INVOICE_WORDS))) return null;
+  if (runKindOf(message) && fields.length === 0 && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable && !bareName && !staffNameAsk && !wantsNameCount) return null;
   const asksFollowUp = !named && (fields.length > 0 || wantsBank || wantsDetails || wantsWhere || wantsAvailable || refersToPrior || Boolean(parentFilter));
   let matches = [];
   // A new name always wins over the previous employee in memory — unless this is a pronoun field follow-up.
@@ -3416,25 +3464,120 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     return { reply: say(lang, 'किस employee के बारे में?', 'Which employee?') };
   }
   if (matches.length === 0) return null;
-  const covers = (employee) => nameBits.every((word) => {
-    const key = nameKey(word);
-    if (key.length < 2) return true;
-    return personMessageKeys(employee.name).has(key);
-  });
+  const covers = (employee) => employeeNameCoversQuery(employee.name, nameBits);
   const exact = named ? matches.filter(covers) : matches;
-  if (named && wantsAvailable && includesAny(message, COUNT_WORDS)) {
-    const active = (exact.length ? exact : matches).filter((item) => item.status !== 'disabled');
+  if (named && (wantsNameCount || (wantsAvailable && includesAny(message, COUNT_WORDS)))) {
+    // Name-count: strict token cover against the full employee list (not bestMatches top-ties).
+    // Never fall back to surname-only hits (Rahul Sharma ≠ every Sharma).
+    // Count every employee id — same name in two orgs counts as two.
+    let people = exact;
+    if (wantsNameCount && nameBits.length > 0) {
+      const all = await Employee.find(user.role === 'admin' ? { organizationId: { $ne: null } } : { organizationId: user.id })
+        .select('_id name parentName organizationId locationId designation status')
+        .limit(5000)
+        .lean();
+      people = all
+        .filter((row) => employeeNameCoversQuery(row.name, nameBits))
+        .map((row) => ({
+          id: String(row._id),
+          name: row.name,
+          parentName: row.parentName || '',
+          organizationId: row.organizationId ? String(row.organizationId) : '',
+          locationId: row.locationId ? String(row.locationId) : '',
+          designation: row.designation || '',
+          status: row.status,
+        }));
+    }
+    const seenIds = new Set();
+    people = people.filter((item) => {
+      const id = String(item.id || '');
+      if (!id || seenIds.has(id)) return false;
+      seenIds.add(id);
+      return true;
+    });
+    const active = people.filter((item) => item.status !== 'disabled');
     const label = nameBits.join(' ');
+    if (wantsAvailable && !wantsNameCount) {
+      return {
+        reply: say(
+          lang,
+          active.length
+            ? `"${label}" नाम के ${active.length} employee available हैं${active.length <= 5 ? `: ${active.map((item) => item.name).join(', ')}` : ''}।`
+            : `"${label}" नाम का कोई active employee available नहीं है।`,
+          active.length
+            ? `${active.length} employee${active.length === 1 ? '' : 's'} named "${label}" ${active.length === 1 ? 'is' : 'are'} available${active.length <= 5 ? `: ${active.map((item) => item.name).join(', ')}` : ''}.`
+            : `No active employee named "${label}" is available.`,
+        ),
+      };
+    }
+    const shown = people.slice(0, MAX_CHOICES);
+    const list = shown.map((item, index) => {
+      const place = directory.locations.find((loc) => loc.id === item.locationId);
+      const org = directory.organizations.find((entry) => entry.id === item.organizationId);
+      const site = place ? locationLabel(place) : '';
+      const parent = item.parentName ? ` (S/O ${item.parentName})` : '';
+      const orgBit = user.role === 'admin' && org?.name ? ` · ${org.name}` : '';
+      const statusBit = item.status === 'disabled' ? ' (disabled)' : '';
+      return `${index + 1}. ${item.name}${parent}${site ? ` — ${site}` : ''}${orgBit}${statusBit}`;
+    }).join('\n');
+    const more = people.length > MAX_CHOICES
+      ? say(lang, `\n(+${people.length - MAX_CHOICES} और)`, `\n(+${people.length - MAX_CHOICES} more)`)
+      : '';
+    const pickHint = people.length
+      ? say(lang, '\nDetails के लिए नीचे से नाम चुनें।', '\nSelect a name below for details.')
+      : '';
+    const employeeChoiceLabel = (item) => {
+      const place = directory.locations.find((loc) => loc.id === item.locationId);
+      const org = directory.organizations.find((entry) => entry.id === item.organizationId);
+      const site = place ? locationLabel(place) : '';
+      const parent = item.parentName ? ` (S/O ${item.parentName})` : '';
+      const orgBit = user.role === 'admin' && org?.name ? ` · ${org.name}` : '';
+      return `${item.name}${parent}${site ? ` — ${site}` : ''}${orgBit}`;
+    };
     return {
       reply: say(
         lang,
-        active.length
-          ? `"${label}" नाम के ${active.length} employee available हैं${active.length <= 5 ? `: ${active.map((item) => item.name).join(', ')}` : ''}।`
-          : `"${label}" नाम का कोई active employee available नहीं है।`,
-        active.length
-          ? `${active.length} employee${active.length === 1 ? '' : 's'} named "${label}" ${active.length === 1 ? 'is' : 'are'} available${active.length <= 5 ? `: ${active.map((item) => item.name).join(', ')}` : ''}.`
-          : `No active employee named "${label}" is available.`,
+        people.length
+          ? `"${label}" नाम के ${people.length} employee हैं (${active.length} active)${list ? `:\n${list}${more}` : '।'}${pickHint}`
+          : `"${label}" नाम का कोई employee नहीं मिला।`,
+        people.length
+          ? `${people.length} employee${people.length === 1 ? '' : 's'} named "${label}" (${active.length} active)${list ? `:\n${list}${more}` : '.'}${pickHint}`
+          : `No employee named "${label}" was found.`,
       ),
+      context: people.length
+        ? {
+          topic: 'pending_selection',
+          pendingSelectionType: 'employee',
+          pendingSelection: {
+            type: 'employee',
+            options: shown.map((item, index) => ({
+              index: index + 1,
+              id: item.id,
+              name: item.name,
+              organizationId: item.organizationId || null,
+              locationId: item.locationId || null,
+            })),
+          },
+          lastIntent: 'employee_details',
+          title: `"${label}" नाम के employees`,
+          items: people.map((item) => item.name),
+          employeeId: people.length === 1 ? people[0].id : null,
+          employeeName: people.length === 1 ? people[0].name : null,
+        }
+        : {
+          topic: 'employee',
+          title: `"${label}" नाम के employees`,
+          items: [],
+        },
+      choices: shown.map((item) => ({
+        label: employeeChoiceLabel(item),
+        plan: {
+          type: 'directory_select',
+          selectionType: 'employee',
+          selectedId: item.id,
+          resumeIntent: 'employee_details',
+        },
+      })),
     };
   }
   if (named && wantsAvailable && exact.length === 0) {
@@ -3566,10 +3709,7 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
         ? `• ${label}: ${value}`
         : `• ${label}: ${say(lang, 'record में नहीं है', 'not on the record')}`;
     });
-    const hidden = fields.some((field) => field.mask)
-      ? say(lang, '\n(पूरा नंबर Employees page पर देखें।)', '\n(See the full number on the Employees page.)')
-      : '';
-    return aboutEmployee(employee, { reply: `${employee.name}\n${lines.join('\n')}${hidden}` });
+    return aboutEmployee(employee, { reply: `${employee.name}\n${lines.join('\n')}` });
   }
   if (wantsWhere && !wantsDetails && !wantsBank) {
     return aboutEmployee(employee, {
@@ -3588,7 +3728,7 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
   if (wantsBank) {
     const bankRows = [
       ['Bank', [employee.bankName, employee.bankBranch].filter(Boolean).join(', ')],
-      [say(lang, 'Account', 'Account'), masked(employee.bankAccountNumber)],
+      [say(lang, 'Account', 'Account'), employee.bankAccountNumber],
       ['IFSC', employee.bankRoutingCode],
       [say(lang, 'Account name', 'Account name'), employee.bankAccountHolder || employee.name],
     ].filter(([, value]) => value);
@@ -3596,8 +3736,8 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
       ? say(lang, `${employee.name} की bank details employees record में नहीं हैं।`, `${employee.name} has no bank details on the employee record.`)
       : say(
         lang,
-        `${employee.name} की bank details:\n${bankRows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}\n(पूरा account number Employees page पर देखें।)`,
-        `${employee.name}'s bank details:\n${bankRows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}\n(See the full account number on the Employees page.)`,
+        `${employee.name} की bank details:\n${bankRows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}`,
+        `${employee.name}'s bank details:\n${bankRows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}`,
       );
     return aboutEmployee(employee, { reply: missing });
   }
@@ -3619,17 +3759,17 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     [say(lang, 'EPF / ESIC लागू', 'EPF / ESIC applicable'), `${yes(employee.epfoApplicable)} / ${yes(employee.esicApplicable)}`],
     ['UAN', employee.uan],
     ['ESIC no.', employee.esicNumber],
-    ['Aadhaar', masked(employee.aadhaarNumber)],
+    ['Aadhaar', employee.aadhaarNumber],
     ['Bank', [employee.bankName, employee.bankBranch].filter(Boolean).join(', ')],
-    ['Account', masked(employee.bankAccountNumber)],
+    ['Account', employee.bankAccountNumber],
     ['IFSC', employee.bankRoutingCode],
     ['Address', employee.address],
   ].filter(([, value]) => value);
   return aboutEmployee(employee, {
     reply: say(
       lang,
-      `${employee.name} की details:\n${rows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}\n(Aadhaar और account number पूरे Employees page पर देखें।)`,
-      `${employee.name}'s details:\n${rows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}\n(See the full Aadhaar and account number on the Employees page.)`,
+      `${employee.name} की details:\n${rows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}`,
+      `${employee.name}'s details:\n${rows.map(([label, value]) => `• ${label}: ${value}`).join('\n')}`,
     ),
   });
 }
@@ -3899,6 +4039,19 @@ async function respond(user, input, session, state = {}) {
       return { reply: say(lang, 'ठीक है, कुछ नहीं बदला।', 'Okay, nothing was changed.'), source: 'plan' };
     }
     if (plan.type === 'directory_select') {
+      // Name-count / ambiguous employee chips → full employee details card.
+      if (plan.selectionType === 'employee'
+        && mongoose.isValidObjectId(plan.selectedId)
+        && (plan.resumeIntent === 'employee_details' || !plan.resumeIntent)) {
+        const details = await answerEmployeeDetails(
+          user,
+          'details',
+          directory,
+          lang,
+          { topic: 'employee', employeeId: String(plan.selectedId) },
+        );
+        if (details) return { ...details, source: 'plan' };
+      }
       const selected = await handleDirectorySelectPlan(user, plan, directory, lang);
       if (selected) return { ...selected, source: 'plan' };
     }
@@ -4211,6 +4364,7 @@ module.exports = {
   extractParentNameFilter,
   askedEmployeeFields,
   answerDocumentMonthFollowUp,
+  answerEmployeeAttendance,
   answerPaymentRun,
   EMPLOYEE_FIELDS,
 };

@@ -8,11 +8,8 @@ function scopeFilter(user) {
     : { organizationId: new mongoose.Types.ObjectId(user.id) };
 }
 
-function maskSensitive(employee) {
-  const aadhaar = employee.aadhaar ? `XXXX-XXXX-${String(employee.aadhaar).slice(-4)}` : null;
-  const account = employee.bankAccountNumber
-    ? `XXXX${String(employee.bankAccountNumber).slice(-4)}`
-    : null;
+/** Admin assistant tools show full sensitive fields (no masking). */
+function formatEmployee(employee) {
   return {
     id: String(employee._id),
     name: employee.name || '',
@@ -27,8 +24,8 @@ function maskSensitive(employee) {
     esic: employee.esic || null,
     bankName: employee.bankName || null,
     ifsc: employee.ifsc || null,
-    bankAccountNumber: account,
-    aadhaar,
+    bankAccountNumber: employee.bankAccountNumber || null,
+    aadhaar: employee.aadhaar || employee.aadhaarNumber || null,
     basic: employee.basic ?? null,
     da: employee.da ?? null,
     hra: employee.hra ?? null,
@@ -144,10 +141,10 @@ function registerEmployeeTools() {
       if (args.organizationId) filter.organizationId = args.organizationId;
       if (args.locationId) filter.locationId = args.locationId;
       const rows = await Employee.find(filter)
-        .select('name employeeCode code status organizationId locationId designation post joiningDate phone basic da hra bankName ifsc bankAccountNumber aadhaar uan esic')
+        .select('name employeeCode code status organizationId locationId designation post joiningDate phone basic da hra bankName ifsc bankAccountNumber aadhaar aadhaarNumber uan esic')
         .limit(args.limit || 10)
         .lean();
-      return { items: rows.map(maskSensitive), total: rows.length, query: args.name };
+      return { items: rows.map(formatEmployee), total: rows.length, query: args.name };
     },
     formatResult(result, lang = 'hi') {
       if (result.items.length === 0) {
@@ -174,7 +171,7 @@ function registerEmployeeTools() {
     async execute({ user, args }) {
       const employee = await Employee.findOne({ _id: args.employeeId, ...scopeFilter(user) }).lean();
       if (!employee) return { found: false };
-      return { found: true, employee: maskSensitive(employee) };
+      return { found: true, employee: formatEmployee(employee) };
     },
     formatResult(result, lang = 'hi') {
       if (!result.found) return lang === 'en' ? 'Employee not found.' : 'कर्मचारी नहीं मिला।';
@@ -201,4 +198,4 @@ function registerEmployeeTools() {
   });
 }
 
-module.exports = { registerEmployeeTools, maskSensitive };
+module.exports = { registerEmployeeTools, formatEmployee, maskSensitive: formatEmployee };

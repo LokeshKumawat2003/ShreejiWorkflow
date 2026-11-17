@@ -106,8 +106,6 @@ const REPLY_PHRASES = [
   ['किसी location पर नहीं', 'Not assigned to any location'],
   ['अभी किसी location पर assign नहीं है', 'is not assigned to any location right now'],
   ['पर assign है', 'is assigned at'],
-  ['(Aadhaar और account number पूरे Employees page पर देखें।)', '(See full Aadhaar and account number on the Employees page.)'],
-  ['(Aadhaar और account number पूरे Employees page पर देखें.)', '(See full Aadhaar and account number on the Employees page.)'],
   ['इस नाम से', 'For this name,'],
   ['employees मिले:', 'employees matched:'],
   ['पूरा नाम बताइए।', 'Please give the full name.'],

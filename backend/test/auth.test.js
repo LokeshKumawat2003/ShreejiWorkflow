@@ -1714,9 +1714,9 @@ test('bank payments list wage register employees with their column N amount and 
   const organizationId = '507f1f77bcf86cd799439011';
   const location = { _id: '507f1f77bcf86cd799439099', organizationId, workName: 'AMC Horticulture Work', designation: 'mali' };
   const employees = [
-    { _id: '507f1f77bcf86cd799439021', organizationId, name: 'Nehpal Singh', email: 'n@example.com', dailySalary: 781, epfoApplicable: true, esicApplicable: true, bankName: 'UCO BANK', bankAccountNumber: '03770110094938', bankRoutingCode: 'UCBA0000377' },
-    { _id: '507f1f77bcf86cd799439022', organizationId, name: 'Pawan Kumar', email: 'p@example.com', dailySalary: 650, bankName: '', bankAccountNumber: '', bankRoutingCode: '' },
-    { _id: '507f1f77bcf86cd799439023', organizationId, name: 'Zero Days', email: 'z@example.com', dailySalary: 500, bankName: 'SBI', bankAccountNumber: '1', bankRoutingCode: 'SBIN0000001' },
+    { _id: '507f1f77bcf86cd799439021', organizationId, locationId: location._id, designation: 'mali', name: 'Nehpal Singh', email: 'n@example.com', dailySalary: 781, epfoApplicable: true, esicApplicable: true, bankName: 'UCO BANK', bankAccountNumber: '03770110094938', bankRoutingCode: 'UCBA0000377' },
+    { _id: '507f1f77bcf86cd799439022', organizationId, locationId: location._id, designation: 'mali', name: 'Pawan Kumar', email: 'p@example.com', dailySalary: 650, bankName: '', bankAccountNumber: '', bankRoutingCode: '' },
+    { _id: '507f1f77bcf86cd799439023', organizationId, locationId: location._id, designation: 'mali', name: 'Zero Days', email: 'z@example.com', dailySalary: 500, bankName: 'SBI', bankAccountNumber: '1', bankRoutingCode: 'SBIN0000001' },
   ];
   const attendance = [
     ...Array.from({ length: 26 }, () => ({ employeeId: employees[0]._id, organizationId, status: 'present' })),

@@ -13,6 +13,25 @@ const { withSkillPayOn } = require('./salaryService');
 
 const PAYROLL_PAGE_SIZE = 10;
 const MAX_PAYROLL_PAGE_SIZE = 100;
+const EMPLOYEE_PAYROLL_SELECT = [
+  '_id', 'organizationId', 'locationId', 'name', 'email', 'phone', 'createdAt',
+  'bankName', 'bankBranch', 'bankAccountHolder', 'bankAccountNumber', 'bankRoutingCode',
+  'designation', 'skillCategory', 'parentName', 'basicPay', 'dearnessAllowance',
+  'epfoApplicable', 'esicApplicable', 'department', 'jobTitle', 'currency', 'dailySalary',
+  'status', 'disabledOn',
+].join(' ');
+const ATTENDANCE_PAYROLL_SELECT = 'employeeId date status';
+const ORGANIZATION_PAYROLL_SELECT = '_id organizationName phone address website';
+
+/** Prefer .select().lean() when available; keep plain .lean() for unit-test mocks. */
+function leanQuery(query, fields) {
+  if (fields && query && typeof query.select === 'function') return query.select(fields).lean();
+  return query.lean();
+}
+
+function matchesLocationDesignation(employee, location) {
+  return new RegExp(`^${escapeRegex(location.designation)}$`, 'i').test(String(employee.designation || ''));
+}
 
 function positiveInteger(value, fallback) {
   const number = Number(value);
@@ -71,48 +90,8 @@ async function overtimeHoursByEmployee(employees, organizationId, fromDate, toDa
   return hours;
 }
 
-async function calculatePayroll(user, options = {}) {
-  const organizationId = await resolveOrganizationId(user, options.organizationId);
-  let locationEmployeeIds;
-  if (options.locationId) {
-    if (!organizationId) throw httpError(400, 'A valid organization id is required for location payroll.');
-    if (!mongoose.isValidObjectId(options.locationId)) throw httpError(400, 'Invalid location id.');
-    const location = await Location.findOne({ _id: options.locationId, organizationId });
-    if (!location) throw httpError(404, 'Location not found for this organization.');
-    locationEmployeeIds = await Employee.find({
-      organizationId,
-      locationId: options.locationId,
-      designation: new RegExp(`^${escapeRegex(location.designation)}$`, 'i'),
-    }).distinct('_id');
-  }
-  const { fromDate, toDate } = options;
-  if (!isValidDate(fromDate) || !isValidDate(toDate)) {
-    throw httpError(400, 'Enter a valid payroll date range.');
-  }
-  if (fromDate > toDate) throw httpError(400, 'The start date must be on or before the end date.');
-
-  const attendanceFilter = { date: { $gte: fromDate, $lte: toDate } };
-  if (organizationId) attendanceFilter.organizationId = organizationId;
-  if (locationEmployeeIds) attendanceFilter.employeeId = { $in: locationEmployeeIds };
-  const attendance = await Attendance.find(attendanceFilter).lean();
-  const attendanceEmployeeIds = [...new Set(attendance.map(({ employeeId }) => String(employeeId)))];
-  const employeeConditions = locationEmployeeIds
-    ? [{ _id: { $in: locationEmployeeIds }, organizationId }]
-    : organizationId ? [{ organizationId }] : [{ organizationId: { $ne: null } }];
-  if (attendanceEmployeeIds.length > 0) employeeConditions.push({ _id: { $in: attendanceEmployeeIds } });
-  const employees = await withSkillPayOn(await Employee.find({ $or: employeeConditions }).lean(), toDate);
-  const organizationDetailsById = new Map();
-  if (user.role === 'admin') {
-    const organizations = await User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) })
-      .select('_id organizationName phone address website')
-      .lean();
-    for (const organization of organizations) {
-      organizationDetailsById.set(String(organization._id), organization);
-    }
-  }
-  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+function buildAttendanceByEmployee(attendance, employeesById) {
   const attendanceByEmployee = new Map();
-
   for (const record of attendance) {
     const employeeId = String(record.employeeId);
     if (!countsAttendanceOn(employeesById.get(employeeId), record.date)) continue;
@@ -122,72 +101,149 @@ async function calculatePayroll(user, options = {}) {
     byMonth.get(month).push(isAttendanceStatus(record.status) ? record.status : 'absent');
     attendanceByEmployee.set(employeeId, byMonth);
   }
+  return attendanceByEmployee;
+}
 
+function payrollLinesForEmployees(user, employees, attendanceByEmployee, overtimeHours, organizationDetailsById, wageRatesOption) {
+  return employees
+    .filter((employee) => employee.status !== 'disabled' || attendanceByEmployee.has(String(employee._id)))
+    .map((employee) => {
+      const counts = monthlyAttendance(attendanceByEmployee.get(String(employee._id)));
+      const { paidDays } = counts;
+      const dailySalary = Number(employee.dailySalary) || 0;
+      const currency = !employee.currency || employee.currency === 'NRI' ? 'INR' : employee.currency;
+      const grossPay = Math.round((dailySalary * paidDays + Number.EPSILON) * 100) / 100;
+      const organization = organizationDetailsById.get(String(employee.organizationId)) || {};
+      return {
+        employeeId: String(employee._id),
+        employeeName: employee.name,
+        employeeEmail: employee.email,
+        employeePhone: employee.phone || '',
+        employeeCreatedAt: employee.createdAt || null,
+        bankName: employee.bankName || '',
+        bankBranch: employee.bankBranch || '',
+        bankAccountHolder: employee.bankAccountHolder || '',
+        bankAccountNumber: employee.bankAccountNumber
+          ? user.role === 'admin' ? String(employee.bankAccountNumber) : `**** ${String(employee.bankAccountNumber).slice(-4)}`
+          : '',
+        bankRoutingCode: employee.bankRoutingCode || '',
+        organizationName: organization.organizationName || '',
+        organizationPhone: organization.phone || '',
+        organizationAddress: organization.address || '',
+        organizationWebsite: organization.website || '',
+        designation: employee.designation || '',
+        skillCategory: employee.skillCategory || '',
+        parentName: employee.parentName || '',
+        basicPay: Number(employee.basicPay) || 0,
+        dearnessAllowance: Number(employee.dearnessAllowance) || 0,
+        epfoApplicable: Boolean(employee.epfoApplicable),
+        esicApplicable: Boolean(employee.esicApplicable),
+        department: employee.department || '',
+        jobTitle: employee.jobTitle || '',
+        currency,
+        dailySalary,
+        presentDays: counts.presentDays,
+        absentDays: counts.absentDays,
+        halfDays: counts.halfDays,
+        paidLeaveDays: counts.paidLeaves,
+        otherLeaveDays: counts.otherLeaves,
+        paidDays,
+        grossPay,
+        overtimeHours: overtimeHours.get(String(employee._id)) || 0,
+      };
+    })
+    .map((line) => {
+      if (!wageRatesOption) return line;
+      const row = wageRegisterRow(line, wageRatesOption);
+      return {
+        ...line,
+        dailyWage: row.dailyWage,
+        wages: row.wages,
+        overtimeRate: row.overtimeRate,
+        overtimeWages: row.overtimeWages,
+        bonus: row.bonus,
+        totalWages: row.totalWages,
+        epf: row.epf,
+        esi: row.esi,
+        netPay: row.grossPayment,
+      };
+    })
+    .sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+}
+
+async function calculatePayroll(user, options = {}) {
+  const organizationId = await resolveOrganizationId(user, options.organizationId);
+  const { fromDate, toDate } = options;
+  if (!isValidDate(fromDate) || !isValidDate(toDate)) {
+    throw httpError(400, 'Enter a valid payroll date range.');
+  }
+  if (fromDate > toDate) throw httpError(400, 'The start date must be on or before the end date.');
+
+  let employees;
+  let attendance;
+  const organizationDetailsById = new Map();
+
+  if (options.locationId) {
+    if (!organizationId) throw httpError(400, 'A valid organization id is required for location payroll.');
+    if (!mongoose.isValidObjectId(options.locationId)) throw httpError(400, 'Invalid location id.');
+    const location = await Location.findOne({ _id: options.locationId, organizationId }).lean();
+    if (!location) throw httpError(404, 'Location not found for this organization.');
+
+    const organizationsPromise = user.role === 'admin'
+      ? leanQuery(User.find({ role: 'organization', _id: organizationId }), ORGANIZATION_PAYROLL_SELECT)
+      : Promise.resolve([]);
+    const locationEmployees = await leanQuery(Employee.find({
+      organizationId,
+      locationId: options.locationId,
+      designation: new RegExp(`^${escapeRegex(location.designation)}$`, 'i'),
+    }), EMPLOYEE_PAYROLL_SELECT);
+    const locationEmployeeIds = locationEmployees.map((employee) => employee._id);
+    const [locationAttendance, organizations] = await Promise.all([
+      leanQuery(Attendance.find({
+        date: { $gte: fromDate, $lte: toDate },
+        organizationId,
+        employeeId: { $in: locationEmployeeIds },
+      }), ATTENDANCE_PAYROLL_SELECT),
+      organizationsPromise,
+    ]);
+    attendance = locationAttendance;
+    employees = await withSkillPayOn(locationEmployees, toDate);
+    for (const organization of organizations) organizationDetailsById.set(String(organization._id), organization);
+  } else {
+    const attendanceFilter = { date: { $gte: fromDate, $lte: toDate } };
+    if (organizationId) attendanceFilter.organizationId = organizationId;
+    const organizationsPromise = user.role === 'admin'
+      ? leanQuery(
+        User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) }),
+        ORGANIZATION_PAYROLL_SELECT,
+      )
+      : Promise.resolve([]);
+    const [loadedAttendance, organizations] = await Promise.all([
+      leanQuery(Attendance.find(attendanceFilter), ATTENDANCE_PAYROLL_SELECT),
+      organizationsPromise,
+    ]);
+    attendance = loadedAttendance;
+    const attendanceEmployeeIds = [...new Set(attendance.map(({ employeeId }) => String(employeeId)))];
+    const employeeConditions = organizationId ? [{ organizationId }] : [{ organizationId: { $ne: null } }];
+    if (attendanceEmployeeIds.length > 0) employeeConditions.push({ _id: { $in: attendanceEmployeeIds } });
+    employees = await withSkillPayOn(await leanQuery(Employee.find({ $or: employeeConditions }), EMPLOYEE_PAYROLL_SELECT), toDate);
+    for (const organization of organizations) organizationDetailsById.set(String(organization._id), organization);
+  }
+
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const attendanceByEmployee = buildAttendanceByEmployee(attendance, employeesById);
   const payableEmployees = employees.filter((employee) => (
     employee.status !== 'disabled' || attendanceByEmployee.has(String(employee._id))
   ));
   const overtimeHours = await overtimeHoursByEmployee(payableEmployees, organizationId, fromDate, toDate);
-
-  const lines = payableEmployees.map((employee) => {
-    const counts = monthlyAttendance(attendanceByEmployee.get(String(employee._id)));
-    const { paidDays } = counts;
-    const dailySalary = Number(employee.dailySalary) || 0;
-    const currency = !employee.currency || employee.currency === 'NRI' ? 'INR' : employee.currency;
-    const grossPay = Math.round((dailySalary * paidDays + Number.EPSILON) * 100) / 100;
-    const organization = organizationDetailsById.get(String(employee.organizationId)) || {};
-    return {
-      employeeId: String(employee._id),
-      employeeName: employee.name,
-      employeeEmail: employee.email,
-      employeePhone: employee.phone || '',
-      employeeCreatedAt: employee.createdAt || null,
-      bankName: employee.bankName || '',
-      bankBranch: employee.bankBranch || '',
-      bankAccountHolder: employee.bankAccountHolder || '',
-      bankAccountNumber: employee.bankAccountNumber
-        ? user.role === 'admin' ? String(employee.bankAccountNumber) : `**** ${String(employee.bankAccountNumber).slice(-4)}`
-        : '',
-      bankRoutingCode: employee.bankRoutingCode || '',
-      organizationName: organization.organizationName || '',
-      organizationPhone: organization.phone || '',
-      organizationAddress: organization.address || '',
-      organizationWebsite: organization.website || '',
-      designation: employee.designation || '',
-      skillCategory: employee.skillCategory || '',
-      parentName: employee.parentName || '',
-      basicPay: Number(employee.basicPay) || 0,
-      dearnessAllowance: Number(employee.dearnessAllowance) || 0,
-      epfoApplicable: Boolean(employee.epfoApplicable),
-      esicApplicable: Boolean(employee.esicApplicable),
-      department: employee.department || '',
-      jobTitle: employee.jobTitle || '',
-      currency,
-      dailySalary,
-      presentDays: counts.presentDays,
-      absentDays: counts.absentDays,
-      halfDays: counts.halfDays,
-      paidLeaveDays: counts.paidLeaves,
-      otherLeaveDays: counts.otherLeaves,
-      paidDays,
-      grossPay,
-      overtimeHours: overtimeHours.get(String(employee._id)) || 0,
-    };
-  }).map((line) => {
-    if (!options.wageRates) return line;
-    const row = wageRegisterRow(line, options.wageRates);
-    return {
-      ...line,
-      dailyWage: row.dailyWage,
-      wages: row.wages,
-      overtimeRate: row.overtimeRate,
-      overtimeWages: row.overtimeWages,
-      bonus: row.bonus,
-      totalWages: row.totalWages,
-      epf: row.epf,
-      esi: row.esi,
-      netPay: row.grossPayment,
-    };
-  }).sort((left, right) => left.employeeName.localeCompare(right.employeeName));
+  const lines = payrollLinesForEmployees(
+    user,
+    payableEmployees,
+    attendanceByEmployee,
+    overtimeHours,
+    organizationDetailsById,
+    options.wageRates,
+  );
 
   const selectedIds = parseEmployeeIds(options.employeeIds);
   const search = typeof options.search === 'string' ? options.search.trim().slice(0, 100) : '';
@@ -234,6 +290,80 @@ async function calculatePayroll(user, options = {}) {
     lines: matchingLines.slice((page - 1) * limit, page * limit),
     pagination: { page, limit, total: matchingLines.length, totalPages },
   };
+}
+
+/**
+ * Same per-location lines as calculatePayroll({ locationId }), loaded with shared employee/attendance queries.
+ * Returns Map<locationId, lines[]>.
+ */
+async function calculatePayrollForLocations(user, locations, fromDate, toDate, options = {}) {
+  const linesByLocation = new Map();
+  if (!locations.length) return linesByLocation;
+
+  const locationById = new Map(locations.map((location) => [String(location._id), location]));
+  const locationIds = locations.map((location) => location._id);
+  const organizationIds = [...new Set(locations.map((location) => String(location.organizationId)).filter(Boolean))];
+
+  const [rawEmployees, attendance, organizations] = await Promise.all([
+    leanQuery(Employee.find({
+      locationId: { $in: locationIds },
+      organizationId: { $in: organizationIds },
+    }), EMPLOYEE_PAYROLL_SELECT),
+    leanQuery(Attendance.find({
+      date: { $gte: fromDate, $lte: toDate },
+      organizationId: { $in: organizationIds },
+    }), ATTENDANCE_PAYROLL_SELECT),
+    user.role === 'admin'
+      ? leanQuery(User.find({ role: 'organization', _id: { $in: organizationIds } }), ORGANIZATION_PAYROLL_SELECT)
+      : Promise.resolve([]),
+  ]);
+
+  const organizationDetailsById = new Map(organizations.map((organization) => [String(organization._id), organization]));
+  const employeesByLocation = new Map(locations.map((location) => [String(location._id), []]));
+  for (const employee of rawEmployees) {
+    const locationId = String(employee.locationId || '');
+    const location = locationById.get(locationId);
+    if (!location) continue;
+    if (String(employee.organizationId) !== String(location.organizationId)) continue;
+    if (!matchesLocationDesignation(employee, location)) continue;
+    employeesByLocation.get(locationId).push(employee);
+  }
+
+  const matchedEmployees = [...employeesByLocation.values()].flat();
+  const employees = await withSkillPayOn(matchedEmployees, toDate);
+  const employeesById = new Map(employees.map((employee) => [String(employee._id), employee]));
+  const employeesByLocationResolved = new Map(locations.map((location) => [String(location._id), []]));
+  for (const employee of employees) {
+    const locationId = String(employee.locationId || '');
+    if (employeesByLocationResolved.has(locationId)) employeesByLocationResolved.get(locationId).push(employee);
+  }
+
+  const overtimeHours = await overtimeHoursByEmployee(employees, null, fromDate, toDate);
+  const attendanceByEmployeeAll = buildAttendanceByEmployee(attendance, employeesById);
+
+  for (const location of locations) {
+    const locationId = String(location._id);
+    const locationEmployees = employeesByLocationResolved.get(locationId) || [];
+    const locationEmployeeIds = new Set(locationEmployees.map((employee) => String(employee._id)));
+    const attendanceByEmployee = new Map();
+    for (const [employeeId, byMonth] of attendanceByEmployeeAll) {
+      if (locationEmployeeIds.has(employeeId)) attendanceByEmployee.set(employeeId, byMonth);
+    }
+    let lines = payrollLinesForEmployees(
+      user,
+      locationEmployees,
+      attendanceByEmployee,
+      overtimeHours,
+      organizationDetailsById,
+      options.wageRates,
+    );
+    if (options.attendanceOnly) {
+      lines = lines.filter((line) => attendanceByEmployee.has(line.employeeId));
+    }
+    linesByLocation.set(locationId, lines);
+  }
+
+  return linesByLocation;
 }
 
 const MONTH_NAMES = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
@@ -469,7 +599,7 @@ async function calculateBankPayments(user, options = {}) {
   else if (locationIds) locationFilter._id = { $in: locationIds };
 
   const [locations, organizations, wageSettings, letter] = await Promise.all([
-    Location.find(locationFilter).lean(),
+    leanQuery(Location.find(locationFilter), '_id organizationId workName name designation'),
     User.find({ role: 'organization', ...(organizationId ? { _id: organizationId } : {}) }).select('_id organizationName').lean(),
     getSettingsFor('wageRegister', options.month),
     getSettingsFor('bankLetter'),
@@ -478,18 +608,14 @@ async function calculateBankPayments(user, options = {}) {
   const rates = wageRates(wageSettings);
   const organizationNames = new Map(organizations.map((organization) => [String(organization._id), organization.organizationName || '']));
 
-  // Same employees and amounts as each location's FORM XVII register (column N).
-  const registers = await Promise.all(locations
-    .filter((location) => organizationNames.has(String(location.organizationId)))
-    .map(async (location) => {
-      const payroll = await calculatePayroll(user, {
-        organizationId: String(location.organizationId),
-        locationId: String(location._id),
-        fromDate,
-        toDate,
-      });
-      return payroll.lines.map((line) => ({ line, location, amount: wageRegisterRow(line, rates).grossPayment }));
-    }));
+  // Same employees and amounts as each location's FORM XVII register (column N),
+  // computed once across all locations instead of one full payroll query per location.
+  const eligibleLocations = locations.filter((location) => organizationNames.has(String(location.organizationId)));
+  const linesByLocation = await calculatePayrollForLocations(user, eligibleLocations, fromDate, toDate);
+  const registers = eligibleLocations.map((location) => {
+    const lines = linesByLocation.get(String(location._id)) || [];
+    return lines.map((line) => ({ line, location, amount: wageRegisterRow(line, rates).grossPayment }));
+  });
 
   const allRows = registers
     .flat()
@@ -551,6 +677,7 @@ async function calculateBankPayments(user, options = {}) {
 
 module.exports = {
   calculateBankPayments,
+  calculatePayrollForLocations,
   monthRange,
   parseLocationIds,
   calculatePayroll,

@@ -3,7 +3,15 @@ const BankInvoiceBatch = require('../models/BankInvoiceBatch');
 const Location = require('../models/Location');
 const User = require('../models/User');
 const { httpError } = require('../utils/httpError');
-const { calculateBankPayments, calculatePayrollWithDeductions, monthRange, parseLocationIds } = require('./payrollService');
+const { PAID_DAY_VALUE } = require('../utils/attendanceStatus');
+const { getSettingsFor } = require('./documentSettingsService');
+const {
+  calculateBankPayments,
+  calculatePayrollForLocations,
+  monthRange,
+  parseLocationIds,
+  wageRates,
+} = require('./payrollService');
 
 const FORMATS = new Set(['pdf', 'excel', 'print']);
 const KINDS = new Set(['bank', 'payroll']);
@@ -164,30 +172,27 @@ async function keepEarliest(kind, batch) {
 /** Payroll of several locations, possibly from different organizations, merged into one response. */
 async function locationsPayroll(user, month, locationIds) {
   const { fromDate, toDate } = monthRange(month);
-  const locations = await Location.find({ _id: { $in: locationIds } }).lean();
-  const organizations = await User.find({ role: 'organization', _id: { $in: locations.map((location) => location.organizationId) } })
-    .select('_id organizationName name email')
-    .lean();
+  const [locations, settings] = await Promise.all([
+    Location.find({ _id: { $in: locationIds } }).lean(),
+    getSettingsFor('wageRegister', month),
+  ]);
+  const organizations = await User.find({
+    role: 'organization',
+    _id: { $in: locations.map((location) => location.organizationId) },
+  }).select('_id organizationName name email').lean();
   const organizationNames = new Map(organizations.map((organization) => [
     String(organization._id),
     organization.organizationName || organization.name || organization.email || '',
   ]));
+  const rates = wageRates(settings);
+  const eligibleLocations = locations.filter((location) => organizationNames.has(String(location.organizationId)));
+  const linesByLocation = await calculatePayrollForLocations(user, eligibleLocations, fromDate, toDate, {
+    wageRates: rates,
+    attendanceOnly: true,
+  });
 
-  const results = await Promise.all(locations
-    .filter((location) => organizationNames.has(String(location.organizationId)))
-    .map(async (location) => ({
-      location,
-      payroll: await calculatePayrollWithDeductions(user, {
-        organizationId: String(location.organizationId),
-        locationId: String(location._id),
-        fromDate,
-        toDate,
-        attendanceOnly: true,
-      }),
-    })));
-
-  const lines = results
-    .flatMap(({ location, payroll }) => payroll.lines.map((line) => ({
+  const lines = eligibleLocations
+    .flatMap((location) => (linesByLocation.get(String(location._id)) || []).map((line) => ({
       ...line,
       organizationId: String(location.organizationId),
       organizationName: organizationNames.get(String(location.organizationId)) || line.organizationName,
@@ -218,8 +223,8 @@ async function locationsPayroll(user, month, locationIds) {
     fromDate,
     toDate,
     periodLabel: `${MONTH_SHORT[monthNumber - 1]} ${year}`,
-    paidStatuses: results[0]?.payroll.paidStatuses ?? ['present', 'half_day', 'paid_leave'],
-    rates: results[0]?.payroll.rates,
+    paidStatuses: Object.keys(PAID_DAY_VALUE),
+    rates,
     lines,
     summary,
     totals: [...totals.entries()].map(([currency, total]) => ({ currency, total: round2(total) })),

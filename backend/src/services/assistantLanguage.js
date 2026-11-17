@@ -19,7 +19,15 @@ function hasDevanagari(text) {
 
 /** Hindi / Hinglish / STT variants → English tokens appended for rule matching. */
 const INTENT_BRIDGES = [
-  { add: ['payroll', 'generate'], when: ['पैरोल', 'पेरोल', 'पेरोल्', 'पेरॉल', 'पैरॉल', 'पेयरोल', 'petrol', 'पेट्रोल', 'pahalvan', 'pahalwan', 'pehalvan', 'pehelwan', 'पहलवान'] },
+  {
+    add: ['payroll', 'generate'],
+    when: [
+      'पैरोल', 'पेरोल', 'पेरोल्', 'पेरॉल', 'पैरॉल', 'पेयरोल', 'petrol', 'पेट्रोल',
+      'pahalvan', 'pahalwan', 'pehalvan', 'pehelwan', 'पहलवान',
+      'pairon', 'pairol', 'pairo', 'payron', 'peiron', 'perol',
+      'pairon seat', 'pairon sheet', 'pairol seat', 'payroll seat', 'petrol seat',
+    ],
+  },
   // Status only — do not force "locations" here; "डीएक्टिवेट एम्पलाई" must stay an employee query.
   { add: ['disabled', 'inactive'], when: ['डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट', 'आईएनएक्टिव', 'इनएक्टिव', 'इनऐक्टिव', 'निष्क्रिय', 'deactive', 'deactivate', 'deactivated', 'disabled', 'inactive', 'डिसेबल्ड', 'डिसेबल'] },
   { add: ['active'], when: ['एक्टिव', 'ऐक्टिव', 'सक्रिय', 'enabled'] },
@@ -44,6 +52,11 @@ const INTENT_BRIDGES = [
   { add: ['what can you do'], when: ['क्या कर सकती', 'क्या क्या कर', 'क्या-क्या कर', 'क्या कर सकते'] },
   { add: ['who are you'], when: ['कौन हो', 'परिचय'] },
   { add: ['details', 'info'], when: ['who is', "who's", 'detailed', 'कौन है', 'कौन हैं', 'डिटेल', 'डिटेल्स', 'जानकारी'] },
+  { add: ['uan', 'number'], when: ['यूएएन', 'यू एन', 'यूएन', 'un number', 'uan number'] },
+  { add: ['address'], when: ['पता', 'एड्रेस', 'एडरेस', 'adress', 'addres'] },
+  { add: ['joining', 'date'], when: ['जॉइनिंग', 'ज्वाइनिंग', 'जॉइन डेट', 'joining date'] },
+  { add: ['mobile', 'number'], when: ['मोबाइल', 'फोन नंबर', 'फ़ोन'] },
+  { add: ['aadhaar'], when: ['आधार', 'आधार कार्ड'] },
   { add: ['text', 'attendance'], when: ['टेक्स्ट में', 'टेक्स्ट मे', 'text में', 'text mein', 'in text', 'नॉर्मली टेक्स्ट', 'normal text'] },
   { add: ['subba'], when: ['सुबह', 'सुभ', 'सभा', 'सुब्बा', 'सुबा'] },
   { add: ['limbu'], when: ['नींबू', 'निम्बू', 'लिम्बू', 'लिम्बु'] },
@@ -53,7 +66,8 @@ const INTENT_BRIDGES = [
   { add: ['names', 'list', 'tell'], when: ['नाम बताओ', 'नाम बताइए', 'नाम बताएं', 'नाम दो', 'नाम दे', 'नाम दे दो', 'बताओ', 'बताइए'] },
   { add: ['random'], when: ['रैंडम', 'रेंडम', 'randomly', 'कोई भी', 'खुद से'] },
   { add: ['rest', 'remaining', 'days'], when: ['बाकी सब', 'बाकी दिन', 'बचे हुए', 'baki sab', 'baaki'] },
-  { add: ['both', 'locations', 'payroll', 'generate'], when: ['yeah ok both', 'ok both', 'both location', 'both locations'] },
+  // Confirmation of a prior payroll/bank prompt only — never bare "both locations" (employee follow-ups).
+  { add: ['both', 'locations', 'payroll', 'generate'], when: ['yeah ok both', 'ok both', 'yeah ok both locations', 'ok both locations'] },
 ];
 
 /** Longest-first phrase pairs: [hindi, english] */

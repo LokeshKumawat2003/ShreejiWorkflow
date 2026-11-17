@@ -1,4 +1,4 @@
-import { CloseIcon, DownloadIcon, RepeatIcon } from '@chakra-ui/icons';
+import { CloseIcon, CopyIcon, DownloadIcon, RepeatIcon } from '@chakra-ui/icons';
 import {
 	Box,
 	Button,
@@ -24,9 +24,12 @@ import {
 	getAssistantSession,
 	type AssistantChoice,
 	type AssistantDocument,
+	type AssistantExecution,
+	type AssistantPendingAction,
 	type AssistantPlan,
 } from '../../services/assistantService';
 import { downloadAssistantDocument, EmptyDocumentError } from './assistantDocuments';
+import FeedbackPanel from './FeedbackPanel';
 
 const FlowerIcon = createIcon({
 	displayName: 'FlowerIcon',
@@ -70,13 +73,19 @@ const SpeakerOffIcon = createIcon({
 	path: <path fill="currentColor" d="M3 9v6h4l5 5V4L7 9H3Zm18.7 1.1-1.4-1.4L18 11l-2.3-2.3-1.4 1.4 2.3 2.3-2.3 2.3 1.4 1.4L18 13.8l2.3 2.3 1.4-1.4-2.3-2.3 2.3-2.3Z" />,
 });
 
+const DocumentIcon = createIcon({
+	displayName: 'DocumentIcon',
+	viewBox: '0 0 24 24',
+	path: <path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM8 13v2h8v-2H8Zm0 4v2h5v-2H8Z" />,
+});
+
 const VOICE_KEY = 'shreeji-assistant-voice';
+const SESSION_KEY = 'shreeji-assistant-session';
 
 function canSpeak() {
 	return typeof window !== 'undefined' && 'speechSynthesis' in window;
 }
 
-/** Text as it should be read aloud: no bullets, symbols or emoji, and not too long. */
 function spokenText(text: string) {
 	const clean = text
 		.replace(/₹\s?/g, '₹ ')
@@ -97,12 +106,6 @@ function pickVoice(language: string) {
 		?? null;
 }
 
-const DocumentIcon = createIcon({
-	displayName: 'DocumentIcon',
-	viewBox: '0 0 24 24',
-	path: <path fill="currentColor" d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm7 1.5V9h5.5L13 3.5ZM8 13v2h8v-2H8Zm0 4v2h5v-2H8Z" />,
-});
-
 const pulse = keyframes`
 	0% { transform: scale(1); opacity: .55; }
 	100% { transform: scale(1.75); opacity: 0; }
@@ -118,17 +121,15 @@ const bounce = keyframes`
 	40% { transform: translateY(-4px); opacity: 1; }
 `;
 
-const GRADIENT = 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 55%, #DB2777 100%)';
+const PANEL_HEADER = 'linear-gradient(135deg, #4338CA 0%, #4F46E5 100%)';
 
 const SUGGESTIONS = [
-	'इस महीने की wages sheet PDF में',
-	'सभी employees की पिछले महीने की salary slip',
-	'October का payroll Excel में',
-	'इस महीने की attendance किन locations पर बाकी है?',
+	'Show all active employees',
+	"Give me today's attendance summary",
+	"Show this month's payroll details",
+	'Generate the attendance register',
+	'Show all organization details',
 ];
-
-// sessionStorage is cleared when the tab closes, so a new tab starts a new chat; the server deletes chats after 24 hours.
-const SESSION_KEY = 'shreeji-assistant-session';
 
 function storedSessionId() {
 	try {
@@ -154,11 +155,16 @@ type ChatMessage = {
 	id: number;
 	role: 'user' | 'assistant';
 	text: string;
+	at: number;
 	document?: AssistantDocument;
 	documentStatus?: DocumentStatus;
 	documentFormat?: DocumentFormat;
 	documentError?: string;
 	choices?: AssistantChoice[];
+	pendingAction?: AssistantPendingAction | null;
+	execution?: AssistantExecution;
+	intent?: string;
+	error?: boolean;
 };
 
 type SpeechRecognitionResultEvent = {
@@ -192,13 +198,43 @@ const SPEECH_LANGUAGES = [
 
 let nextId = 1;
 
-function TypingDots() {
+function formatTime(at: number) {
+	try {
+		return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+	} catch {
+		return '';
+	}
+}
+
+function stageLabel(execution?: AssistantExecution, thinking?: boolean) {
+	if (!thinking && !execution?.status) return '';
+	const status = execution?.status || 'understanding';
+	const map: Record<string, string> = {
+		understanding: 'Understanding request…',
+		fetching: 'Fetching information…',
+		validating: 'Validating parameters…',
+		preview: 'Preparing preview…',
+		awaiting_confirmation: 'Waiting for confirmation…',
+		needs_clarification: 'Needs clarification',
+		completed: 'Completed',
+		failed: 'Failed',
+		cancelled: 'Cancelled',
+		unsupported: 'Unsupported',
+		already_executed: 'Already completed',
+	};
+	return map[status] || (thinking ? 'Working…' : status);
+}
+
+function TypingDots({ label }: { label?: string }) {
 	return (
-		<HStack spacing={1} px={4} py={3} bg="white" borderRadius="16px" borderBottomLeftRadius="4px" boxShadow="sm" w="fit-content">
-			{[0, 1, 2].map((index) => (
-				<Box key={index} w="7px" h="7px" borderRadius="full" bg="brand.400" animation={`${bounce} 1.2s ${index * 0.15}s infinite ease-in-out`} />
-			))}
-		</HStack>
+		<Stack spacing={1}>
+			{label ? <Text fontSize="xs" color="slate.500" fontWeight="600">{label}</Text> : null}
+			<HStack spacing={1} px={4} py={3} bg="white" borderRadius="16px" borderBottomLeftRadius="4px" boxShadow="sm" w="fit-content">
+				{[0, 1, 2].map((index) => (
+					<Box key={index} w="7px" h="7px" borderRadius="full" bg="brand.400" animation={`${bounce} 1.2s ${index * 0.15}s infinite ease-in-out`} />
+				))}
+			</HStack>
+		</Stack>
 	);
 }
 
@@ -207,7 +243,6 @@ const FORMAT_STYLES: Record<DocumentFormat, { label: string; bg: string; color: 
 	excel: { label: 'Excel', bg: 'green.50', color: 'green.700', hover: 'green.100' },
 };
 
-/** Nothing downloads until the user picks a format here. */
 function DocumentCard({ message, onDownload }: { message: ChatMessage; onDownload: (format: DocumentFormat) => void }) {
 	const document = message.document!;
 	const status = message.documentStatus ?? 'ready';
@@ -263,18 +298,79 @@ function DocumentCard({ message, onDownload }: { message: ChatMessage; onDownloa
 	);
 }
 
+function ConfirmationCard({
+	message,
+	disabled,
+	onPick,
+}: {
+	message: ChatMessage;
+	disabled: boolean;
+	onPick: (choice: AssistantChoice) => void;
+}) {
+	const confirmChoices = (message.choices || []).filter((choice) => choice.plan.confirm === true || choice.plan.type === 'cancel' || choice.plan.pendingActionId);
+	const otherChoices = (message.choices || []).filter((choice) => !confirmChoices.includes(choice));
+	const isConfirmFlow = Boolean(message.pendingAction) || confirmChoices.some((choice) => choice.plan.confirm === true);
+
+	return (
+		<Stack mt={2} spacing={1.5}>
+			{isConfirmFlow ? (
+				<Box p={3} bg="orange.50" border="1px solid" borderColor="orange.200" borderRadius="12px">
+					<Text fontSize="xs" fontWeight="700" color="orange.700" mb={1}>Confirmation required</Text>
+					{message.pendingAction?.summary ? (
+						<Text fontSize="xs" color="slate.600" mb={2} noOfLines={4}>{message.pendingAction.summary}</Text>
+					) : null}
+					<Text fontSize="xs" color="slate.500">Database will change only after you confirm.</Text>
+				</Box>
+			) : null}
+			{[...otherChoices, ...confirmChoices].map((choice, index) => {
+				const isConfirm = choice.plan.confirm === true;
+				const isCancel = choice.plan.type === 'cancel';
+				return (
+					<Button
+						key={`${choice.label}-${index}-${choice.plan.pendingActionId || ''}`}
+						size="sm"
+						variant={isConfirm ? 'solid' : 'outline'}
+						colorScheme={isConfirm ? 'brand' : isCancel ? 'gray' : undefined}
+						bg={isConfirm ? undefined : 'white'}
+						justifyContent="flex-start"
+						whiteSpace="normal"
+						textAlign="left"
+						h="auto"
+						py={2}
+						fontWeight="600"
+						color={isConfirm ? undefined : 'slate.700'}
+						borderColor={isConfirm ? undefined : 'slate.200'}
+						_hover={isConfirm ? undefined : { borderColor: 'brand.300', color: 'brand.600', bg: 'brand.50' }}
+						isDisabled={disabled}
+						onClick={() => onPick(choice)}
+					>
+						{choice.label}
+					</Button>
+				);
+			})}
+		</Stack>
+	);
+}
+
 function AssistantWidget() {
 	const [isOpen, setIsOpen] = useState(false);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [input, setInput] = useState('');
 	const [isThinking, setIsThinking] = useState(false);
+	const [thinkStage, setThinkStage] = useState('Understanding request…');
 	const [isListening, setIsListening] = useState(false);
 	const [speechLanguage, setSpeechLanguage] = useState(SPEECH_LANGUAGES[0].code);
 	const [speechError, setSpeechError] = useState('');
+	const [showFeedback, setShowFeedback] = useState(false);
 	const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 	const inputRef = useRef<HTMLInputElement | null>(null);
 	const sessionIdRef = useRef<string | null>(storedSessionId());
+	const [sessionId, setSessionId] = useState<string | null>(storedSessionId());
+	const abortRef = useRef<AbortController | null>(null);
+	const [lastUserText, setLastUserText] = useState('');
+	const [lastAssistantText, setLastAssistantText] = useState('');
+	const [lastIntent, setLastIntent] = useState('');
 	const canListen = Boolean(speechRecognition());
 	const [voiceOn, setVoiceOn] = useState(() => {
 		try {
@@ -319,10 +415,10 @@ function AssistantWidget() {
 	}
 
 	useEffect(() => {
-		// Some browsers load their voice list late; asking once makes it ready for the first reply.
 		if (canSpeak()) window.speechSynthesis.getVoices();
 		return () => {
 			if (canSpeak()) window.speechSynthesis.cancel();
+			abortRef.current?.abort();
 		};
 	}, []);
 
@@ -337,6 +433,7 @@ function AssistantWidget() {
 					id: nextId++,
 					role: message.role,
 					text: message.content,
+					at: Date.now(),
 					document: message.document,
 					documentStatus: message.document ? 'ready' : undefined,
 				})));
@@ -352,18 +449,22 @@ function AssistantWidget() {
 	}, []);
 
 	function newChat() {
-		const sessionId = sessionIdRef.current;
+		abortRef.current?.abort();
+		const previous = sessionIdRef.current;
 		sessionIdRef.current = null;
+		setSessionId(null);
 		storeSessionId(null);
 		stopSpeaking();
 		setMessages([]);
 		setInput('');
-		if (sessionId) void deleteAssistantSession(sessionId).catch(() => undefined);
+		setShowFeedback(false);
+		setIsThinking(false);
+		if (previous) void deleteAssistantSession(previous).catch(() => undefined);
 	}
 
 	useEffect(() => {
 		scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-	}, [messages, isThinking]);
+	}, [messages, isThinking, showFeedback]);
 
 	useEffect(() => {
 		if (isOpen) window.setTimeout(() => inputRef.current?.focus(), 150);
@@ -393,35 +494,62 @@ function AssistantWidget() {
 		}
 	}
 
+	async function copyText(text: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch {
+			// Clipboard may be blocked.
+		}
+	}
+
 	async function ask(request: { message?: string; plan?: AssistantPlan }, userText: string) {
 		if (isThinking) return;
-		setMessages((current) => [...current, { id: nextId++, role: 'user', text: userText }]);
+		setLastUserText(userText);
+		setMessages((current) => [...current, { id: nextId++, role: 'user', text: userText, at: Date.now() }]);
 		setIsThinking(true);
+		setThinkStage(request.plan?.confirm ? 'Executing operation…' : 'Understanding request…');
+		abortRef.current?.abort();
+		const controller = new AbortController();
+		abortRef.current = controller;
 		try {
+			if (!request.plan) {
+				window.setTimeout(() => {
+					if (!controller.signal.aborted) setThinkStage('Fetching information…');
+				}, 400);
+			}
 			const response = await askAssistant({
 				...request,
 				label: userText,
 				sessionId: sessionIdRef.current,
 				language: speechLanguage,
-			});
+			}, controller.signal);
 			sessionIdRef.current = response.sessionId;
+			setSessionId(response.sessionId);
 			storeSessionId(response.sessionId);
+			setLastAssistantText(response.reply);
+			setLastIntent(response.intent || response.source || '');
 			const id = nextId++;
 			setMessages((current) => [...current, {
 				id,
 				role: 'assistant',
 				text: response.reply,
+				at: Date.now(),
 				document: response.document,
 				documentStatus: response.document ? 'ready' : undefined,
 				choices: response.choices,
+				pendingAction: response.pendingAction,
+				execution: response.execution,
+				intent: response.intent,
+				error: response.success === false,
 			}]);
 			speak(response.reply);
 		} catch (error) {
+			if (controller.signal.aborted) return;
 			const text = error instanceof ApiError ? error.message : 'Server से connect नहीं हो पाया। थोड़ी देर बाद फिर कोशिश करें।';
-			setMessages((current) => [...current, { id: nextId++, role: 'assistant', text }]);
+			setMessages((current) => [...current, { id: nextId++, role: 'assistant', text, at: Date.now(), error: true }]);
 			speak(text);
 		} finally {
-			setIsThinking(false);
+			if (!controller.signal.aborted) setIsThinking(false);
 		}
 	}
 
@@ -430,6 +558,12 @@ function AssistantWidget() {
 		if (!message) return;
 		setInput('');
 		void ask({ message }, message);
+	}
+
+	function stopGeneration() {
+		abortRef.current?.abort();
+		setIsThinking(false);
+		setThinkStage('');
 	}
 
 	const sendRef = useRef(send);
@@ -445,6 +579,12 @@ function AssistantWidget() {
 	function pickChoice(messageId: number, choice: AssistantChoice) {
 		updateMessage(messageId, { choices: undefined });
 		void ask({ plan: choice.plan }, choice.label);
+	}
+
+	function retryLast() {
+		const lastUser = [...messages].reverse().find((message) => message.role === 'user');
+		if (!lastUser || isThinking) return;
+		void ask({ message: lastUser.text }, lastUser.text);
 	}
 
 	function toggleListening() {
@@ -487,32 +627,45 @@ function AssistantWidget() {
 
 	return (
 		<>
-			<ScaleFade in={isOpen} initialScale={0.9} unmountOnExit>
+			<ScaleFade in={isOpen} initialScale={0.95} unmountOnExit>
 				<Flex
 					position="fixed"
 					zIndex={1400}
 					bottom={{ base: 0, sm: '96px' }}
 					right={{ base: 0, sm: 6 }}
-					w={{ base: '100vw', sm: '400px' }}
-					h={{ base: '100dvh', sm: 'min(600px, calc(100vh - 130px))' }}
+					w={{ base: '100vw', sm: '420px' }}
+					h={{ base: '100dvh', sm: 'min(680px, calc(100vh - 120px))' }}
 					direction="column"
 					bg="slate.50"
-					borderRadius={{ base: 0, sm: '20px' }}
-					boxShadow="0 24px 64px -12px rgba(30, 27, 75, .35)"
+					borderRadius={{ base: 0, sm: '18px' }}
+					boxShadow="0 24px 64px -12px rgba(15, 23, 42, .28)"
 					overflow="hidden"
 					border="1px solid"
-					borderColor="whiteAlpha.600"
+					borderColor="slate.200"
 				>
-					<HStack px={4} py={3.5} bgImage={GRADIENT} color="white" spacing={3}>
+					<HStack px={4} py={3.5} bgImage={PANEL_HEADER} color="white" spacing={3}>
 						<Flex w="40px" h="40px" borderRadius="full" bg="whiteAlpha.300" align="center" justify="center">
 							<FlowerIcon boxSize={6} />
 						</Flex>
 						<Box flex="1" minW={0}>
-							<Text fontWeight="800" fontSize="md" lineHeight="short">Shreeji Assistant</Text>
-							{isSpeaking && <Text fontSize="xs" opacity={0.85}>बोल रही हूँ…</Text>}
+							<Text fontWeight="800" fontSize="md" lineHeight="short">Shreeji AI</Text>
+							<Text fontSize="xs" opacity={0.9}>
+								{isSpeaking ? 'Speaking…' : isThinking ? stageLabel(undefined, true) || thinkStage : 'Admin Assistant'}
+							</Text>
 						</Box>
+						<Tooltip label="Feedback" hasArrow>
+							<IconButton
+								aria-label="Open feedback"
+								icon={<Text fontSize="sm" fontWeight="800">!</Text>}
+								size="sm"
+								variant="ghost"
+								color="white"
+								_hover={{ bg: 'whiteAlpha.300' }}
+								onClick={() => setShowFeedback((value) => !value)}
+							/>
+						</Tooltip>
 						{canSpeak() && (
-							<Tooltip label={voiceOn ? 'आवाज़ बंद करें' : 'जवाब बोलकर सुनाएँ'} hasArrow>
+							<Tooltip label={voiceOn ? 'Mute voice' : 'Speak replies'} hasArrow>
 								<IconButton
 									aria-label={voiceOn ? 'Turn voice off' : 'Turn voice on'}
 									aria-pressed={voiceOn}
@@ -526,7 +679,7 @@ function AssistantWidget() {
 							</Tooltip>
 						)}
 						{messages.length > 0 && (
-							<Tooltip label="नई chat शुरू करें (पुरानी chat मिट जाएगी)" hasArrow>
+							<Tooltip label="New chat" hasArrow>
 								<IconButton
 									aria-label="New chat"
 									icon={<RepeatIcon boxSize={3.5} />}
@@ -551,14 +704,34 @@ function AssistantWidget() {
 					</HStack>
 
 					<Stack ref={scrollRef} flex="1" overflowY="auto" spacing={3} px={4} py={4}>
-						{messages.length === 0 ? (
+						{showFeedback ? (
+							<FeedbackPanel
+								sessionId={sessionId}
+								lastUserText={lastUserText}
+								lastAssistantText={lastAssistantText}
+								lastIntent={lastIntent}
+								onClose={() => setShowFeedback(false)}
+							/>
+						) : null}
+
+						{messages.length === 0 && !showFeedback ? (
 							<Box>
-								<Box p={4} bg="white" borderRadius="16px" boxShadow="sm">
-									<Text fontWeight="700" color="slate.800">नमस्ते! 😊</Text>
-									<Text mt={1} fontSize="sm" color="slate.600">मैं श्रीजी हूँ, Shreeji Caretaker की AI Assistant।</Text>
+								<Box
+									p={5}
+									bg="white"
+									borderRadius="16px"
+									boxShadow="sm"
+									border="1px solid"
+									borderColor="slate.100"
+									backgroundImage="radial-gradient(circle at top right, rgba(79,70,229,.08), transparent 55%)"
+								>
+									<Text fontWeight="800" fontSize="lg" color="slate.900">Hello! I'm Shreeji AI.</Text>
+									<Text mt={1.5} fontSize="sm" color="slate.600">
+										Your personal Admin Assistant for Shreeji Workflow.
+									</Text>
 								</Box>
 								<Text mt={4} mb={2} fontSize="xs" fontWeight="700" color="slate.500" textTransform="uppercase" letterSpacing="wide">
-									Try asking
+									Suggested prompts
 								</Text>
 								<Wrap spacing={2}>
 									{SUGGESTIONS.map((suggestion) => (
@@ -568,13 +741,13 @@ function AssistantWidget() {
 												variant="outline"
 												bg="white"
 												borderColor="brand.100"
-												color="brand.600"
+												color="brand.700"
 												fontWeight="600"
-												borderRadius="full"
+												borderRadius="12px"
 												whiteSpace="normal"
 												textAlign="left"
 												h="auto"
-												py={1.5}
+												py={2}
 												_hover={{ bg: 'brand.50' }}
 												onClick={() => send(suggestion)}
 											>
@@ -588,57 +761,67 @@ function AssistantWidget() {
 
 						{messages.map((message) => (
 							<Flex key={message.id} justify={message.role === 'user' ? 'flex-end' : 'flex-start'}>
-								<Box maxW="88%">
+								<Box maxW="92%">
 									<Box
 										px={3.5}
 										py={2.5}
 										fontSize="sm"
 										whiteSpace="pre-wrap"
 										borderRadius="16px"
+										border={message.error ? '1px solid' : undefined}
+										borderColor={message.error ? 'red.200' : undefined}
 										{...(message.role === 'user'
-											? { bgImage: GRADIENT, color: 'white', borderBottomRightRadius: '4px' }
-											: { bg: 'white', color: 'slate.800', borderBottomLeftRadius: '4px', boxShadow: 'sm' })}
+											? { bg: 'brand.600', color: 'white', borderBottomRightRadius: '4px' }
+											: { bg: message.error ? 'red.50' : 'white', color: 'slate.800', borderBottomLeftRadius: '4px', boxShadow: 'sm' })}
 									>
 										{message.text}
 									</Box>
+									<HStack mt={1} spacing={2} justify={message.role === 'user' ? 'flex-end' : 'flex-start'}>
+										<Text fontSize="10px" color="slate.400">{formatTime(message.at)}</Text>
+										{message.role === 'assistant' ? (
+											<>
+												<Tooltip label="Copy">
+													<IconButton
+														aria-label="Copy response"
+														icon={<CopyIcon boxSize={3} />}
+														size="xs"
+														variant="ghost"
+														onClick={() => void copyText(message.text)}
+													/>
+												</Tooltip>
+												{message.error ? (
+													<Tooltip label="Retry">
+														<IconButton
+															aria-label="Retry"
+															icon={<RepeatIcon boxSize={3} />}
+															size="xs"
+															variant="ghost"
+															onClick={retryLast}
+														/>
+													</Tooltip>
+												) : null}
+												{message.execution?.status ? (
+													<Text fontSize="10px" color="slate.400">{stageLabel(message.execution)}</Text>
+												) : null}
+											</>
+										) : null}
+									</HStack>
 									{message.document ? (
 										<DocumentCard message={message} onDownload={(format) => void runDocument(message.id, message.document!, format)} />
 									) : null}
 									{message.choices?.length ? (
-										<Stack mt={2} spacing={1.5}>
-											{message.choices.map((choice) => (
-												<Button
-													key={`${choice.plan.locationId}-${choice.plan.employeeId}-${choice.label}`}
-													size="sm"
-													variant="outline"
-													bg="white"
-													justifyContent="flex-start"
-													whiteSpace="normal"
-													textAlign="left"
-													h="auto"
-													py={2}
-													fontWeight="600"
-													color="slate.700"
-													borderColor="slate.200"
-													_hover={{ borderColor: 'brand.300', color: 'brand.600', bg: 'brand.50' }}
-													isDisabled={isThinking}
-													onClick={() => pickChoice(message.id, choice)}
-												>
-													{choice.label}
-												</Button>
-											))}
-										</Stack>
+										<ConfirmationCard message={message} disabled={isThinking} onPick={(choice) => pickChoice(message.id, choice)} />
 									) : null}
 								</Box>
 							</Flex>
 						))}
-						{isThinking ? <TypingDots /> : null}
+						{isThinking ? <TypingDots label={thinkStage} /> : null}
 					</Stack>
 
 					<Box as="form" onSubmit={onSubmit} px={3} pt={2} pb={3} bg="white" borderTop="1px solid" borderColor="slate.100">
 						{isListening || speechError ? (
 							<Text px={1} pb={1.5} fontSize="xs" fontWeight="600" color={speechError ? 'red.500' : 'red.400'}>
-								{speechError || 'सुन रही हूँ… बोलिए'}
+								{speechError || 'Listening…'}
 							</Text>
 						) : null}
 						<HStack spacing={2}>
@@ -658,7 +841,7 @@ function AssistantWidget() {
 											{SPEECH_LANGUAGES.find(({ code }) => code === speechLanguage)?.label}
 										</Button>
 									</Tooltip>
-									<Tooltip label={isListening ? 'Stop' : 'बोलकर पूछें'} hasArrow>
+									<Tooltip label={isListening ? 'Stop' : 'Voice input'} hasArrow>
 										<IconButton
 											aria-label={isListening ? 'Stop listening' : 'Speak your request'}
 											icon={<MicIcon boxSize={5} />}
@@ -678,7 +861,7 @@ function AssistantWidget() {
 								ref={inputRef}
 								value={input}
 								onChange={(event) => setInput(event.target.value)}
-								placeholder={isListening ? 'सुन रही हूँ…' : 'जैसे: Horticulture की इस महीने की wages sheet'}
+								placeholder={isListening ? 'Listening…' : 'Ask Shreeji AI…'}
 								maxLength={500}
 								borderRadius="full"
 								bg="slate.50"
@@ -686,17 +869,24 @@ function AssistantWidget() {
 								fontSize="sm"
 								_focus={{ borderColor: 'brand.400', boxShadow: '0 0 0 1px var(--chakra-colors-brand-400)', bg: 'white' }}
 							/>
-							<IconButton
-								type="submit"
-								aria-label="Send"
-								icon={<SendIcon boxSize={4} />}
-								borderRadius="full"
-								bgImage={GRADIENT}
-								color="white"
-								_hover={{ opacity: 0.9 }}
-								_active={{ opacity: 0.8 }}
-								isDisabled={!input.trim() || isThinking}
-							/>
+							{isThinking ? (
+								<IconButton
+									aria-label="Stop generation"
+									icon={<CloseIcon boxSize={3} />}
+									borderRadius="full"
+									variant="outline"
+									onClick={stopGeneration}
+								/>
+							) : (
+								<IconButton
+									type="submit"
+									aria-label="Send"
+									icon={<SendIcon boxSize={4} />}
+									borderRadius="full"
+									colorScheme="brand"
+									isDisabled={!input.trim()}
+								/>
+							)}
 						</HStack>
 					</Box>
 				</Flex>
@@ -704,9 +894,9 @@ function AssistantWidget() {
 
 			<Box position="fixed" zIndex={1400} bottom={6} right={6} display={{ base: isOpen ? 'none' : 'block', sm: 'block' }}>
 				{!isOpen ? (
-					<Box position="absolute" inset={0} borderRadius="full" bgImage={GRADIENT} animation={`${pulse} 2.2s infinite ease-out`} pointerEvents="none" />
+					<Box position="absolute" inset={0} borderRadius="full" bg="brand.500" animation={`${pulse} 2.2s infinite ease-out`} pointerEvents="none" />
 				) : null}
-				<Tooltip label={isOpen ? 'Close assistant' : 'Shreeji Assistant'} placement="left" hasArrow>
+				<Tooltip label={isOpen ? 'Close Shreeji AI' : 'Shreeji AI'} placement="left" hasArrow>
 					<IconButton
 						aria-label={isOpen ? 'Close assistant' : 'Open assistant'}
 						icon={isOpen ? <CloseIcon boxSize={4} /> : <FlowerIcon boxSize={8} />}
@@ -714,11 +904,10 @@ function AssistantWidget() {
 						w="60px"
 						h="60px"
 						borderRadius="full"
-						bgImage={GRADIENT}
-						color="white"
-						boxShadow="0 12px 28px -6px rgba(124, 58, 237, .6)"
+						colorScheme="brand"
+						boxShadow="0 12px 28px -6px rgba(67, 56, 202, .45)"
 						transition="transform .2s ease"
-						_hover={{ transform: 'scale(1.07) rotate(-8deg)' }}
+						_hover={{ transform: 'scale(1.06)' }}
 						_active={{ transform: 'scale(.96)' }}
 						onClick={() => setIsOpen((open) => !open)}
 					/>

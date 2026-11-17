@@ -158,7 +158,7 @@ function DashboardPage({ role }: DashboardPageProps) {
           </Stack>
         </Box>
       </Flex>
-      <AssistantWidget />
+      {role === 'admin' ? <AssistantWidget /> : null}
     </Flex>
   );
 }

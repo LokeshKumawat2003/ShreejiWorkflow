@@ -21,6 +21,33 @@ const {
   isReferentialFollowUp,
   SYNONYM_GROUPS,
 } = require('./assistantNlu');
+const {
+  isCorrectionFollowUp,
+  isExplicitOrganizationSwitch,
+  validateAnswerAgainstContext,
+  expectsMultipleEntities,
+} = require('./assistantContext');
+const {
+  messageWantsEmployeeCount,
+  parseRequestedEmployeeFields,
+  parseEmployeeGroupQuantifier,
+  buildEmployeeQueryGroup,
+  retrieveEmployeesForQuery,
+  applyQuantifier,
+  formatEmployeeFieldReply,
+  isStickyEmployeeFieldFollowUp,
+} = require('./assistantEmployeeIntelligence');
+
+const BOTH_GROUP_WORDS = [
+  'dono', 'donon', 'donno', 'both', 'दोनों', 'दोनोंो',
+];
+const ALL_GROUP_WORDS = [
+  'sabhi', 'sab', 'sare', 'saare', 'sari', 'saari', 'all', 'every', 'entire',
+  'सभी', 'सब', 'सारे', 'सारी',
+];
+const FIRST_GROUP_WORDS = [
+  'pehle', 'pehli', 'pehla', 'first', 'पहले', 'पहली', 'पहला',
+];
 
 const INTENTS = {
   ACTIVE_EMPLOYEE_COUNT: 'active_employee_count',
@@ -51,10 +78,15 @@ const LIST_WORDS = [
   ...SYNONYM_GROUPS.list,
 ];
 const DETAIL_WORDS = [
-  'detail', 'details', 'info', 'information', 'profile', 'bare me', 'baare', 'sab kuch', 'full details', 'full detail',
+  'detail', 'details', 'detials', 'detals', 'deatils', 'info', 'information', 'profile', 'bare me', 'baare', 'sab kuch',
+  'full details', 'full detail',
   'फुल डिटेल्स', 'फुल डिटेल',
   'डिटेल', 'डिटेल्स', 'जानकारी', 'विवरण', 'प्रोफाइल',
   ...SYNONYM_GROUPS.detail,
+];
+const ADDRESS_WORDS = [
+  'address', 'adress', 'addres', 'pata', 'location address',
+  'पता', 'एड्रेस', 'एडरेस', 'address batao', 'adress batao',
 ];
 const ORG_CONTACT_WORDS = [
   'mobile', 'mobile number', 'phone', 'phone number', 'contact', 'contact number', 'email', 'e-mail', 'mail id', 'email id',
@@ -293,7 +325,12 @@ function classifyDirectoryIntent(message, { hasOrgMention = false, hasLocationMe
   // Must win over any accidental org-entity match + "batao".
   if (isAllOrganizationsListQuery(text)) return INTENTS.ORGANIZATION_LIST;
 
-  const wantsCount = includesAny(text, COUNT_WORDS) || hasConcept(text, 'count');
+  // Prefer normalized text so synonym expansion of "number" → "how many/kitne" does not
+  // turn "mobile number" into an employee-count intent.
+  const countText = prepared.normalized || text;
+  const wantsCount = messageWantsEmployeeCount(countText) || (
+    hasConcept(countText, 'count') && !includesAny(countText, ['mobile', 'phone', 'account', 'aadhaar', 'uan', 'मोबाइल', 'फोन'])
+  );
   const wantsList = includesAny(text, LIST_WORDS) || includesAny(text, DETAIL_WORDS) || hasConcept(text, 'list');
   const wantsOrg = includesAny(text, ORG_WORDS) || hasConcept(text, 'organization');
   const wantsLocation = includesAny(text, LOCATION_WORDS) || hasConcept(text, 'location');
@@ -491,6 +528,7 @@ function isDirectoryCandidate(message) {
   return includesAny(text, COUNT_WORDS)
     || includesAny(text, LIST_WORDS)
     || includesAny(text, DETAIL_WORDS)
+    || includesAny(text, ADDRESS_WORDS)
     || includesAny(text, ORG_WORDS)
     || includesAny(text, EMPLOYEE_WORDS)
     || includesAny(text, LOCATION_WORDS)
@@ -498,6 +536,7 @@ function isDirectoryCandidate(message) {
     || includesAny(text, SECURITY_WORDS)
     || includesAny(text, ATTENDANCE_WORDS)
     || isReferentialScopeFollowUp(text)
+    || isCorrectionFollowUp(text)
     || hasConcept(text, 'organization')
     || hasConcept(text, 'employee')
     || hasConcept(text, 'count')
@@ -530,8 +569,11 @@ function isOrganizationTopicContext(context) {
     || context.lastIntent === INTENTS.ORGANIZATION_LIST;
 }
 
-function isStickyOrganizationDetailsFollowUp(message, context) {
+function isStickyOrganizationDetailsFollowUp(message, context, { namedLocation = false } = {}) {
   if (!isOrganizationTopicContext(context)) return false;
+  // Employee field follow-ups ("unke email/mobile/address") after an employee count/list
+  // must not reopen the organization contact card.
+  if (isStickyEmployeeFieldFollowUp(message, context)) return false;
   if (messageWantsEmployees(message) && includesAny(message, COUNT_WORDS)) return false;
   if (wantsAttendanceMarkAction(message)
     || includesAny(message, ATTENDANCE_WORDS)
@@ -542,6 +584,15 @@ function isStickyOrganizationDetailsFollowUp(message, context) {
   if (includesAny(message, HOUSEKEEPING_WORDS) || includesAny(message, SECURITY_WORDS)) return false;
   // Explicit location ask → leave for location handlers (even if "details" is also present).
   if (includesAny(message, LOCATION_WORDS) && !wantsOrgContactCard(message)) return false;
+  // Named site under sticky org ("Park Care ki details") must not re-open org profile,
+  // unless this is an explicit org contact/profile card ask (mobile/email/full details).
+  if (namedLocation && !wantsOrgContactCard(message) && !wantsOrganizationProfile(message)) return false;
+  if (namedLocation && wantsOrganizationProfile(message) && !wantsOrgContactCard(message)
+    && leftoverSubjectTokens(message).length > 0
+    && !isReferentialScopeFollowUp(message)) {
+    return false;
+  }
+  if (isCorrectionFollowUp(message)) return false;
   if (!wantsOrganizationProfile(message) && !wantsOrgContactCard(message)) return false;
   const referential = isReferentialScopeFollowUp(message)
     || includesAny(message, ['uski', 'uska', 'uske', 'unki', 'unka', 'unke', 'उसकी', 'उसका', 'उसके', 'उनकी', 'उनका']);
@@ -606,11 +657,11 @@ async function buildOrganizationDetailsAnswer({
 }
 
 const REFERRING_SCOPE_WORDS = [
-  'unke', 'unki', 'unka', 'uske', 'uski', 'uska', 'usmein', 'usme', 'ismein', 'isme', 'inme', 'inmein',
-  'inke', 'inki', 'inka', 'inmein', 'unmein', 'wahi', 'vahi', 'dono', 'donon', 'both', 'same',
-  'ye', 'yeh', 'woh', 'un',
+  'unke', 'unki', 'unka', 'uske', 'uski', 'uska', 'usmein', 'usme', 'ismein', 'isme', 'iska', 'iske', 'iski',
+  'inme', 'inmein', 'inke', 'inki', 'inka', 'inmein', 'unmein', 'wahi', 'vahi', 'dono', 'donon', 'both', 'same',
+  'ye', 'yeh', 'woh', 'un', 'ab iska', 'ab iski', 'ab uska', 'ab uski',
   'is location', 'usi location', 'this location', 'that location', 'us location', 'in location',
-  'उनके', 'उनकी', 'उनका', 'उसके', 'उसकी', 'उसमें', 'इसमें', 'इनमें', 'इनके', 'इनकी', 'इनका', 'दोनों', 'वही', 'ये', 'वो',
+  'उनके', 'उनकी', 'उनका', 'उसके', 'उसकी', 'उसमें', 'इसमें', 'इसका', 'इसकी', 'इसके', 'इनमें', 'इनके', 'इनकी', 'इनका', 'दोनों', 'वही', 'ये', 'वो',
   'इस लोकेशन', 'उसी लोकेशन', 'उस लोकेशन', 'इस location', 'उसी location',
   ...SYNONYM_GROUPS.referential,
 ];
@@ -623,9 +674,10 @@ function isReferentialScopeFollowUp(text) {
 function leftoverSubjectTokens(message) {
   let text = String(message || '');
   const strip = [
-    ...ORG_WORDS, ...ALL_ORG_SCOPE_WORDS, ...NAME_LIST_WORDS, ...LIST_WORDS, ...DETAIL_WORDS,
+    ...ORG_WORDS, ...ALL_ORG_SCOPE_WORDS, ...NAME_LIST_WORDS, ...LIST_WORDS, ...DETAIL_WORDS, ...ADDRESS_WORDS,
     ...COUNT_WORDS, ...ACTIVE_WORDS, ...DISABLED_WORDS, ...LOCATION_WORDS, ...EMPLOYEE_WORDS,
     ...HOUSEKEEPING_WORDS, ...SECURITY_WORDS, ...EMPLOYEE_NAME_ASK_WORDS, ...REFERRING_SCOPE_WORDS,
+    'ab', 'now', 'batao', 'bata', 'btao', 'matlab', 'meant', 'tha', 'thi', 'the', 'nahi', 'nahin', 'no', 'wrong',
     'ke', 'ki', 'ka', 'mein', 'me', 'do', 'de', 'the', 'of', 'and', 'or', 'for', 'with', 'andar', 'inside',
     'wali', 'wala', 'wale', 'jitne', 'jitni', 'jitna', 'sari', 'log', 'logon', 'logo', 'people', 'employer', 'naya', 'new',
     'mujhe', 'mujh', 'mere', 'meri', 'hai', 'hain', 'ho', 'please', 'give', 'tell', 'show', 'their', 'them', 'those', 'now',
@@ -642,6 +694,292 @@ function leftoverSubjectTokens(message) {
     else text = text.split(word).join(' ');
   }
   return words(text.replace(/\s+/g, ' ').trim());
+}
+
+function wantsBothGroup(text) {
+  return includesAny(text, BOTH_GROUP_WORDS);
+}
+
+function wantsAllEmployeeGroup(text) {
+  return includesAny(text, ALL_GROUP_WORDS);
+}
+
+function wantsFirstPairGroup(text) {
+  return wantsBothGroup(text) && includesAny(text, FIRST_GROUP_WORDS);
+}
+
+/** Locations for "donon / sabhi" under the sticky organization. */
+function resolveGroupLocations(context, locations) {
+  const orgId = context?.organizationId || null;
+  const orgPlaces = orgId
+    ? (locations || []).filter((item) => item.organizationId === orgId && item.status !== 'disabled')
+    : [];
+  if (Array.isArray(context?.locationGroup?.ids) && context.locationGroup.ids.length >= 2) {
+    const grouped = (locations || []).filter((item) => context.locationGroup.ids.includes(item.id) && item.status !== 'disabled');
+    if (grouped.length >= 2) return grouped;
+  }
+  if (Array.isArray(context?.locationIds) && context.locationIds.length >= 2) {
+    const sticky = (locations || []).filter((item) => context.locationIds.includes(item.id) && item.status !== 'disabled');
+    if (sticky.length >= 2) return sticky;
+  }
+  if (orgPlaces.length >= 2) return orgPlaces;
+  if (context?.locationId) {
+    const one = (locations || []).find((item) => item.id === context.locationId);
+    return one ? [one] : [];
+  }
+  return orgPlaces;
+}
+
+function buildEmployeeGroup(people, { organizationId = null } = {}) {
+  const members = (people || [])
+    .filter((item) => item && item.id)
+    .map((item) => ({
+      id: String(item.id),
+      name: item.name || '',
+      parentName: item.parentName || '',
+      locationId: item.locationId ? String(item.locationId) : null,
+      organizationId: item.organizationId ? String(item.organizationId) : (organizationId || null),
+    }));
+  return {
+    type: 'employee',
+    ids: members.map((item) => item.id),
+    members,
+    organizationId: organizationId || members[0]?.organizationId || null,
+  };
+}
+
+function buildLocationGroup(places, { organizationId = null } = {}) {
+  const members = (places || []).map((item) => ({
+    id: item.id,
+    name: item.workName || item.name,
+    workName: item.workName || null,
+    siteName: item.name || null,
+    organizationId: item.organizationId || organizationId || null,
+  }));
+  return {
+    type: 'location',
+    ids: members.map((item) => item.id),
+    members,
+    organizationId: organizationId || members[0]?.organizationId || null,
+  };
+}
+
+async function answerStickyEmployeeFieldFollowUp({
+  user,
+  message,
+  context,
+  directory,
+  lang,
+}) {
+  const group = context?.employeeQueryGroup || null;
+  const organizationId = group?.organizationId || context?.organizationId || null;
+  const locationId = group?.locationId || (
+    context?.locationIds?.length === 1 ? context.locationId || context.locationIds[0] : null
+  );
+  const locationIds = group?.locationIds?.length
+    ? group.locationIds
+    : (context?.locationIds?.length ? context.locationIds : null);
+  const status = group?.filters?.status || context?.employeeStatusFilter || 'active';
+  const orgName = group?.organizationName
+    || context?.organizationName
+    || directory.organizations.find((item) => item.id === organizationId)?.name
+    || 'Employees';
+
+  let employees = [];
+  if (Array.isArray(group?.members) && group.members.length && group.members.every((item) => item?.id)) {
+    // Prefer IDs already captured; re-fetch full field payloads.
+    employees = await retrieveEmployeesForQuery(user, {
+      employeeIds: group.members.map((item) => item.id),
+      status,
+    });
+  } else if (Array.isArray(group?.employeeIds) && group.employeeIds.length) {
+    employees = await retrieveEmployeesForQuery(user, {
+      employeeIds: group.employeeIds,
+      status,
+    });
+  } else if (Array.isArray(context?.employeeIds) && context.employeeIds.length) {
+    employees = await retrieveEmployeesForQuery(user, {
+      employeeIds: context.employeeIds,
+      status,
+    });
+  } else {
+    employees = await retrieveEmployeesForQuery(user, {
+      organizationId,
+      locationId: locationIds?.length ? null : locationId,
+      locationIds: locationIds?.length ? locationIds : null,
+      status,
+    });
+  }
+
+  const quantifier = parseEmployeeGroupQuantifier(message, employees.length);
+  const sliced = applyQuantifier(employees, quantifier);
+  if (sliced.ambiguous) {
+    const options = sliced.employees.slice(0, 12).map((item, index) => ({
+      index: index + 1,
+      id: item.id,
+      name: item.name,
+      parentName: item.parentName || '',
+      organizationId: item.organizationId,
+      locationId: item.locationId,
+    }));
+    const lines = options.map((item) => `${item.index}. ${item.name}${item.parentName ? ` (S/O ${item.parentName})` : ''}`).join('\n');
+    return {
+      intent: INTENTS.ORGANIZATION_EMPLOYEE_LIST,
+      reply: say(
+        lang,
+        `पिछली list में ${sliced.employees.length} employees हैं। किन ${sliced.needCount || 2} की details चाहिए?\n${lines}`,
+        `The previous list has ${sliced.employees.length} employees. Which ${sliced.needCount || 2} do you need?\n${lines}`,
+      ),
+      source: 'data',
+      context: {
+        ...context,
+        topic: 'employees',
+        organizationId,
+        organizationName: orgName,
+        employeeQueryGroup: buildEmployeeQueryGroup({
+          source: locationId || locationIds?.length ? 'location' : 'organization',
+          organizationId,
+          organizationName: orgName,
+          locationId,
+          locationIds,
+          employeeIds: sliced.employees.map((item) => item.id),
+          count: sliced.employees.length,
+          status,
+          lastQueryType: 'employee_list',
+          members: sliced.employees.map((item) => ({
+            id: item.id,
+            name: item.name,
+            locationId: item.locationId,
+            organizationId: item.organizationId,
+          })),
+        }),
+        employeeIds: sliced.employees.map((item) => item.id),
+        employeeGroup: {
+          type: 'employee',
+          ids: sliced.employees.map((item) => item.id),
+          members: sliced.employees,
+          organizationId,
+        },
+        pendingSelectionType: 'employee',
+        pendingSelection: { type: 'employee', options },
+      },
+      data: {
+        intent: INTENTS.ORGANIZATION_EMPLOYEE_LIST,
+        needsClarification: true,
+        ambiguous: true,
+        employeeIds: sliced.employees.map((item) => item.id),
+      },
+      choices: options.map((item) => ({
+        label: item.parentName ? `${item.name} (S/O ${item.parentName})` : item.name,
+        plan: {
+          type: 'directory_select',
+          selectionType: 'employee',
+          selectedId: item.id,
+          resumeIntent: 'employee_details',
+        },
+      })),
+    };
+  }
+
+  const parsed = parseRequestedEmployeeFields(message);
+  const selected = sliced.employees;
+  const title = locationId && !locationIds?.length
+    ? (context?.locationName || orgName)
+    : orgName;
+  const reply = formatEmployeeFieldReply({
+    title: `${title} – Employees`,
+    employees: selected,
+    fields: parsed.fields,
+    lang,
+    user,
+    complete: parsed.complete,
+  });
+  const employeeQueryGroup = buildEmployeeQueryGroup({
+    source: locationId || locationIds?.length ? 'location' : 'organization',
+    organizationId,
+    organizationName: orgName,
+    locationId,
+    locationIds,
+    employeeIds: selected.map((item) => item.id),
+    count: selected.length,
+    status,
+    lastQueryType: parsed.complete ? 'employee_profile' : 'employee_fields',
+    members: selected.map((item) => ({
+      id: item.id,
+      name: item.name,
+      locationId: item.locationId,
+      organizationId: item.organizationId,
+    })),
+  });
+  return {
+    intent: INTENTS.ORGANIZATION_EMPLOYEE_LIST,
+    reply,
+    source: 'data',
+    context: {
+      lastIntent: INTENTS.ORGANIZATION_EMPLOYEE_LIST,
+      topic: 'employees',
+      organizationId,
+      organizationName: orgName,
+      locationId: locationId || null,
+      locationIds: locationIds || (locationId ? [locationId] : null),
+      employeeQueryGroup,
+      employeeIds: selected.map((item) => item.id),
+      employeeGroup: {
+        type: 'employee',
+        ids: selected.map((item) => item.id),
+        members: selected,
+        organizationId,
+      },
+      items: selected.map((item) => item.name),
+      employeeStatusFilter: status,
+    },
+    data: {
+      intent: INTENTS.ORGANIZATION_EMPLOYEE_LIST,
+      organizationId,
+      locationId: locationId || null,
+      locationIds: locationIds || null,
+      employeeIds: selected.map((item) => item.id),
+      names: selected.map((item) => item.name),
+      fields: parsed.fields.map((field) => field.id),
+      complete: parsed.complete,
+      total: selected.length,
+    },
+  };
+}
+
+async function formatLocationDetailsBlock(location, lang) {
+  const counts = await countEmployees({
+    organizationId: location.organizationId,
+    locationId: location.id,
+    designation: location.designation || null,
+  });
+  const people = await Employee.find({
+    organizationId: location.organizationId,
+    locationId: location.id,
+    status: { $ne: 'disabled' },
+    ...(location.designation
+      ? { designation: new RegExp(`^${String(location.designation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      : {}),
+  }).select('name').sort({ name: 1 }).limit(40).lean();
+  const names = people.map((item) => item.name);
+  const label = `${location.workName || location.name}${location.name && location.workName && location.name !== location.workName ? ` – ${location.name}` : ''}`;
+  return {
+    label,
+    names,
+    text: [
+      label,
+      `Status: ${location.status || 'active'}`,
+      say(lang, `Designation: ${location.designation || '—'}`, `Designation: ${location.designation || '—'}`),
+      location.opNumber ? say(lang, `PO number: ${location.opNumber}`, `PO number: ${location.opNumber}`) : null,
+      location.address ? say(lang, `Address: ${location.address}`, `Address: ${location.address}`) : null,
+      say(lang, `Active employees: ${counts.active} (कुल ${counts.total})`, `Active employees: ${counts.active} (total ${counts.total})`),
+      names.length
+        ? `${say(lang, 'Employees:', 'Employees:')}\n${names.map((name, index) => `${index + 1}. ${name}`).join('\n')}`
+        : say(lang, 'कोई active employee नहीं।', 'No active employees.'),
+    ].filter(Boolean).join('\n'),
+    active: counts.active,
+    total: counts.total,
+  };
 }
 
 async function listEmployeesForLocations(locationList, { limit = 40, withDetails = false } = {}) {
@@ -870,15 +1208,50 @@ async function answerDirectoryQuery({
       || (entityText && entityText.split(/\s+/).filter(Boolean).length >= 2 && !hasOrgMention)
     );
   // Named location employee roster/details stay in directory ("Hurda Depot ke employees ki details").
-  const earlyLocationHit = resolveLocations(original, locations);
-  const namedLocationEmployeeAsk = Boolean(earlyLocationHit.matches.length || earlyLocationHit.ambiguous);
+  // Prefer sticky-org scope for early detection so "Park Care" after Green Valley is a site, not org profile.
+  // Also detect globally-named sites so sticky org-profile follow-ups do not swallow
+  // "Park Care ki details" when that site exists under another org (scoped miss → clarify).
+  const earlyLocScope = context?.organizationId && !wantsSwitchOrganization(original)
+    ? context.organizationId
+    : null;
+  const earlyLocationHit = resolveLocations(original, locations, {
+    organizationId: earlyLocScope,
+    minScore: earlyLocScope ? 28 : 40,
+  });
+  const earlyLocationHitGlobal = earlyLocScope
+    ? resolveLocations(original, locations, { minScore: 40 })
+    : earlyLocationHit;
+  const namedLocationHit = Boolean(
+    earlyLocationHit.matches.length
+    || earlyLocationHit.ambiguous
+    || earlyLocationHitGlobal.matches.length
+    || earlyLocationHitGlobal.ambiguous,
+  );
+  const namedLocationEmployeeAsk = namedLocationHit;
+  // Employee field follow-up after org/location employee count/list — before person-profile deferral
+  // and before org contact card. "Complete profile" / "Unka email" stay employee-group scoped.
+  if (!includesAny(original, ATTENDANCE_WORDS)
+    && isStickyEmployeeFieldFollowUp(original, context)
+    && !wantsSwitchOrganization(original)
+    && !hasOrgMention) {
+    return answerStickyEmployeeFieldFollowUp({
+      user,
+      message: original,
+      context,
+      directory: { organizations, locations },
+      lang,
+    });
+  }
+
   // Named-org employee roster/details must stay in directory; person-profile asks have no org/location hit.
   if (looksLikePersonEmployeeQuery && !hasOrgMention && !includesAny(original, LOCATION_WORDS) && !namedLocationEmployeeAsk) {
     return null;
   }
 
   // "उसकी फुल डिटेल्स / mobile email" after an org answer — keep the sticky organization.
-  if (isStickyOrganizationDetailsFollowUp(original, context) && !looksLikePersonEmployeeQuery) {
+  // Never swallow a clearly named site under that organization.
+  if (isStickyOrganizationDetailsFollowUp(original, context, { namedLocation: namedLocationHit })
+    && !looksLikePersonEmployeeQuery) {
     const stickyOrg = organizations.find((item) => item.id === context.organizationId);
     if (stickyOrg) {
       return buildOrganizationDetailsAnswer({
@@ -984,7 +1357,13 @@ async function answerDirectoryQuery({
     }
 
     // Location-sticky employee/count follow-ups belong to later location handlers.
-    if (askEmployees && !stickyLocationScope) {
+    // Org employee count/list may still carry locationIds (sibling sites) — that must not
+    // block "show their employees" / "unke employees" org-scoped roster follow-ups.
+    const locationOnlySticky = stickyLocationScope
+      && context?.lastIntent !== INTENTS.ORGANIZATION_EMPLOYEE_COUNT
+      && context?.lastIntent !== INTENTS.ORGANIZATION_EMPLOYEE_LIST
+      && context?.employeeQueryGroup?.source !== 'organization';
+    if (askEmployees && !locationOnlySticky) {
       if (askCount) {
         const orgIds = scopedOrgs.map((item) => item.id);
         if (orgIds.length) {
@@ -1077,14 +1456,48 @@ async function answerDirectoryQuery({
   const orgScore = orgResolve.scores?.[0]?.score || 0;
   const strongOrg = orgResolve.matches.length === 1 && !orgResolve.ambiguous && orgScore >= 70;
   const namedOrgId = strongOrg ? orgResolve.matches[0].id : null;
-  // Keep sticky org for designation follow-ups ("security wali location") when no new org was named.
-  // Do not let a weak city token (e.g. "Bhopal" → BHEL Bhopal) narrow location search.
-  const locOrgScope = namedOrgId || (!hasOrgMention ? context?.organizationId : null) || null;
+  const switchingOrg = wantsSwitchOrganization(original)
+    || isExplicitOrganizationSwitch(original)
+    || (namedOrgId && context?.organizationId && namedOrgId !== context.organizationId);
+  // Sticky org scopes every location resolve. Weak city org mentions must NOT clear sticky scope
+  // (that caused silent cross-org picks like another org's "Park Care").
+  // Global / unscoped search only when there is no sticky org and no strong named org,
+  // or the user explicitly switched organization scope.
+  const locOrgScope = namedOrgId
+    || (switchingOrg ? null : (context?.organizationId || null))
+    || null;
   let locResolve = resolveLocations(original, locations, { organizationId: locOrgScope });
-  // If scoped search missed a clearly named site, search all locations.
+  // Soft retry inside the SAME organization only — never fall back to another org's sites.
   if ((!locResolve.matches.length && !locResolve.ambiguous) && locOrgScope) {
-    const globalLoc = resolveLocations(original, locations);
-    if (globalLoc.matches.length || globalLoc.ambiguous) locResolve = globalLoc;
+    const softScoped = resolveLocations(original, locations, {
+      organizationId: locOrgScope,
+      minScore: 28,
+    });
+    if (softScoped.matches.length || softScoped.ambiguous) locResolve = softScoped;
+  }
+  // Strong org profile asks ("Green Valley Care ki details") must not be derailed by fuzzy
+  // location hits on shared tokens (green≈garden, Care suffix).
+  // Explicit "… Organisation ki information" also wins over a co-mentioned site name
+  // ("Khatri admin block and Organisation ki information").
+  const explicitOrgWordProfile = includesAny(original, ORG_WORDS)
+    && (wantsOrganizationProfile(original) || wantsOrgContactCard(original));
+  if ((strongOrg || explicitOrgWordProfile)
+    && (wantsOrganizationProfile(original) || wantsOrgContactCard(original))
+    && !includesAny(original, LOCATION_WORDS)
+    && !messageWantsEmployees(original)
+    && !includesAny(original, COUNT_WORDS)
+    && !isCorrectionFollowUp(original)) {
+    const orgLabel = normalizeName(orgResolve.matches[0]?.name || context?.organizationName || '');
+    const clearlyNamedSite = !explicitOrgWordProfile && (locResolve.matches || []).some((loc) => {
+      const work = normalizeName(loc.workName || '');
+      const site = normalizeName(loc.name || '');
+      if (work && work !== orgLabel && original.toLowerCase().includes(work)) return true;
+      if (site && site !== orgLabel && original.toLowerCase().includes(site)) return true;
+      return false;
+    });
+    if (!clearlyNamedSite) {
+      locResolve = { matches: [], ambiguous: false };
+    }
   }
   if ((!locResolve.matches.length && !locResolve.ambiguous)
     && (includesAny(original, SECURITY_WORDS) || includesAny(original, HOUSEKEEPING_WORDS))) {
@@ -1094,25 +1507,45 @@ async function answerDirectoryQuery({
     else if (keyed.length > 1) locResolve = { matches: keyed, ambiguous: true };
   }
   // Sticky location for short follow-ups ("uski destination", "location ki designation").
-  // Never reuse a previous site when the user named a different organization/place.
+  // Never reuse a previous site when the user named a different organization/place or corrected.
   if ((!locResolve.matches.length && !locResolve.ambiguous) && context?.locationId) {
     const sticky = locations.find((item) => item.id === context.locationId);
     const namedDifferentOrg = Boolean(namedOrgId && sticky && sticky.organizationId !== namedOrgId)
-      || (hasOrgMention && sticky && !orgResolve.matches.some((item) => item.id === sticky.organizationId));
+      || switchingOrg
+      || (strongOrg && sticky && sticky.organizationId !== namedOrgId);
+    const correcting = isCorrectionFollowUp(original);
     const freshSubject = leftoverSubjectTokens(original).length > 0 && !includesAny(original, [
-      'uski', 'uska', 'uske', 'unki', 'unka', 'wahi', 'vahi', 'उसकी', 'उसका', 'उसके', 'वही', 'ismein', 'isme', 'इस',
+      'uski', 'uska', 'uske', 'unki', 'unka', 'iska', 'iske', 'iski', 'wahi', 'vahi',
+      'उसकी', 'उसका', 'उसके', 'वही', 'इसका', 'इसकी', 'इसके', 'ismein', 'isme', 'इस',
     ]);
     const locationFollowUp = includesAny(original, LOCATION_WORDS)
-      || includesAny(original, ['uski', 'uska', 'uske', 'unki', 'unka', 'wahi', 'vahi', 'उसकी', 'उसका', 'उसके', 'वही'])
-      || words(original).length <= 6;
+      || includesAny(original, ['uski', 'uska', 'uske', 'unki', 'unka', 'iska', 'iske', 'wahi', 'vahi', 'उसकी', 'उसका', 'उसके', 'वही', 'इसका', 'इसके'])
+      || words(original).length <= 8;
     // Employee-roster sticky ("unki details") must not become location profile details.
     const employeeRosterSticky = context?.topic === 'employees'
       || context?.lastIntent === INTENTS.LOCATION_EMPLOYEE_COUNT
       || context?.lastIntent === INTENTS.DEPARTMENT_EMPLOYEE_COUNT;
-    if (sticky && locationFollowUp && !namedDifferentOrg && !freshSubject && !employeeRosterSticky
+    if (sticky && locationFollowUp && !namedDifferentOrg && !freshSubject && !correcting && !employeeRosterSticky
       && (includesAny(original, DETAIL_WORDS)
-        || includesAny(original, ['designation', 'destination', 'desination', 'destignation', 'address', 'adress', 'status', 'पद', 'पता', 'एड्रेस']))) {
+        || includesAny(original, ADDRESS_WORDS)
+        || includesAny(original, ['designation', 'destination', 'desination', 'destignation', 'status', 'पद']))) {
       locResolve = { matches: [sticky], ambiguous: false };
+    }
+  }
+
+  // "Dusri wali location" / correction without a clear new name → list sites inside sticky org.
+  if ((!locResolve.matches.length && !locResolve.ambiguous) && locOrgScope
+    && (isCorrectionFollowUp(original) || includesAny(original, SWITCH_ORG_WORDS))
+    && (includesAny(original, LOCATION_WORDS) || includesAny(original, DETAIL_WORDS))) {
+    const orgPlaces = locations.filter((item) => (
+      item.organizationId === locOrgScope
+      && item.status !== 'disabled'
+      && item.id !== context?.locationId
+    ));
+    if (orgPlaces.length === 1) {
+      locResolve = { matches: orgPlaces, ambiguous: false };
+    } else if (orgPlaces.length > 1) {
+      locResolve = { matches: orgPlaces.slice(0, 12), ambiguous: true };
     }
   }
   const hasLocationMention = locResolve.matches.length > 0 || locResolve.ambiguous;
@@ -1154,13 +1587,93 @@ async function answerDirectoryQuery({
     }
   }
 
+  // Sticky multi-location org: "sabhi / donon employees ke naam" stay inside that org's sites.
+  // Broad "sare employees" with only one sticky site still means the dashboard-wide ask.
+  const hasMultiLocationScope = (context?.locationIds?.length >= 2)
+    || (context?.locationGroup?.ids?.length >= 2);
+  if (messageWantsEmployees(original)
+    && (wantsBothGroup(original) || (wantsAllEmployeeGroup(original) && hasMultiLocationScope))
+    && !includesAny(original, ORG_WORDS)
+    && !effectiveHasOrgMention
+    && !hasLocationMention
+    && leftoverSubject.length === 0
+    && context?.organizationId
+    && !strongOrg
+    && !includesAny(original, ATTENDANCE_WORDS)) {
+    const places = resolveGroupLocations(context, locations);
+    if (places.length) {
+      const askNames = wantsEmployeeNames(original) || includesAny(original, DETAIL_WORDS) || !includesAny(original, COUNT_WORDS);
+      if (askNames) {
+        const { blocks, allNames, allPeople } = await listEmployeesForLocations(places, { withDetails: true });
+        const employeeGroup = buildEmployeeGroup(allPeople, { organizationId: context.organizationId });
+        const body = blocks.map((block) => (
+          block.names.length
+            ? `${block.label}:\n${block.lines}`
+            : `${block.label}: ${say(lang, 'कोई active employee नहीं।', 'No active employees.')}`
+        )).join('\n\n');
+        return {
+          intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+          reply: say(
+            lang,
+            `${context.organizationName || 'Organization'} के employees (${allNames.length}):\n${body}`,
+            `${context.organizationName || 'Organization'} employees (${allNames.length}):\n${body}`,
+          ),
+          source: 'data',
+          context: {
+            lastIntent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+            organizationId: context.organizationId,
+            organizationName: context.organizationName || null,
+            locationIds: places.map((item) => item.id),
+            locationId: null,
+            locationGroup: buildLocationGroup(places, { organizationId: context.organizationId }),
+            employeeGroup,
+            employeeIds: employeeGroup.ids,
+            topic: 'employees',
+            title: 'Employees',
+            items: allNames,
+          },
+          data: {
+            intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+            names: allNames,
+            locationIds: places.map((item) => item.id),
+            employeeIds: employeeGroup.ids,
+            multi: true,
+          },
+        };
+      }
+      const counts = await countEmployees({ organizationId: context.organizationId });
+      return {
+        intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+        reply: say(
+          lang,
+          `${context.organizationName || 'Organization'} में active employees: ${counts.active} (कुल ${counts.total}).`,
+          `${context.organizationName || 'Organization'}: active employees = ${counts.active} (total ${counts.total}).`,
+        ),
+        source: 'data',
+        context: {
+          ...context,
+          lastIntent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+          topic: 'employees',
+        },
+        data: {
+          intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+          organizationId: context.organizationId,
+          active: counts.active,
+          total: counts.total,
+        },
+      };
+    }
+  }
+
   const globalEmployeeAsk = messageWantsEmployees(original)
     && includesAny(original, ALL_ORG_SCOPE_WORDS)
     && !effectiveHasOrgMention
     && !hasLocationMention
-    && leftoverSubject.length === 0;
+    && leftoverSubject.length === 0
+    && !wantsBothGroup(original)
+    && !hasMultiLocationScope;
 
-  // "sabhi/sare employees" across dashboard — never reuse a sticky location list.
+  // "sabhi/sare employees" across dashboard — not when a multi-location org group is active.
   if (globalEmployeeAsk) {
     const counts = await countEmployees({
       organizationId: user.role === 'admin' ? null : String(user.id),
@@ -1268,32 +1781,104 @@ async function answerDirectoryQuery({
     return null;
   }
 
-  // "donon locations ke employee ke naam" — all sticky org locations, not only the last one.
-  // Skip when a department keyword is present — housekeeping/security handlers own those asks.
+  // Sticky org/location employee field follow-up (late path if early handler did not run).
   if (!attendanceOrMarkAsk
-    && (includesAny(original, ['dono', 'donon', 'both', 'दोनों']) || includesAny(original, ALL_ORG_SCOPE_WORDS))
-    && includesAny(original, LOCATION_WORDS)
-    && (messageWantsEmployees(original) || wantsEmployeeNames(original))
+    && isStickyEmployeeFieldFollowUp(original, context)
+    && !strongOrg
+    && !hasLocationMention) {
+    const parsedFields = parseRequestedEmployeeFields(original);
+    if (parsedFields.fields.length || parsedFields.complete || parsedFields.wantsNames) {
+      return answerStickyEmployeeFieldFollowUp({
+        user,
+        message: original,
+        context,
+        directory: { organizations, locations },
+        lang,
+      });
+    }
+  }
+
+  // "donon ki details do" → both sticky-org locations' details (not only the last selected site).
+  if (!attendanceOrMarkAsk
+    && wantsBothGroup(original)
+    && includesAny(original, DETAIL_WORDS)
+    && !messageWantsEmployees(original)
+    && !wantsEmployeeNames(original)
+    && !includesAny(original, COUNT_WORDS)
     && !includesAny(original, HOUSEKEEPING_WORDS)
     && !includesAny(original, SECURITY_WORDS)
     && context?.organizationId
     && !strongOrg) {
-    const places = locations.filter((item) => item.organizationId === context.organizationId && item.status !== 'disabled');
+    const places = resolveGroupLocations(context, locations);
+    if (places.length >= 2) {
+      const blocks = await Promise.all(places.map((place) => formatLocationDetailsBlock(place, lang)));
+      const locationGroup = buildLocationGroup(places, { organizationId: context.organizationId });
+      return {
+        intent: INTENTS.LOCATION_DETAILS,
+        reply: say(
+          lang,
+          `${context.organizationName || 'Organization'} की ${places.length} locations:\n\n${blocks.map((block) => block.text).join('\n\n')}`,
+          `${context.organizationName || 'Organization'} — ${places.length} locations:\n\n${blocks.map((block) => block.text).join('\n\n')}`,
+        ),
+        source: 'data',
+        context: {
+          lastIntent: INTENTS.LOCATION_DETAILS,
+          organizationId: context.organizationId,
+          organizationName: context.organizationName || null,
+          locationId: null,
+          locationName: null,
+          locationIds: places.map((item) => item.id),
+          locationGroup,
+          topic: 'locations',
+          title: `${context.organizationName || 'Organization'} locations`,
+          items: places.map((item) => item.workName || item.name),
+          employeeGroup: null,
+          employeeIds: null,
+        },
+        data: {
+          intent: INTENTS.LOCATION_DETAILS,
+          organizationId: context.organizationId,
+          locationIds: places.map((item) => item.id),
+          multi: true,
+        },
+      };
+    }
+  }
+
+  // "donon / sabhi employees ke naam" — all sticky org locations (LOCATION_WORDS optional).
+  // Skip org-name lists ("sari organisation ke naam") and department keyword asks.
+  if (!attendanceOrMarkAsk
+    && (wantsBothGroup(original) || wantsAllEmployeeGroup(original)
+      || (includesAny(original, ALL_ORG_SCOPE_WORDS) && messageWantsEmployees(original))
+      || (includesAny(original, LOCATION_WORDS) && wantsBothGroup(original)))
+    && (messageWantsEmployees(original) || (wantsEmployeeNames(original) && !includesAny(original, ORG_WORDS)))
+    && !includesAny(original, ORG_WORDS)
+    && !includesAny(original, HOUSEKEEPING_WORDS)
+    && !includesAny(original, SECURITY_WORDS)
+    && !includesAny(original, ATTENDANCE_WORDS)
+    && context?.organizationId
+    && !strongOrg) {
+    const places = resolveGroupLocations(context, locations);
     if (places.length) {
       const askNames = wantsEmployeeNames(original) || includesAny(original, DETAIL_WORDS) || !includesAny(original, COUNT_WORDS);
       if (askNames) {
-        const { blocks, allNames } = await listEmployeesForLocations(places);
+        const { blocks, allNames, allPeople } = await listEmployeesForLocations(places, { withDetails: true });
+        const employeeGroup = buildEmployeeGroup(allPeople, { organizationId: context.organizationId });
+        const locationGroup = buildLocationGroup(places, { organizationId: context.organizationId });
         const body = blocks.map((block) => (
           block.names.length
             ? `${block.label}:\n${block.lines}`
             : `${block.label}: ${say(lang, 'कोई active employee नहीं।', 'No active employees.')}`
         )).join('\n\n');
+        const pickHint = allPeople.length
+          ? say(lang, '\nDetails के लिए नीचे से नाम चुनें।', '\nSelect a name below for details.')
+          : '';
         return {
           intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
           reply: say(
             lang,
-            `${context.organizationName || 'Organization'} की ${places.length} locations के employees (${allNames.length}):\n${body}`,
-            `${context.organizationName || 'Organization'} employees across ${places.length} locations (${allNames.length}):\n${body}`,
+            `${context.organizationName || 'Organization'} की ${places.length} locations के employees (${allNames.length}):\n${body}${pickHint}`,
+            `${context.organizationName || 'Organization'} employees across ${places.length} locations (${allNames.length}):\n${body}${pickHint}`,
           ),
           source: 'data',
           context: {
@@ -1302,11 +1887,47 @@ async function answerDirectoryQuery({
             organizationName: context.organizationName || null,
             locationIds: places.map((item) => item.id),
             locationId: null,
+            locationGroup,
+            employeeGroup,
+            employeeIds: employeeGroup.ids,
             topic: 'employees',
             title: 'Employees',
             items: allNames,
+            pendingSelectionType: allPeople.length ? 'employee' : null,
+            pendingSelection: allPeople.length
+              ? {
+                type: 'employee',
+                options: allPeople.slice(0, 12).map((item, index) => ({
+                  index: index + 1,
+                  id: item.id,
+                  name: item.name,
+                  parentName: item.parentName || '',
+                  organizationId: item.organizationId,
+                  locationId: item.locationId,
+                })),
+              }
+              : null,
           },
-          data: { intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT, names: allNames, locationIds: places.map((item) => item.id) },
+          data: {
+            intent: INTENTS.ORGANIZATION_EMPLOYEE_COUNT,
+            names: allNames,
+            locationIds: places.map((item) => item.id),
+            employeeIds: employeeGroup.ids,
+            multi: true,
+          },
+          choices: allPeople.slice(0, 12).map((item) => ({
+            label: [
+              item.name,
+              item.parentName ? `S/O ${item.parentName}` : null,
+              item.designation || null,
+            ].filter(Boolean).join(' · '),
+            plan: {
+              type: 'directory_select',
+              selectionType: 'employee',
+              selectedId: item.id,
+              resumeIntent: 'employee_details',
+            },
+          })),
         };
       }
     }
@@ -1314,6 +1935,7 @@ async function answerDirectoryQuery({
 
   // "unke naam / unki details" after employee count for sticky location(s).
   // Bare "name" is allowed only when very short and no new place/org leftover (never "Ambala employees").
+  // "donon ki details" is handled above as multi-location details — do not collapse to one site's roster.
   const bareNameFollowUp = wantsEmployeeNames(original)
     && words(original).length <= 3
     && leftoverSubject.length === 0
@@ -1322,12 +1944,14 @@ async function answerDirectoryQuery({
     && (isReferentialScopeFollowUp(original) || words(original).length <= 6)
     && leftoverSubject.length === 0
     && !includesAny(original, COUNT_WORDS)
-    && !includesAny(original, ATTENDANCE_WORDS);
+    && !includesAny(original, ATTENDANCE_WORDS)
+    && !wantsBothGroup(original);
   if ((wantsEmployeeNames(original) || stickyEmployeeDetailsFollowUp)
     && (isReferentialScopeFollowUp(original) || bareNameFollowUp || stickyEmployeeDetailsFollowUp)
     && !includesAny(original, LOCATION_WORDS) && !includesAny(original, ORG_WORDS)
     && !includesAny(original, HOUSEKEEPING_WORDS) && !includesAny(original, SECURITY_WORDS)
     && !includesAny(original, ALL_ORG_SCOPE_WORDS)
+    && !wantsBothGroup(original)
     && leftoverSubject.length === 0
     && words(original).length <= 8
     && (context?.locationIds?.length || context?.locationId)
@@ -1356,6 +1980,9 @@ async function answerDirectoryQuery({
         };
       }
       const { blocks, allNames, allPeople } = await listEmployeesForLocations(places, { withDetails: true });
+      const employeeGroup = buildEmployeeGroup(allPeople, {
+        organizationId: context.organizationId || places[0]?.organizationId || null,
+      });
       const pickHint = allPeople.length
         ? say(lang, '\nDetails के लिए नीचे से नाम चुनें।', '\nSelect a name below for details.')
         : '';
@@ -1376,6 +2003,11 @@ async function answerDirectoryQuery({
           ...context,
           lastIntent: INTENTS.LOCATION_EMPLOYEE_COUNT,
           locationIds: places.map((item) => item.id),
+          locationGroup: buildLocationGroup(places, {
+            organizationId: context.organizationId || places[0]?.organizationId || null,
+          }),
+          employeeGroup,
+          employeeIds: employeeGroup.ids,
           topic: 'employees',
           title: 'Employees',
           items: allNames,
@@ -1394,7 +2026,12 @@ async function answerDirectoryQuery({
             }
             : null,
         },
-        data: { intent: INTENTS.LOCATION_EMPLOYEE_COUNT, names: allNames },
+        data: {
+          intent: INTENTS.LOCATION_EMPLOYEE_COUNT,
+          names: allNames,
+          employeeIds: employeeGroup.ids,
+          locationIds: places.map((item) => item.id),
+        },
         choices: allPeople.slice(0, 12).map((item) => ({
           label: [
             item.name,
@@ -1484,17 +2121,33 @@ async function answerDirectoryQuery({
     || context?.topic === 'location'
     || context?.lastIntent === INTENTS.LOCATION_EMPLOYEE_COUNT
     || context?.lastIntent === INTENTS.DEPARTMENT_EMPLOYEE_COUNT;
+  // Sticky-org follow-up that names a leftover site ("Park Care ki details") is NOT an org profile ask.
+  const stickySiteAsk = Boolean(locOrgScope)
+    && leftoverSubject.length > 0
+    && !strongOrg
+    && !explicitOrgWordProfile
+    && !wantsOrgContactCard(original);
   const prefersOrgProfile = !attendanceOrMarkAsk
     && (wantsOrganizationProfile(original) || wantsOrgContactCard(original)
       || (includesAny(original, ORG_WORDS) && includesAny(original, DETAIL_WORDS)))
+    && (!hasLocationMention || explicitOrgWordProfile)
+    && !stickySiteAsk
     && !includesAny(original, LOCATION_WORDS)
     && !includesAny(original, HOUSEKEEPING_WORDS)
     && !includesAny(original, SECURITY_WORDS)
     && !messageWantsEmployees(original)
     && !stickyEmployeeLocationTopic
+    && !isCorrectionFollowUp(original)
     && (strongOrg || hasOrgMention || context?.organizationId || includesAny(original, ORG_WORDS));
   if (prefersOrgProfile) {
     intent = INTENTS.ORGANIZATION_DETAILS;
+  }
+  // Named site under sticky org → location details even without the word "location".
+  if ((hasLocationMention || stickySiteAsk) && !prefersOrgProfile && !explicitOrgWordProfile
+    && (includesAny(original, DETAIL_WORDS) || includesAny(original, ADDRESS_WORDS) || includesAny(original, LIST_WORDS)
+      || isCorrectionFollowUp(original) || leftoverSubject.length > 0)
+    && !messageWantsEmployees(original) && !includesAny(original, COUNT_WORDS)) {
+    intent = INTENTS.LOCATION_DETAILS;
   }
   // Bare "X organisation" (no details word) still means that org's profile.
   if (!intent && (strongOrg || effectiveHasOrgMention) && includesAny(original, ORG_WORDS)
@@ -1582,8 +2235,10 @@ async function answerDirectoryQuery({
   }
 
   // Never ask "which location?" for an org profile / contact-card request.
+  // Do not override when the user already named a concrete site.
   if ((intent === INTENTS.LOCATION_DETAILS || intent === INTENTS.LOCATION_EMPLOYEE_COUNT)
     && prefersOrgProfile
+    && !hasLocationMention
     && organization) {
     intent = INTENTS.ORGANIZATION_DETAILS;
   }
@@ -1693,6 +2348,7 @@ async function answerDirectoryQuery({
       status: wantsDisabled ? 'disabled' : 'active',
     });
     const matched = wantsDisabled ? Math.max(0, counts.total - counts.active) : counts.active;
+    const orgPlaces = locations.filter((item) => item.organizationId === organization.id && item.status !== 'disabled');
     return {
       intent,
       reply: say(
@@ -1707,7 +2363,18 @@ async function answerDirectoryQuery({
         organizationId: organization.id,
         organizationName: organization.name,
         organizationIds: [organization.id],
+        locationIds: orgPlaces.map((item) => item.id),
+        locationGroup: buildLocationGroup(orgPlaces, { organizationId: organization.id }),
         employeeStatusFilter: wantsDisabled ? 'disabled' : 'active',
+        employeeQueryGroup: buildEmployeeQueryGroup({
+          source: 'organization',
+          organizationId: organization.id,
+          organizationName: organization.name,
+          locationIds: orgPlaces.map((item) => item.id),
+          count: matched,
+          status: wantsDisabled ? 'disabled' : 'active',
+          lastQueryType: 'employee_count',
+        }),
       },
       data: {
         intent,
@@ -1768,6 +2435,33 @@ async function answerDirectoryQuery({
         employeeStatusFilter: wantsDisabled ? 'disabled' : 'active',
         items: people.map((person) => person.name),
         title: `${organization.name} employees`,
+        employeeIds: people.map((person) => String(person._id || person.id)).filter(Boolean),
+        employeeQueryGroup: buildEmployeeQueryGroup({
+          source: 'organization',
+          organizationId: organization.id,
+          organizationName: organization.name,
+          employeeIds: people.map((person) => String(person._id || person.id)).filter(Boolean),
+          count: people.length,
+          status: wantsDisabled ? 'disabled' : 'active',
+          lastQueryType: withDetails ? 'employee_profile' : 'employee_list',
+          members: people.map((person) => ({
+            id: String(person._id || person.id || ''),
+            name: person.name,
+            organizationId: organization.id,
+            locationId: person.locationId ? String(person.locationId) : null,
+          })).filter((item) => item.id),
+        }),
+        employeeGroup: {
+          type: 'employee',
+          ids: people.map((person) => String(person._id || person.id)).filter(Boolean),
+          members: people.map((person) => ({
+            id: String(person._id || person.id || ''),
+            name: person.name,
+            organizationId: organization.id,
+            locationId: person.locationId ? String(person.locationId) : null,
+          })).filter((item) => item.id),
+          organizationId: organization.id,
+        },
       },
       data: {
         intent,
@@ -1782,6 +2476,17 @@ async function answerDirectoryQuery({
   }
 
   if (intent === INTENTS.ACTIVE_EMPLOYEE_COUNT) {
+    // Never let a sticky org/location field follow-up collapse into the dashboard count.
+    if (isStickyEmployeeFieldFollowUp(original, context)
+      && (context?.organizationId || context?.employeeQueryGroup || context?.locationId)) {
+      return answerStickyEmployeeFieldFollowUp({
+        user,
+        message: original,
+        context,
+        directory: { organizations, locations },
+        lang,
+      });
+    }
     const scopeOrgId = user.role === 'admin' ? null : String(user.id);
     const counts = await countEmployees({ organizationId: scopeOrgId });
     const scope = user.role === 'admin'
@@ -1791,7 +2496,7 @@ async function answerDirectoryQuery({
       intent,
       reply: `${scope} active employees: ${counts.active} (कुल ${counts.total}).`,
       source: 'data',
-      context: { lastIntent: intent, organizationId: scopeOrgId },
+      context: { lastIntent: intent, organizationId: scopeOrgId, employeeQueryGroup: null },
       data: { intent, active: counts.active, total: counts.total, organizationId: scopeOrgId },
     };
   }
@@ -2048,6 +2753,39 @@ async function answerDirectoryQuery({
     }
     const location = locResolve.matches[0];
     if (!location) {
+      // Scoped miss: never invent another org's site — offer this organization's locations.
+      if (locOrgScope) {
+        const orgPlaces = locations
+          .filter((item) => item.organizationId === locOrgScope && item.status !== 'disabled')
+          .slice(0, 12);
+        if (orgPlaces.length) {
+          const orgLabel = organizations.find((item) => item.id === locOrgScope)?.name
+            || context?.organizationName
+            || 'organization';
+          const options = orgPlaces.map((item) => ({
+            id: item.id,
+            name: item.workName || item.name,
+            organizationId: item.organizationId,
+            locationId: item.id,
+          }));
+          const lines = options.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+          return {
+            intent,
+            reply: say(
+              lang,
+              `${orgLabel} में यह location नहीं मिली। कौन-सी location?\n${lines}`,
+              `That location was not found in ${orgLabel}. Which location?\n${lines}`,
+            ),
+            source: 'data',
+            context: selectionContext('location', options, {
+              lastIntent: intent,
+              organizationId: locOrgScope,
+              organizationName: orgLabel,
+            }),
+            data: { intent, needsLocation: true, scopedMiss: true, options },
+          };
+        }
+      }
       return {
         intent,
         reply: say(
@@ -2057,6 +2795,19 @@ async function answerDirectoryQuery({
         ),
         source: 'data',
         data: { intent, needsLocation: true },
+      };
+    }
+    // Guard: sticky-org answers must stay inside that organization.
+    if (locOrgScope && location.organizationId && location.organizationId !== locOrgScope) {
+      return {
+        intent,
+        reply: say(
+          lang,
+          'यह location इस organization में नहीं मिली। कृपया सही location चुनें।',
+          'That location is not in this organization. Please choose the correct location.',
+        ),
+        source: 'data',
+        data: { intent, scopedMiss: true, expectedOrganizationId: locOrgScope },
       };
     }
     if (intent === INTENTS.LOCATION_DETAILS) {
@@ -2137,34 +2888,18 @@ async function answerDirectoryQuery({
           data: { intent, locationId: location.id, opNumber: location.opNumber || null },
         };
       }
-      const counts = await countEmployees({
-        organizationId: location.organizationId,
-        locationId: location.id,
-        designation: location.designation || null,
-      });
-      const people = await Employee.find({
-        organizationId: location.organizationId,
-        locationId: location.id,
-        status: { $ne: 'disabled' },
-        ...(location.designation ? { designation: new RegExp(`^${String(location.designation).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } : {}),
-      }).select('name').sort({ name: 1 }).limit(40).lean();
-      const names = people.map((item) => item.name);
-      const siblingIds = locations
-        .filter((item) => item.organizationId === location.organizationId && item.status !== 'disabled')
-        .map((item) => item.id);
+      const siblingPlaces = locations.filter((item) => (
+        item.organizationId === location.organizationId && item.status !== 'disabled'
+      ));
+      const siblingIds = siblingPlaces.map((item) => item.id);
+      const block = await formatLocationDetailsBlock(location, lang);
+      const adminLabel = label;
+      const replyText = block.text.startsWith(block.label)
+        ? `${adminLabel}${block.text.slice(block.label.length)}`
+        : block.text;
       return {
         intent,
-        reply: [
-          label,
-          `Status: ${location.status || 'active'}`,
-          say(lang, `Designation: ${location.designation || '—'}`, `Designation: ${location.designation || '—'}`),
-          location.opNumber ? say(lang, `PO number: ${location.opNumber}`, `PO number: ${location.opNumber}`) : null,
-          location.address ? say(lang, `Address: ${location.address}`, `Address: ${location.address}`) : null,
-          say(lang, `Active employees: ${counts.active} (कुल ${counts.total})`, `Active employees: ${counts.active} (total ${counts.total})`),
-          names.length
-            ? `${say(lang, 'Employees:', 'Employees:')}\n${names.map((name, index) => `${index + 1}. ${name}`).join('\n')}`
-            : say(lang, 'कोई active employee नहीं।', 'No active employees.'),
-        ].filter(Boolean).join('\n'),
+        reply: replyText,
         source: 'data',
         context: {
           lastIntent: intent,
@@ -2172,19 +2907,23 @@ async function answerDirectoryQuery({
           organizationName: location.organizationName,
           locationId: location.id,
           locationName: location.workName || location.name,
-          // Keep sibling sites so "donon locations ke employees" still sees the whole org.
+          // Keep sibling sites so "donon locations / donon ki details" still sees the whole org.
           locationIds: siblingIds.length ? siblingIds : [location.id],
+          locationGroup: buildLocationGroup(siblingPlaces.length ? siblingPlaces : [location], {
+            organizationId: location.organizationId,
+          }),
           topic: 'location',
           title: location.workName || location.name,
-          items: names.length ? names : [location.workName || location.name],
+          items: block.names.length ? block.names : [location.workName || location.name],
         },
         data: {
           intent,
           organizationId: location.organizationId,
           locationId: location.id,
-          active: counts.active,
-          total: counts.total,
-          names,
+          locationIds: siblingIds.length ? siblingIds : [location.id],
+          active: block.active,
+          total: block.total,
+          names: block.names,
           designation: location.designation || null,
         },
       };
@@ -2192,10 +2931,15 @@ async function answerDirectoryQuery({
     const employeeLabel = `${location.workName || location.name}${location.name && location.workName && location.name !== location.workName ? ` – ${location.name}` : ''}`;
     const askEmployeeRoster = (wantsEmployeeNames(original) || includesAny(original, DETAIL_WORDS) || includesAny(original, LIST_WORDS))
       && !includesAny(original, COUNT_WORDS);
+    const siblingPlacesForCount = locations.filter((item) => (
+      item.organizationId === location.organizationId && item.status !== 'disabled'
+    ));
+    const siblingIdsForCount = siblingPlacesForCount.map((item) => item.id);
     if (askEmployeeRoster) {
       const wantDetails = includesAny(original, DETAIL_WORDS);
       const { blocks, allNames, allPeople } = await listEmployeesForLocations([location], { withDetails: true });
       const block = blocks[0];
+      const employeeGroup = buildEmployeeGroup(allPeople, { organizationId: location.organizationId });
       const pickHint = allPeople.length
         ? say(lang, '\nDetails के लिए नीचे से नाम चुनें।', '\nSelect a name below for details.')
         : '';
@@ -2215,7 +2959,12 @@ async function answerDirectoryQuery({
           organizationName: location.organizationName,
           locationId: location.id,
           locationName: employeeLabel,
-          locationIds: [location.id],
+          locationIds: siblingIdsForCount.length ? siblingIdsForCount : [location.id],
+          locationGroup: buildLocationGroup(siblingPlacesForCount.length ? siblingPlacesForCount : [location], {
+            organizationId: location.organizationId,
+          }),
+          employeeGroup,
+          employeeIds: employeeGroup.ids,
           topic: 'employees',
           title: `${employeeLabel} employees`,
           items: allNames,
@@ -2238,7 +2987,9 @@ async function answerDirectoryQuery({
           intent,
           organizationId: location.organizationId,
           locationId: location.id,
+          locationIds: siblingIdsForCount.length ? siblingIdsForCount : [location.id],
           names: allNames,
+          employeeIds: employeeGroup.ids,
           details: wantDetails,
         },
         choices: allPeople.slice(0, 12).map((item) => ({
@@ -2275,7 +3026,20 @@ async function answerDirectoryQuery({
         organizationName: location.organizationName,
         locationId: location.id,
         locationName: employeeLabel,
-        locationIds: [location.id],
+        locationIds: siblingIdsForCount.length ? siblingIdsForCount : [location.id],
+        locationGroup: buildLocationGroup(siblingPlacesForCount.length ? siblingPlacesForCount : [location], {
+          organizationId: location.organizationId,
+        }),
+        employeeQueryGroup: buildEmployeeQueryGroup({
+          source: 'location',
+          organizationId: location.organizationId,
+          organizationName: location.organizationName,
+          locationId: location.id,
+          locationIds: [location.id],
+          count: counts.active,
+          status: 'active',
+          lastQueryType: 'employee_count',
+        }),
         topic: 'employees',
         title: `${employeeLabel} employees`,
         items: [],
@@ -2284,6 +3048,7 @@ async function answerDirectoryQuery({
         intent,
         organizationId: location.organizationId,
         locationId: location.id,
+        locationIds: siblingIdsForCount.length ? siblingIdsForCount : [location.id],
         active: counts.active,
         total: counts.total,
       },

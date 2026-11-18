@@ -4,8 +4,15 @@ const { httpError } = require('../../utils/httpError');
 const { preferLang, localizeAnswer, enrichMessageForRules } = require('../assistantLanguage');
 const { registerAllTools } = require('./tools');
 const { detectLanguageHeuristic } = require('./assistantIntent');
-const { getActiveContext, mergeContext, isShortSubjectFollowUp } = require('./assistantContext');
-const { answerMemoryQuestion } = require('./assistantMemory');
+const {
+  getActiveContext,
+  mergeContext,
+  isShortSubjectFollowUp,
+  isCorrectionFollowUp,
+  validateAnswerAgainstContext,
+  expectsMultipleEntities,
+} = require('./assistantContext');
+const { answerMemoryQuestion, summarizeConversationContext } = require('./assistantMemory');
 const { confirmPendingAction } = require('./assistantToolExecutor');
 const { answerDirectoryQuery } = require('./assistantDirectoryQuery');
 const { applyApprovedFeedback } = require('./assistantFeedback');
@@ -112,6 +119,14 @@ async function chat(user, input = {}, deps = {}) {
     document: localized.document || null,
   });
   if (session.messages.length > MAX_SESSION_MESSAGES) {
+    // Keep a compact entity summary before trimming older turns.
+    const summary = summarizeConversationContext(session.context, session.messages);
+    if (summary) {
+      session.context = mergeContext(session.context, {
+        conversationSummary: summary,
+        contextConfidence: session.context?.contextConfidence || 0.85,
+      });
+    }
     session.messages.splice(0, session.messages.length - MAX_SESSION_MESSAGES);
   }
 
@@ -128,17 +143,9 @@ async function chat(user, input = {}, deps = {}) {
   }
 
   session.markModified('context');
-  // Persist session without blocking the HTTP reply when the chat already has an id.
+  // Always await persistence so rapid consecutive messages see the latest context.
   const sessionId = session.isNew ? null : String(session._id);
-  if (session.isNew) {
-    await session.save();
-  } else {
-    session.save().catch((error) => {
-      if (process.env.NODE_ENV !== 'test') {
-        console.warn(`Assistant session save failed: ${error.message}`);
-      }
-    });
-  }
+  await session.save();
 
   if (process.env.NODE_ENV !== 'test') {
     console.info(`Assistant chat ${Date.now() - startedAt}ms source=${localized.source || 'unknown'}`);
@@ -224,14 +231,50 @@ async function handleTurn(user, input, session, state, { respondLegacy, loadDire
       // Normalize + synonym-bridge before directory intent (no LLM).
       const nluPrepared = prepareMessageForIntent(message);
       const directoryMessage = enrichMessageForRules(nluPrepared.expanded || message);
+      // Corrections clear stale location sticky so a new name can resolve inside the org.
+      const directoryContext = isCorrectionFollowUp(message) && context
+        ? {
+          ...context,
+          locationId: null,
+          locationName: null,
+        }
+        : context;
       const directoryAnswer = await answerDirectoryQuery({
         user,
         message: directoryMessage,
         directory,
-        context,
+        context: directoryContext,
         lang,
       });
       if (directoryAnswer) {
+        const validation = validateAnswerAgainstContext(directoryAnswer, directoryContext, {
+          expectsMultiple: expectsMultipleEntities(message),
+        });
+        if (!validation.ok) {
+          const multiFail = validation.reason === 'single_entity_for_multi_request';
+          return {
+            reply: multiFail
+              ? say(
+                lang,
+                'आपने दोनों/सभी माँगे थे। कृपया साफ़ बताएँ — दोनों locations, दोनों employees, या नाम लिखें।',
+                'You asked for both/all. Please clarify — both locations, both employees, or name them.',
+              )
+              : say(
+                lang,
+                'जवाब गलत organization से मिल रहा था। कृपया organization या location का सही नाम दोबारा बताएँ।',
+                'That answer would have used the wrong organization. Please name the correct organization or location again.',
+              ),
+            context: {
+              ...directoryContext,
+              lastIntent: 'clarification',
+              topic: 'pending_selection',
+            },
+            source: 'data',
+            intent: 'clarification',
+            data: { intent: 'clarification', validation },
+            execution: { status: 'completed', verified: true },
+          };
+        }
         return {
           reply: directoryAnswer.reply,
           choices: directoryAnswer.choices,

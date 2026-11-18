@@ -220,6 +220,8 @@ function resolveOrganizations(message, organizations, { minScore = 45 } = {}) {
 const GENERIC_LOCATION_TOKENS = new Set([
   'housekeeping', 'security', 'horticulture', 'cleaner', 'sweeper', 'guard', 'supervisor',
   'admin', 'block', 'gate', 'post', 'staff', 'worker', 'location', 'locations', 'site', 'sites',
+  // Shared org/site suffixes — "Green Valley Care" must not match location "Park Care".
+  'care', 'services', 'service', 'private', 'limited', 'ltd', 'pvt', 'company', 'corp', 'group',
 ]);
 
 /** Common STT / spacing variants for site tokens (switch yard ↔ switchyard, silchar ↔ switchyard). */
@@ -227,6 +229,8 @@ const LOCATION_TOKEN_ALIASES = [
   { canonical: 'switchyard', forms: ['switchyard', 'switch yard', 'switch yeard', 'swichyard', 'silchar', 'switchyar', 'switch year'] },
   // Horticulture sites: "lawn" often becomes "loan" in STT.
   { canonical: 'lawn', forms: ['lawn', 'loan', 'laun', 'lown', 'laan'] },
+  // "Park Care" often becomes "Parker" in speech-to-text.
+  { canonical: 'park', forms: ['park', 'parker', 'parkar', 'parkers', 'parc'] },
 ];
 
 function expandLocationHay(text) {

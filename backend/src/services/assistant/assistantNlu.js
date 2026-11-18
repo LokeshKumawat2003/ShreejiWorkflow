@@ -234,10 +234,18 @@ function includesWordOrPhrase(text, phrase) {
   return hay.includes(needle);
 }
 
+/** Strip "mobile number" / "account number" so "number" does not become a count concept. */
+function textForCountConcept(text) {
+  return String(text || '')
+    .replace(/\b(mobile|phone|contact|account|aadhaar|aadhar|uan|esic|ifsc)\s+numbers?\b/gi, ' ')
+    .replace(/\b(मोबाइल|फोन|अकाउंट|खाता|आधार)\s*(?:नंबर|नम्बर)?\b/gi, ' ');
+}
+
 function hasConcept(text, concept) {
   const group = SYNONYM_GROUPS[concept];
   if (!group) return false;
-  return group.some((item) => includesWordOrPhrase(text, item));
+  const hay = concept === 'count' ? textForCountConcept(text) : text;
+  return group.some((item) => includesWordOrPhrase(hay, item));
 }
 
 function conceptsIn(text) {

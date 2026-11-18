@@ -50,9 +50,35 @@ function compactHistory(messages, limit = 6) {
     .map((item) => ({ role: item.role, content: item.content.slice(0, 500) }));
 }
 
+/**
+ * Compact summary of sticky entities for long sessions (100–200 messages).
+ * Preserves IDs so older message text can be trimmed without losing scope.
+ */
+function summarizeConversationContext(context, messages = []) {
+  if (!context && (!messages || !messages.length)) return null;
+  const recent = compactHistory(messages, 8);
+  return {
+    organizationId: context?.organizationId || null,
+    organizationName: context?.organizationName || null,
+    locationId: context?.locationId || null,
+    locationName: context?.locationName || null,
+    locationIds: Array.isArray(context?.locationIds) ? context.locationIds : null,
+    employeeId: context?.employeeId || null,
+    employeeName: context?.employeeName || null,
+    lastIntent: context?.lastIntent || null,
+    topic: context?.topic || null,
+    lang: context?.lang || null,
+    documentType: context?.documentType || null,
+    month: context?.month || null,
+    recentTurns: recent.length,
+    recent: recent.map((item) => `${item.role}: ${item.content.slice(0, 120)}`),
+  };
+}
+
 module.exports = {
   answerMemoryQuestion,
   compactHistory,
+  summarizeConversationContext,
   MEMORY_QUESTION_WORDS,
   includesBoundaryWord,
 };

@@ -2023,6 +2023,66 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
 
   let employees = [];
   let attendanceLocationId = memory?.locationId || null;
+  let groupClarification = null;
+
+  const memoryEmployeeGroup = (() => {
+    if (Array.isArray(memory?.employeeGroup?.members) && memory.employeeGroup.members.length) {
+      return memory.employeeGroup.members.map((item) => ({
+        id: String(item.id),
+        name: item.name || '',
+        parentName: item.parentName || '',
+        locationId: item.locationId ? String(item.locationId) : '',
+        organizationId: item.organizationId ? String(item.organizationId) : (memory.organizationId || ''),
+      }));
+    }
+    if (Array.isArray(memory?.employeeQueryGroup?.members) && memory.employeeQueryGroup.members.length) {
+      return memory.employeeQueryGroup.members.map((item) => ({
+        id: String(item.id),
+        name: item.name || '',
+        parentName: item.parentName || '',
+        locationId: item.locationId ? String(item.locationId) : '',
+        organizationId: item.organizationId ? String(item.organizationId) : (memory.organizationId || memory.employeeQueryGroup.organizationId || ''),
+      }));
+    }
+    if (Array.isArray(memory?.pendingSelection?.options)
+      && memory.pendingSelection.type === 'employee'
+      && memory.pendingSelection.options.length) {
+      return memory.pendingSelection.options.map((item) => ({
+        id: String(item.id),
+        name: item.name || '',
+        parentName: item.parentName || '',
+        locationId: item.locationId ? String(item.locationId) : '',
+        organizationId: item.organizationId ? String(item.organizationId) : (memory.organizationId || ''),
+      }));
+    }
+    if (Array.isArray(memory?.employeeIds) && memory.employeeIds.length) {
+      return memory.employeeIds.map((id, index) => ({
+        id: String(id),
+        name: Array.isArray(memory.items) ? (memory.items[index] || '') : '',
+        parentName: '',
+        locationId: memory.locationId || '',
+        organizationId: memory.organizationId || '',
+      }));
+    }
+    if (Array.isArray(memory?.employeeQueryGroup?.employeeIds) && memory.employeeQueryGroup.employeeIds.length) {
+      return memory.employeeQueryGroup.employeeIds.map((id) => ({
+        id: String(id),
+        name: '',
+        parentName: '',
+        locationId: memory.employeeQueryGroup.locationId || memory.locationId || '',
+        organizationId: memory.employeeQueryGroup.organizationId || memory.organizationId || '',
+      }));
+    }
+    return [];
+  })();
+
+  const wantsBothEmployees = includesAny(message, BOTH_WORDS)
+    || /\b(dono|donon|donno)\s+(employ|employee|employees|karmachari)\b/i.test(message)
+    || /(दोनों)\s*(employee|employees|एम्प्लॉई|कर्मचारी)/i.test(message);
+  const wantsAllEmployees = includesAny(message, ALL_WORDS) && includesAny(message, STAFF_WORDS);
+  const wantsFirstPair = wantsBothEmployees
+    && includesAny(message, ['pehle', 'pehli', 'pehla', 'first', 'पहले', 'पहली', 'पहला']);
+
   // Pure follow-up keeps the last attendance employee.
   if ((textFollowUp || monthFollowUp || pdfFollowUp) && memory?.employeeId && !hasAttendance) {
     employees = [{
@@ -2032,14 +2092,35 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
       organizationId: memory.organizationId || '',
     }];
   } else if (hasAttendance || wantsText || wantsDocument || wantsCount || status || includesAny(message, ATTENDANCE_REPORT_WORDS)) {
-    employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
+    // "donon / sabhi / pehle dono employees attendance" against the remembered employee group.
+    if (memoryEmployeeGroup.length && (wantsBothEmployees || wantsAllEmployees || wantsFirstPair)
+      && (includesAny(message, STAFF_WORDS) || wantsBothEmployees || wantsAllEmployees)) {
+      if (wantsAllEmployees) {
+        employees = memoryEmployeeGroup.slice();
+      } else if (wantsFirstPair) {
+        employees = memoryEmployeeGroup.slice(0, 2);
+      } else if (wantsBothEmployees) {
+        if (memoryEmployeeGroup.length === 2) {
+          employees = memoryEmployeeGroup.slice();
+        } else if (memoryEmployeeGroup.length > 2) {
+          groupClarification = memoryEmployeeGroup;
+          employees = [];
+        } else {
+          employees = memoryEmployeeGroup.slice();
+        }
+      }
+    }
+
+    if (!employees.length && !groupClarification) {
+      employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
+    }
     const namedPlaces = matchLocations(message, directory);
     const personBits = words(documentPersonSearchText(message)).filter(isNameToken);
     const personHits = personBits.length
       ? employees.filter((item) => employeeNameCoversQuery(item.name, personBits))
       : [];
     // Named location attendance ("Park Care ki attendance" / "Hurda Depot ke employees ki attendance").
-    if (namedPlaces.length === 1 && (personHits.length !== 1 || includesAny(message, STAFF_WORDS) || includesAny(message, ALL_WORDS))) {
+    if (!groupClarification && namedPlaces.length === 1 && (personHits.length !== 1 || includesAny(message, STAFF_WORDS) || includesAny(message, ALL_WORDS))) {
       const place = namedPlaces[0];
       attendanceLocationId = place.id;
       const people = await Employee.find({
@@ -2054,12 +2135,13 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
         locationId: String(item.locationId || ''),
         organizationId: String(item.organizationId || ''),
       }));
-    } else if (personHits.length === 1) {
+    } else if (!groupClarification && personHits.length === 1) {
       employees = personHits;
     }
     // "इस लोकेशन पर दोनों employees की attendance" — sticky site, not a person-name search.
     const stickyLocationAttendance = Boolean(
-      memory?.locationId
+      !groupClarification
+      && memory?.locationId
       && employees.length === 0
       && (includesAny(message, REFERENCE_WORDS)
         || includesAny(message, BOTH_WORDS)
@@ -2081,7 +2163,7 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
         locationId: String(item.locationId || ''),
         organizationId: String(item.organizationId || ''),
       }));
-    } else if (employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
+    } else if (!groupClarification && employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
       employees = [{
         id: String(memory.employeeId),
         name: memory.employeeName || '',
@@ -2089,6 +2171,46 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
         organizationId: memory.organizationId || '',
       }];
     }
+  }
+
+  if (groupClarification?.length) {
+    const label = months.length > 1
+      ? `${monthLabel(months[0])} – ${monthLabel(months[months.length - 1])}`
+      : monthLabel(month);
+    return {
+      reply: say(
+        messageLang(message),
+        `पिछली list में ${groupClarification.length} employees हैं। "दोनों" से किन 2 की ${label} attendance चाहिए? नाम चुनें या लिखें।`,
+        `The previous list has ${groupClarification.length} employees. Which 2 should I show ${label} attendance for? Pick or name them.`,
+      ),
+      choices: groupClarification.slice(0, MAX_CHOICES).map((employee) => {
+        const place = directory.locations.find((item) => item.id === employee.locationId);
+        return choice(
+          [employee.name, employee.parentName && `S/O ${employee.parentName}`, place && locationLabel(place)].filter(Boolean).join(' · '),
+          wantsDocument
+            ? { type: 'attendance_register', format: parseFormat(message) || 'pdf', month: months[months.length - 1], employeeId: employee.id }
+            : { type: 'employee_attendance', month: months[months.length - 1], employeeId: employee.id, status: status || null },
+        );
+      }),
+      context: {
+        ...memory,
+        topic: 'employees',
+        employeeGroup: memory?.employeeGroup || {
+          type: 'employee',
+          ids: groupClarification.map((item) => item.id),
+          members: groupClarification,
+        },
+        employeeIds: groupClarification.map((item) => item.id),
+        items: groupClarification.map((item) => item.name),
+        lastIntent: 'employee_attendance_clarification',
+      },
+      data: {
+        intent: 'employee_attendance',
+        needsClarification: true,
+        ambiguous: true,
+        employeeIds: groupClarification.map((item) => item.id),
+      },
+    };
   }
 
   // "Rajesh Sharma ki attendance do" — named person + attendance → chat text, not location picker.
@@ -2120,7 +2242,14 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
         || includesAny(message, ['ismein', 'isme', 'is location', 'इस', 'लोकेशन'])
         || includesAny(message, STAFF_WORDS)),
     );
-    if (sameStickySite && !wantsDocument) {
+    // Remembered employee group ("donon / sabhi employees") may span multiple locations.
+    const rememberedGroupAsk = Boolean(
+      memoryEmployeeGroup.length
+      && employees.length >= 2
+      && employees.every((item) => memoryEmployeeGroup.some((member) => member.id === item.id))
+      && (wantsBothEmployees || wantsAllEmployees || wantsFirstPair),
+    );
+    if ((sameStickySite || rememberedGroupAsk) && !wantsDocument) {
       const detailed = months.length === 1 && (wantsText || !status);
       const sections = [];
       for (const employee of employees.slice(0, MAX_LISTED)) {
@@ -2128,16 +2257,29 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
           sections.push(await employeeAttendanceReply(employee.id, item, status, today, { detailed: detailed || months.length <= 3 }));
         }
       }
+      const locationIds = [...new Set(employees.map((item) => item.locationId).filter(Boolean))];
       return {
         reply: sections.join('\n\n'),
         context: {
           topic: 'employee_attendance',
           organizationId: memory?.organizationId || employees[0].organizationId || '',
-          locationId: sameSiteId,
-          locationIds: sameSiteId ? [sameSiteId] : null,
+          locationId: sameSiteId || (locationIds.length === 1 ? locationIds[0] : null),
+          locationIds: locationIds.length ? locationIds : (sameSiteId ? [sameSiteId] : null),
+          employeeGroup: {
+            type: 'employee',
+            ids: employees.map((item) => item.id),
+            members: employees,
+            organizationId: memory?.organizationId || employees[0].organizationId || null,
+          },
+          employeeIds: employees.map((item) => item.id),
           month: months[months.length - 1],
           months,
           items: employees.map((item) => item.name),
+        },
+        data: {
+          intent: 'employee_attendance',
+          employeeIds: employees.map((item) => item.id),
+          multi: true,
         },
       };
     }
@@ -3152,7 +3294,7 @@ const CAPABILITY_QUESTION_WORDS = [
   'सकती', 'सकते', 'सकता', 'सको', 'कर सकती', 'कर सकते', 'कर सकता',
 ];
 const MAX_SESSION_MESSAGES = 200;
-const CONTEXT_TURNS = 6;
+const { getActiveContext } = require('./assistant/assistantContext');
 
 function numberIn(text) {
   for (const token of dateTokens(text)) {
@@ -4338,8 +4480,8 @@ async function respond(user, input, session, state = {}) {
   const today = todayIn(input.timeZone);
   const directory = state.preloadedDirectory || await loadDirectory(user);
   if (state.preloadedDirectory) delete state.preloadedDirectory;
-  const assistantTurns = session.messages.filter((item) => item.role === 'assistant').length;
-  const context = session.context && assistantTurns - session.context.turn <= CONTEXT_TURNS ? session.context : null;
+  // Session TTL owns lifecycle; sticky entity IDs must not expire after a fixed turn window.
+  const context = getActiveContext(session);
   const spoken = typeof input.message === 'string' ? input.message : '';
   const lang = preferLang(input.language, spoken, messageLang(spoken, session));
   state.lang = lang;

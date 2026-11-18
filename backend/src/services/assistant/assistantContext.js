@@ -1,11 +1,29 @@
-const CONTEXT_TURNS = 6;
+/**
+ * Conversation context for Shreeji Assistant 2.0.
+ * Sticky entity IDs survive for the life of the session (TTL), not a short turn window.
+ * Topic switches and explicit org changes clear / replace stale fields via mergeContext.
+ */
+
+/** Soft hint for callers that still check turn distance; session TTL is the real lifecycle. */
+const CONTEXT_TURNS = 80;
+
+const CORRECTION_WORDS = [
+  'nahi', 'nahin', 'nahe', 'no', 'wrong', 'galat', 'matlab', 'meant', 'i meant', 'mera matlab',
+  'dusri', 'dusra', 'doosri', 'doosra', 'another', 'other', 'not that', 'not this',
+  'नहीं', 'नही', 'गलत', 'मतलब', 'दूसरी', 'दूसरा', 'मेरा मतलब',
+];
+
+const TOPIC_SWITCH_ORG_WORDS = [
+  'another organization', 'dusri organization', 'dusri organisation', 'doosri organization',
+  'another org', 'different organization', 'kisi aur organization', 'any other organization',
+  'दूसरी organization', 'दूसरी ऑर्गेनाइजेशन', 'अन्य organization',
+];
 
 function isContextFresh(session) {
   if (!session?.context) return false;
-  const assistantTurns = (session.messages || []).filter((item) => item.role === 'assistant').length;
-  const turn = Number(session.context.turn);
-  if (!Number.isFinite(turn)) return true;
-  return assistantTurns - turn <= CONTEXT_TURNS;
+  if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) return false;
+  // Keep sticky context for the whole session; mergeContext handles topic switches.
+  return true;
 }
 
 function getActiveContext(session) {
@@ -21,6 +39,8 @@ function mergeContext(previous, next) {
   if (!next) return previous || null;
   const replacingOrg = Object.prototype.hasOwnProperty.call(next, 'organizationId') && next.organizationId;
   const replacingDocument = Object.prototype.hasOwnProperty.call(next, 'documentType') && next.documentType;
+  const replacingLocation = Object.prototype.hasOwnProperty.call(next, 'locationId') && next.locationId;
+
   const merged = {
     ...(previous || {}),
     ...next,
@@ -28,7 +48,10 @@ function mergeContext(previous, next) {
     employeeId: pickSticky(next, previous, 'employeeId'),
     employeeName: pickSticky(next, previous, 'employeeName'),
     // Prefer the org named on this turn; do not keep a stale org when a new one is set.
-    organizationId: replacingOrg ? next.organizationId : pickSticky(next, previous, 'organizationId'),
+    // Updating a location must not erase its parent organization when the answer omits org.
+    organizationId: replacingOrg
+      ? next.organizationId
+      : pickSticky(next, previous, 'organizationId'),
     organizationName: replacingOrg
       ? (next.organizationName || null)
       : pickSticky(next, previous, 'organizationName'),
@@ -54,6 +77,24 @@ function mergeContext(previous, next) {
     items: Object.prototype.hasOwnProperty.call(next, 'items')
       ? next.items
       : (previous?.items || null),
+    // Structured multi-entity groups for "donon / sabhi" follow-ups.
+    employeeGroup: Object.prototype.hasOwnProperty.call(next, 'employeeGroup')
+      ? next.employeeGroup
+      : (previous?.employeeGroup || null),
+    employeeIds: Object.prototype.hasOwnProperty.call(next, 'employeeIds')
+      ? next.employeeIds
+      : (previous?.employeeIds || null),
+    employeeQueryGroup: Object.prototype.hasOwnProperty.call(next, 'employeeQueryGroup')
+      ? next.employeeQueryGroup
+      : (previous?.employeeQueryGroup || null),
+    locationGroup: Object.prototype.hasOwnProperty.call(next, 'locationGroup')
+      ? next.locationGroup
+      : (previous?.locationGroup || null),
+    topic: next.topic || previous?.topic || null,
+    lang: next.lang || previous?.lang || null,
+    contextConfidence: next.contextConfidence != null
+      ? next.contextConfidence
+      : (previous?.contextConfidence != null ? previous.contextConfidence : 0.9),
   };
 
   // Explicit null organizationId clears sticky org (e.g. "another organization").
@@ -84,6 +125,14 @@ function mergeContext(previous, next) {
     merged.pendingSelectionType = null;
   }
 
+  // Location change under same org: clear employee sticky so old person does not leak.
+  if (replacingLocation && previous?.locationId && next.locationId !== previous.locationId) {
+    if (!Object.prototype.hasOwnProperty.call(next, 'employeeId')) {
+      merged.employeeId = null;
+      merged.employeeName = null;
+    }
+  }
+
   return merged;
 }
 
@@ -95,9 +144,16 @@ function resolveFollowUpHints(message, context) {
   if (context.employeeId) hints.employeeId = context.employeeId;
   if (context.employeeName) hints.employeeName = context.employeeName;
   if (context.organizationId) hints.organizationId = context.organizationId;
+  if (context.organizationName) hints.organizationName = context.organizationName;
   if (context.locationId) hints.locationId = context.locationId;
+  if (context.locationName) hints.locationName = context.locationName;
+  if (Array.isArray(context.locationIds) && context.locationIds.length) {
+    hints.locationIds = context.locationIds;
+  }
   if (context.month) hints.month = context.month;
   if (context.documentType) hints.documentType = context.documentType;
+  if (context.lastIntent) hints.lastIntent = context.lastIntent;
+  if (context.topic) hints.topic = context.topic;
   return hints;
 }
 
@@ -112,11 +168,82 @@ function isShortSubjectFollowUp(message) {
     || /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|जनवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्टूबर|नवंबर|दिसंबर)\b/i.test(text);
 }
 
+function isCorrectionFollowUp(message) {
+  const text = String(message || '');
+  if (!text.trim()) return false;
+  const lower = text.toLowerCase();
+  return CORRECTION_WORDS.some((word) => {
+    if (/^[a-z ]+$/i.test(word)) {
+      return new RegExp(`(^|[^a-z])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z]|$)`, 'i').test(lower);
+    }
+    return lower.includes(String(word).toLowerCase());
+  });
+}
+
+function isExplicitOrganizationSwitch(message) {
+  const text = String(message || '').toLowerCase();
+  return TOPIC_SWITCH_ORG_WORDS.some((phrase) => text.includes(phrase.toLowerCase()));
+}
+
+/**
+ * Lightweight response validation — org scope + multi-entity group size.
+ * Returns { ok, reason } without mutating the answer.
+ */
+function validateAnswerAgainstContext(answer, context = null, request = null) {
+  if (!answer) return { ok: true, reason: null };
+  if (context?.organizationId) {
+    const dataOrg = answer.data?.organizationId || answer.context?.organizationId || null;
+    const dataLocOrg = answer.context?.organizationId || null;
+    const intent = answer.intent || answer.data?.intent || '';
+    const locationIntents = new Set([
+      'location_details',
+      'location_employee_count',
+      'department_employee_count',
+    ]);
+    if (locationIntents.has(intent)) {
+      const resolvedOrg = dataOrg || dataLocOrg;
+      if (resolvedOrg && String(resolvedOrg) !== String(context.organizationId)) {
+        return {
+          ok: false,
+          reason: 'cross_org_location',
+          expectedOrganizationId: String(context.organizationId),
+          actualOrganizationId: String(resolvedOrg),
+        };
+      }
+    }
+  }
+
+  const wantsMulti = Boolean(request?.expectsMultiple);
+  if (wantsMulti) {
+    const returnedIds = answer.data?.locationIds
+      || answer.context?.locationIds
+      || answer.data?.employeeIds
+      || answer.context?.employeeIds
+      || null;
+    const count = Array.isArray(returnedIds) ? returnedIds.length : (answer.data?.locationId || answer.data?.employeeId ? 1 : 0);
+    if (count === 1 && !answer.data?.ambiguous && !answer.data?.needsClarification) {
+      return { ok: false, reason: 'single_entity_for_multi_request', count };
+    }
+  }
+  return { ok: true, reason: null };
+}
+
+function expectsMultipleEntities(message) {
+  const text = String(message || '').toLowerCase();
+  return /\b(dono|donon|donno|both|sabhi|sare|saare|sari|all|every)\b/i.test(text)
+    || /(दोनों|सभी|सारे|सारी)/.test(text);
+}
+
 module.exports = {
   CONTEXT_TURNS,
+  CORRECTION_WORDS,
   isContextFresh,
   getActiveContext,
   mergeContext,
   resolveFollowUpHints,
   isShortSubjectFollowUp,
+  isCorrectionFollowUp,
+  isExplicitOrganizationSwitch,
+  validateAnswerAgainstContext,
+  expectsMultipleEntities,
 };

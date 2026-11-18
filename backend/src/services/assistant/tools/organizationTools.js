@@ -62,7 +62,7 @@ function registerOrganizationTools() {
     },
     async execute({ args }) {
       const org = await User.findOne({ _id: args.organizationId, role: 'organization' })
-        .select('name email status organizationName phone')
+        .select('name email status organizationName phone address')
         .lean();
       if (!org) return { found: false };
       const [locations, employeeCount] = await Promise.all([
@@ -74,8 +74,10 @@ function registerOrganizationTools() {
         organization: {
           id: String(org._id),
           name: org.organizationName || org.name || org.email,
+          contactName: org.name || null,
           email: org.email,
           phone: org.phone || null,
+          address: org.address || null,
           status: org.status || 'active',
           employeeCount,
           locations: locations.map((loc) => ({
@@ -93,11 +95,15 @@ function registerOrganizationTools() {
       const locLines = o.locations.map((loc) => `• ${loc.name}`).join('\n');
       return [
         o.name,
+        o.contactName && o.contactName !== o.name ? `Contact name: ${o.contactName}` : null,
+        `Mobile: ${o.phone || '—'}`,
+        `Email: ${o.email || '—'}`,
+        o.address ? `Address: ${o.address}` : null,
         `Status: ${o.status}`,
         `Employees: ${o.employeeCount}`,
         `Locations (${o.locations.length}):`,
         locLines || (lang === 'en' ? '(none)' : '(कोई नहीं)'),
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     },
   });
 }

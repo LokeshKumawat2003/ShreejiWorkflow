@@ -50,6 +50,7 @@ function jsonResponse(status, body) {
 
 test.beforeEach(() => {
   resetCircuit();
+  process.env.ASSISTANT_USE_EXTERNAL_MODEL = '1';
   process.env.OLLAMA_API_KEY = process.env.OLLAMA_API_KEY || 'test-key-not-real';
   process.env.OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1';
   process.env.OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'deepseek-v4.1-flash';

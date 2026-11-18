@@ -53,18 +53,21 @@ router.get('/health', ...adminOnly, async (req, res) => {
   res.json({
     success: true,
     model: {
-      configured: Boolean(config.apiKey),
-      baseUrl: config.baseUrl,
-      modelName: config.model,
-      available: probe ? probe.available : circuit.available && !circuit.providerActionRequired,
+      mode: config.enabled ? 'external' : 'local_rules',
+      configured: Boolean(config.apiKey) && config.enabled === true,
+      baseUrl: config.baseUrl || null,
+      modelName: config.model || null,
+      available: config.enabled
+        ? (probe ? probe.available : circuit.available && !circuit.providerActionRequired)
+        : true,
       circuitOpen: circuit.open,
       openUntil: circuit.openUntil,
       lastError: circuit.lastError,
       lastSuccessAt: circuit.lastSuccessAt,
-      providerActionRequired: circuit.providerActionRequired || probe?.providerActionRequired === true,
-      providerActionHint: (circuit.providerActionRequired || probe?.code === 'MODEL_BILLING')
-        ? 'Add Ollama usage credits or an active plan at https://ollama.com/plans, then call /api/assistant/health?probe=1'
-        : null,
+      providerActionRequired: config.enabled
+        ? (circuit.providerActionRequired || probe?.providerActionRequired === true)
+        : false,
+      providerActionHint: null,
       probe,
     },
   });

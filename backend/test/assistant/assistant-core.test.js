@@ -44,6 +44,14 @@ test('STT payroll variants parse as payroll including pairon seat', () => {
   assert.equal(parseMonth('Haridwar Colony loan ki October month ki Pairon seat chahie', '2026-11'), '2026-10');
 });
 
+test('STT veg/which sheet parses as wage register', () => {
+  assert.equal(parseType('data wali location ki veg sheet nikal kar do'), 'wage_register');
+  assert.equal(parseType('data wali location ki veg sheet do'), 'wage_register');
+  assert.equal(parseType('which sheet do'), 'wage_register');
+  assert.equal(parseType('wage sheet'), 'wage_register');
+  assert.equal(parseType('veggies sheet'), 'wage_register');
+});
+
 test('Haridwar Colony loan STT maps to lawn location', () => {
   const { resolveLocations } = require('../../src/services/assistant/assistantEntityResolver');
   const locs = [

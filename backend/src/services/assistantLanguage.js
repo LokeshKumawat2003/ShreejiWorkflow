@@ -28,6 +28,14 @@ const INTENT_BRIDGES = [
       'pairon seat', 'pairon sheet', 'pairol seat', 'payroll seat', 'petrol seat',
     ],
   },
+  // STT: "wage sheet" → "veg sheet" / "which sheet" / "vej sheet"
+  {
+    add: ['wage', 'wages', 'sheet', 'generate'],
+    when: [
+      'veg sheet', 'vegsheet', 'veg seat', 'vej sheet', 'veggies sheet', 'veggie sheet',
+      'which sheet', 'wich sheet', 'वेज शीट', 'वेजशीट', 'वेज',
+    ],
+  },
   // Status only — do not force "locations" here; "डीएक्टिवेट एम्पलाई" must stay an employee query.
   { add: ['disabled', 'inactive'], when: ['डीएक्टिव', 'डीऐक्टिव', 'डिएक्टिव', 'डीएक्टिवेट', 'डिएक्टिवेट', 'आईएनएक्टिव', 'इनएक्टिव', 'इनऐक्टिव', 'निष्क्रिय', 'deactive', 'deactivate', 'deactivated', 'disabled', 'inactive', 'डिसेबल्ड', 'डिसेबल'] },
   { add: ['active'], when: ['एक्टिव', 'ऐक्टिव', 'सक्रिय', 'enabled'] },
@@ -236,65 +244,21 @@ function applyChoicePhrases(label, lang) {
   return out;
 }
 
-function needsLocalization(text, lang) {
-  const value = String(text || '');
-  if (!value.trim()) return false;
-  if (lang === 'en') return hasDevanagari(value);
-  if (lang === 'hi') return !hasDevanagari(value) && /[A-Za-z]{4,}/.test(value);
-  return false;
-}
-
-async function translateWithOllama(text, lang) {
-  const apiKey = process.env.OLLAMA_API_KEY;
-  if (!apiKey || !text) return null;
-  const baseUrl = (process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1').replace(/\/$/, '');
-  const model = process.env.OLLAMA_MODEL || 'deepseek-v4.1-flash';
-  const target = lang === 'en' ? 'English' : 'Hindi';
-  try {
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(8000),
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: `Translate the assistant reply into ${target}. Keep names, amounts, dates, IDs, and document titles unchanged. Return only the translated text.`,
-          },
-          { role: 'user', content: text.slice(0, 3500) },
-        ],
-      }),
-    });
-    if (!response.ok) return null;
-    const data = await response.json();
-    const translated = String(data?.choices?.[0]?.message?.content || '').trim();
-    return translated || null;
-  } catch {
-    return null;
-  }
-}
-
-async function localizeText(text, lang) {
+function localizeText(text, lang) {
   const original = String(text || '');
   if (!original) return original;
-  let out = applyPhrases(original, lang);
-  if (needsLocalization(out, lang) && process.env.ASSISTANT_TRANSLATE !== '0') {
-    const translated = await translateWithOllama(out, lang);
-    if (translated) out = translated;
-  }
-  return out;
+  // Phrase dictionary only — no external translate LLM (keeps replies fast).
+  return applyPhrases(original, lang);
 }
 
-async function localizeAnswer(answer, lang) {
+function localizeAnswer(answer, lang) {
   if (!answer || (lang !== 'en' && lang !== 'hi')) return answer;
-  const reply = await localizeText(answer.reply, lang);
+  const reply = localizeText(answer.reply, lang);
   const choices = Array.isArray(answer.choices)
-    ? await Promise.all(answer.choices.map(async (choice) => ({
+    ? answer.choices.map((choice) => ({
       ...choice,
-      label: applyChoicePhrases(await localizeText(choice.label, lang), lang),
-    })))
+      label: applyChoicePhrases(localizeText(choice.label, lang), lang),
+    }))
     : answer.choices;
   return { ...answer, reply, ...(choices ? { choices } : {}) };
 }

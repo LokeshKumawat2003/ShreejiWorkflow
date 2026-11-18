@@ -1184,3 +1184,460 @@ test('directory query uses PO number to pick location employee count', async () 
     Employee.countDocuments = originalCount;
   }
 });
+
+test('sticky org full details keep organization context not employee or location pick', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  Employee.countDocuments = async () => 4;
+  const orgId = '507f1f77bcf86cd7994390b1';
+  const directory = {
+    organizations: [{
+      id: orgId,
+      name: 'BPCL Kochi',
+      status: 'active',
+      contactName: 'Ravi Kumar',
+      email: 'bpcl.kochi@example.com',
+      phone: '9876543210',
+    }],
+    locations: [
+      {
+        id: '507f1f77bcf86cd7994390c1',
+        organizationId: orgId,
+        organizationName: 'BPCL Kochi',
+        workName: 'Housekeeping',
+        name: 'Kochi Plant',
+        designation: 'Housekeeping',
+        status: 'active',
+        address: 'Kochi Refinery',
+      },
+      {
+        id: '507f1f77bcf86cd7994390c2',
+        organizationId: orgId,
+        organizationName: 'BPCL Kochi',
+        workName: 'Horticulture',
+        name: 'Kochi Lawn',
+        designation: 'Horticulture',
+        status: 'active',
+        address: 'Kochi Refinery',
+      },
+    ],
+  };
+  const sticky = {
+    lastIntent: INTENTS.ORGANIZATION_DETAILS,
+    organizationId: orgId,
+    organizationName: 'BPCL Kochi',
+    topic: 'organization',
+    locationIds: ['507f1f77bcf86cd7994390c1', '507f1f77bcf86cd7994390c2'],
+    items: ['Housekeeping', 'Horticulture'],
+  };
+  try {
+    const followUp = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'उसकी फुल डिटेल्स दो',
+      directory,
+      context: sticky,
+      lang: 'hi',
+    });
+    assert.ok(followUp);
+    assert.equal(followUp.intent, INTENTS.ORGANIZATION_DETAILS);
+    assert.match(followUp.reply, /BPCL Kochi/i);
+    assert.match(followUp.reply, /9876543210|Mobile/i);
+    assert.match(followUp.reply, /bpcl\.kochi@example\.com|Email/i);
+    assert.doesNotMatch(followUp.reply, /किस employee|Which employee|कौन-सी location|Which location/i);
+    assert.equal(followUp.context.organizationId, orgId);
+    assert.equal(followUp.context.topic, 'organization');
+
+    const contactAsk = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'बीपीसीएल कोच की फुल डिटेल्स दो लाइक की उसके मोबाइल नंबर ईमेल नाम वगैरह सब कुछ चाहिए मुझे',
+      directory,
+      context: sticky,
+      lang: 'hi',
+    });
+    assert.ok(contactAsk);
+    assert.equal(contactAsk.intent, INTENTS.ORGANIZATION_DETAILS);
+    assert.match(contactAsk.reply, /BPCL Kochi/i);
+    assert.match(contactAsk.reply, /9876543210/);
+    assert.match(contactAsk.reply, /bpcl\.kochi@example\.com/);
+    assert.doesNotMatch(contactAsk.reply, /कौन-सी location|Which location|किस employee|Which employee/i);
+  } finally {
+    Employee.countDocuments = originalCount;
+  }
+});
+
+test('gail vijaipur organisation details do not ask which location', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  Employee.countDocuments = async () => 3;
+  const orgId = '507f1f77bcf86cd7994390d1';
+  try {
+    const result = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'गली विजयपुर आर्गेनाइजेशन की डिटेल्स दो',
+      directory: {
+        organizations: [{
+          id: orgId,
+          name: 'Gail Vijaipur',
+          status: 'active',
+          contactName: 'Site Admin',
+          email: 'gail@test.local',
+          phone: '9000000001',
+        }],
+        locations: [
+          {
+            id: '507f1f77bcf86cd7994390e1',
+            organizationId: orgId,
+            organizationName: 'Gail Vijaipur',
+            workName: 'Horticulture',
+            name: 'Vijaipur Lawn',
+            designation: 'Horticulture',
+            status: 'active',
+            address: 'Vijaipur',
+          },
+          {
+            id: '507f1f77bcf86cd7994390e2',
+            organizationId: orgId,
+            organizationName: 'Gail Vijaipur',
+            workName: 'Security',
+            name: 'Vijaipur Gate',
+            designation: 'Security',
+            status: 'active',
+            address: 'Vijaipur',
+          },
+        ],
+      },
+      lang: 'hi',
+    });
+    assert.ok(result);
+    assert.equal(result.intent, INTENTS.ORGANIZATION_DETAILS);
+    assert.match(result.reply, /Gail Vijaipur/i);
+    assert.doesNotMatch(result.reply, /कौन-सी location|Which location/i);
+  } finally {
+    Employee.countDocuments = originalCount;
+  }
+});
+
+test('pending location list accepts security by name', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  const originalFind = Employee.find;
+  Employee.countDocuments = async () => 2;
+  Employee.find = () => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    lean: async () => [{ name: 'Guard One' }, { name: 'Guard Two' }],
+  });
+  const orgId = '507f1f77bcf86cd7994390d2';
+  const secId = '507f1f77bcf86cd7994390e3';
+  try {
+    const result = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'सिक्योरिटी',
+      directory: {
+        organizations: [{ id: orgId, name: 'Gail Vijaipur', status: 'active' }],
+        locations: [
+          {
+            id: '507f1f77bcf86cd7994390e4',
+            organizationId: orgId,
+            organizationName: 'Gail Vijaipur',
+            workName: 'Horticulture',
+            name: 'Lawn',
+            designation: 'Horticulture',
+            status: 'active',
+            address: '',
+          },
+          {
+            id: secId,
+            organizationId: orgId,
+            organizationName: 'Gail Vijaipur',
+            workName: 'Security',
+            name: 'Gate',
+            designation: 'Security',
+            status: 'active',
+            address: '',
+          },
+        ],
+      },
+      context: {
+        lastIntent: INTENTS.LOCATION_DETAILS,
+        organizationId: orgId,
+        organizationName: 'Gail Vijaipur',
+        pendingSelectionType: 'location',
+        pendingSelection: {
+          type: 'location',
+          options: [
+            { index: 1, id: '507f1f77bcf86cd7994390e4', name: 'Horticulture (Gail Vijaipur)', organizationId: orgId, locationId: '507f1f77bcf86cd7994390e4' },
+            { index: 2, id: secId, name: 'Security (Gail Vijaipur)', organizationId: orgId, locationId: secId },
+          ],
+        },
+      },
+      lang: 'hi',
+    });
+    assert.ok(result);
+    assert.doesNotMatch(result.reply, /पिछले जवाब में कोई location नहीं थी/i);
+    assert.match(result.reply, /Security/i);
+    assert.equal(result.context.locationId, secId);
+  } finally {
+    Employee.countDocuments = originalCount;
+    Employee.find = originalFind;
+  }
+});
+
+test('new org location details do not reuse sticky security location', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  Employee.countDocuments = async () => 1;
+  const bhopal = '507f1f77bcf86cd7994390d3';
+  const haridwar = '507f1f77bcf86cd7994390d4';
+  try {
+    const result = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'भेल हरिद्वार लोकेशंस की डिटेल्स दो',
+      directory: {
+        organizations: [
+          { id: bhopal, name: 'BHEL Bhopal', status: 'active' },
+          { id: haridwar, name: 'BHEL Haridwar', status: 'active' },
+        ],
+        locations: [
+          {
+            id: '507f1f77bcf86cd7994390e5',
+            organizationId: bhopal,
+            organizationName: 'BHEL Bhopal',
+            workName: 'Security',
+            name: 'Bhopal Switchyard Post',
+            designation: 'Security',
+            status: 'active',
+            address: 'Bhopal',
+          },
+          {
+            id: '507f1f77bcf86cd7994390e6',
+            organizationId: haridwar,
+            organizationName: 'BHEL Haridwar',
+            workName: 'Housekeeping',
+            name: 'Colony Park',
+            designation: 'Housekeeping',
+            status: 'active',
+            address: 'Haridwar',
+          },
+          {
+            id: '507f1f77bcf86cd7994390e7',
+            organizationId: haridwar,
+            organizationName: 'BHEL Haridwar',
+            workName: 'Security',
+            name: 'Haridwar Gate',
+            designation: 'Security',
+            status: 'active',
+            address: 'Haridwar',
+          },
+        ],
+      },
+      context: {
+        lastIntent: INTENTS.LOCATION_EMPLOYEE_COUNT,
+        organizationId: bhopal,
+        organizationName: 'BHEL Bhopal',
+        locationId: '507f1f77bcf86cd7994390e5',
+        locationIds: ['507f1f77bcf86cd7994390e5'],
+        topic: 'location',
+      },
+      lang: 'hi',
+    });
+    assert.ok(result);
+    assert.equal(result.context.organizationId, haridwar);
+    assert.doesNotMatch(result.reply, /^Security में active employees/i);
+    assert.match(result.reply, /BHEL Haridwar|Housekeeping|Haridwar/i);
+  } finally {
+    Employee.countDocuments = originalCount;
+  }
+});
+
+test('veg sheet ask is not answered as location details', async () => {
+  const result = await answerDirectoryQuery({
+    user: { id: '1', role: 'admin' },
+    message: 'data wali location ki veg sheet nikal kar do',
+    directory: {
+      organizations: [{ id: '507f1f77bcf86cd7994390f1', name: 'Gail Jhabua', status: 'active' }],
+      locations: [{
+        id: '507f1f77bcf86cd7994390f2',
+        organizationId: '507f1f77bcf86cd7994390f1',
+        organizationName: 'Gail Jhabua',
+        workName: 'data',
+        name: 'Jhabua Staff Canteen',
+        designation: 'Cleaner',
+        status: 'active',
+        address: 'Jhabua',
+        opNumber: '52100350',
+      }],
+    },
+    lang: 'hi',
+  });
+  assert.equal(result, null, 'directory must defer veg/wage sheet to document handlers');
+});
+
+test('attendance ful kar do is deferred to mark handler not org card', async () => {
+  const result = await answerDirectoryQuery({
+    user: { id: '1', role: 'admin' },
+    message: 'is location ki sari attendance ful kar do November manth ki',
+    directory: {
+      organizations: [{ id: '507f1f77bcf86cd7994390d6', name: 'Coal India Korba', status: 'active' }],
+      locations: [{
+        id: '507f1f77bcf86cd7994390e9',
+        organizationId: '507f1f77bcf86cd7994390d6',
+        organizationName: 'Coal India Korba',
+        workName: 'Housekeeping',
+        name: 'Korba Admin Block',
+        designation: 'Housekeeping',
+        status: 'active',
+        address: 'Korba',
+      }],
+    },
+    context: {
+      organizationId: '507f1f77bcf86cd7994390d6',
+      organizationName: 'Coal India Korba',
+      locationId: '507f1f77bcf86cd7994390e9',
+      locationIds: ['507f1f77bcf86cd7994390e9'],
+      topic: 'employees',
+      items: ['Pooja Reddy', 'Rekha Pillai'],
+    },
+    lang: 'hi',
+  });
+  assert.equal(result, null);
+});
+
+test('attendance laga do as present is not sticky org details', async () => {
+  const result = await answerDirectoryQuery({
+    user: { id: '1', role: 'admin' },
+    message: 'November month ki attendance laga do as a present full present',
+    directory: {
+      organizations: [{
+        id: '507f1f77bcf86cd7994390d7',
+        name: 'Coal India Korba',
+        status: 'active',
+        contactName: 'Pooja Reddy',
+        email: 'org@test.local',
+        phone: '9810042446',
+      }],
+      locations: [{
+        id: '507f1f77bcf86cd7994390ea',
+        organizationId: '507f1f77bcf86cd7994390d7',
+        organizationName: 'Coal India Korba',
+        workName: 'Housekeeping',
+        name: 'Korba Admin Block',
+        designation: 'Housekeeping',
+        status: 'active',
+        address: 'Korba',
+      }],
+    },
+    context: {
+      lastIntent: INTENTS.ORGANIZATION_DETAILS,
+      organizationId: '507f1f77bcf86cd7994390d7',
+      organizationName: 'Coal India Korba',
+      locationId: '507f1f77bcf86cd7994390ea',
+      topic: 'organization',
+    },
+    lang: 'en',
+  });
+  assert.equal(result, null);
+  assert.notEqual(result?.intent, INTENTS.ORGANIZATION_DETAILS);
+});
+
+test('attendance ask on sticky location is not answered as employee name list', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  const originalFind = Employee.find;
+  Employee.countDocuments = async () => 2;
+  Employee.find = () => ({
+    select() { return this; },
+    sort() { return this; },
+    limit() { return this; },
+    lean: async () => [
+      { _id: '507f1f77bcf86cd7994390f1', name: 'Deepak Joshi' },
+      { _id: '507f1f77bcf86cd7994390f2', name: 'Vikram Gupta' },
+    ],
+  });
+  try {
+    const result = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'इस लोकेशन पर दोनों एम्पलाई की अटेंडेंस',
+      directory: {
+        organizations: [{ id: '507f1f77bcf86cd7994390d5', name: 'BHEL Bhopal', status: 'active' }],
+        locations: [{
+          id: '507f1f77bcf86cd7994390e8',
+          organizationId: '507f1f77bcf86cd7994390d5',
+          organizationName: 'BHEL Bhopal',
+          workName: 'Security',
+          name: 'Bhopal Switchyard Post',
+          designation: 'Security',
+          status: 'active',
+          address: '',
+        }],
+      },
+      context: {
+        organizationId: '507f1f77bcf86cd7994390d5',
+        organizationName: 'BHEL Bhopal',
+        locationId: '507f1f77bcf86cd7994390e8',
+        locationIds: ['507f1f77bcf86cd7994390e8'],
+        topic: 'employees',
+        items: ['Deepak Joshi', 'Vikram Gupta'],
+      },
+      lang: 'hi',
+    });
+    assert.equal(result, null, 'directory must defer attendance asks to attendance handlers');
+  } finally {
+    Employee.countDocuments = originalCount;
+    Employee.find = originalFind;
+  }
+});
+
+test('named org mobile email details stay on organization despite shared city addresses', async () => {
+  const Employee = require('../../src/models/Employee');
+  const originalCount = Employee.countDocuments;
+  Employee.countDocuments = async () => 2;
+  const orgId = '507f1f77bcf86cd7994390b2';
+  try {
+    const result = await answerDirectoryQuery({
+      user: { id: '1', role: 'admin' },
+      message: 'BPCL Kochi ki full details do mobile email naam sab kuch',
+      directory: {
+        organizations: [{
+          id: orgId,
+          name: 'BPCL Kochi',
+          status: 'active',
+          contactName: 'Anita Nair',
+          email: 'anita@bpcl.test',
+          phone: '9000011111',
+        }],
+        locations: [
+          {
+            id: '507f1f77bcf86cd7994390c3',
+            organizationId: orgId,
+            organizationName: 'BPCL Kochi',
+            workName: 'Housekeeping',
+            name: 'Plant HK',
+            designation: 'Housekeeping',
+            status: 'active',
+            address: 'Kochi',
+          },
+          {
+            id: '507f1f77bcf86cd7994390c4',
+            organizationId: orgId,
+            organizationName: 'BPCL Kochi',
+            workName: 'Horticulture',
+            name: 'Plant Hort',
+            designation: 'Horticulture',
+            status: 'active',
+            address: 'Kochi',
+          },
+        ],
+      },
+      lang: 'hi',
+    });
+    assert.ok(result);
+    assert.equal(result.intent, INTENTS.ORGANIZATION_DETAILS);
+    assert.match(result.reply, /9000011111/);
+    assert.match(result.reply, /anita@bpcl\.test/);
+    assert.doesNotMatch(result.reply, /कौन-सी location|Which location/i);
+  } finally {
+    Employee.countDocuments = originalCount;
+  }
+});

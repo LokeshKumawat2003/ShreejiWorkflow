@@ -3,19 +3,12 @@ const AssistantSession = require('../../models/AssistantSession');
 const { httpError } = require('../../utils/httpError');
 const { preferLang, localizeAnswer } = require('../assistantLanguage');
 const { registerAllTools } = require('./tools');
-const { understandIntent, detectLanguageHeuristic } = require('./assistantIntent');
-const { getActiveContext, mergeContext, resolveFollowUpHints, isShortSubjectFollowUp } = require('./assistantContext');
-const { answerMemoryQuestion, compactHistory } = require('./assistantMemory');
-const { executeToolCall, confirmPendingAction } = require('./assistantToolExecutor');
-const { getTool } = require('./assistantToolRegistry');
-const {
-  modelUnavailableReply,
-  clarificationReply,
-  unsupportedReply,
-} = require('./assistantResponse');
-const { approvedCorrectionHints } = require('./assistantFeedback');
-const { getCircuitStatus } = require('./assistantModelClient');
+const { detectLanguageHeuristic } = require('./assistantIntent');
+const { getActiveContext, mergeContext, isShortSubjectFollowUp } = require('./assistantContext');
+const { answerMemoryQuestion } = require('./assistantMemory');
+const { confirmPendingAction } = require('./assistantToolExecutor');
 const { answerDirectoryQuery } = require('./assistantDirectoryQuery');
+const { applyApprovedFeedback } = require('./assistantFeedback');
 
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_SESSION_MESSAGES = 200;
@@ -74,6 +67,7 @@ async function chat(user, input = {}, deps = {}) {
     throw new Error('assistantOrchestrator.chat requires deps.respondLegacy');
   }
 
+  const startedAt = Date.now();
   const session = await loadSession(user, input.sessionId);
   const userText = typeof input.message === 'string' && input.message.trim()
     ? input.message.trim().slice(0, MAX_MESSAGE_LENGTH)
@@ -88,7 +82,7 @@ async function chat(user, input = {}, deps = {}) {
 
   const assistantTurns = session.messages.filter((item) => item.role === 'assistant').length;
   const lang = state.lang || preferLang(input.language, userText, detectLanguageHeuristic(userText));
-  const localized = await localizeAnswer(response, lang);
+  const localized = localizeAnswer(response, lang);
 
   const followUpOnly = userText ? isShortSubjectFollowUp(userText) : false;
   if (context) {
@@ -133,12 +127,26 @@ async function chat(user, input = {}, deps = {}) {
   }
 
   session.markModified('context');
-  await session.save();
+  // Persist session without blocking the HTTP reply when the chat already has an id.
+  const sessionId = session.isNew ? null : String(session._id);
+  if (session.isNew) {
+    await session.save();
+  } else {
+    session.save().catch((error) => {
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn(`Assistant session save failed: ${error.message}`);
+      }
+    });
+  }
+
+  if (process.env.NODE_ENV !== 'test') {
+    console.info(`Assistant chat ${Date.now() - startedAt}ms source=${localized.source || 'unknown'}`);
+  }
 
   return {
     success: true,
     ...localized,
-    sessionId: String(session._id),
+    sessionId: sessionId || String(session._id),
   };
 }
 
@@ -170,12 +178,48 @@ async function handleTurn(user, input, session, state, { respondLegacy, loadDire
   state.message = message;
 
   const context = getActiveContext(session);
-  const followHints = resolveFollowUpHints(message, context);
 
-  // Deterministic directory queries before AI/legacy so org counts work even during MODEL_BILLING.
+  // Approved feedback overrides rules for the same question.
+  try {
+    const taught = await applyApprovedFeedback(user, message);
+    if (taught?.reply) {
+      return {
+        reply: taught.reply,
+        source: 'feedback',
+        intent: taught.intent,
+        execution: { status: 'completed', verified: true },
+      };
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`Assistant feedback apply failed: ${error.message}`);
+    }
+  }
+
+  // Identity/greetings before directory/DB work.
+  try {
+    const { answerSmallTalk } = require('../assistantService');
+    const smallTalk = answerSmallTalk(message, lang);
+    if (smallTalk) {
+      return {
+        reply: smallTalk,
+        source: 'rules',
+        execution: { status: 'completed', verified: true },
+      };
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== 'test') {
+      console.warn(`Assistant small-talk check failed: ${error.message}`);
+    }
+  }
+
+  // Deterministic directory queries before legacy so org counts stay fast and local.
   if (typeof loadDirectory === 'function') {
     try {
       const directory = await loadDirectory(user);
+      // Reuse in respondLegacy — avoid a second full directory fetch / directory query on the same turn.
+      state.preloadedDirectory = directory;
+      state.directoryChecked = true;
       const directoryAnswer = await answerDirectoryQuery({
         user,
         message,
@@ -195,7 +239,7 @@ async function handleTurn(user, input, session, state, { respondLegacy, loadDire
         };
       }
 
-      // "October ki chahiye" — reuse sticky document/location/employee before AI can forget the subject.
+      // "October ki chahiye" — reuse sticky document/location/employee before rules forget the subject.
       if (context?.documentType || context?.query) {
         const { answerDocumentMonthFollowUp } = require('../assistantService');
         const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: input.timeZone || 'Asia/Kolkata' });
@@ -225,120 +269,12 @@ async function handleTurn(user, input, session, state, { respondLegacy, loadDire
   const memory = answerMemoryQuestion(message, session, lang);
   if (memory) return { reply: memory, source: 'data', execution: { status: 'completed', verified: true } };
 
-  // AI-first understanding — skip when the shared circuit is open so we don't hammer a billing/auth outage.
-  const history = compactHistory(session.messages);
-  const corrections = await approvedCorrectionHints(user, 5).catch(() => []);
-  const directorySummary = corrections.length
-    ? `Approved admin corrections (prompt hints only):\n${corrections.map((c) => `- ${c.request} => ${c.expected}`).join('\n')}`
-    : '';
-
-  let understood = { ok: false, plan: null, quiet: true, error: null };
-  const circuit = getCircuitStatus();
-  // Skip AI planning while billing/auth requires provider action, or while the circuit is hard-open.
-  if (circuit.available && !circuit.providerActionRequired) {
-    understood = await understandIntent({
-      message,
-      history,
-      context: { ...(context || {}), ...followHints },
-      role: user.role,
-      directorySummary,
-    });
-  } else if (circuit.providerActionRequired || circuit.lastError === 'MODEL_BILLING') {
-    understood = {
-      ok: false,
-      quiet: true,
-      plan: null,
-      error: {
-        code: 'MODEL_BILLING',
-        message: 'The AI service requires usage credits or an active Ollama plan. Legacy handlers are still available.',
-        retryable: false,
-        providerActionRequired: true,
-      },
-    };
-  }
-
-  if (understood.ok && understood.plan) {
-    const plan = understood.plan;
-    state.lang = preferLang(input.language, plan.language, lang);
-
-    if (plan.requiresClarification) {
-      return {
-        reply: clarificationReply(plan.clarificationQuestion, state.lang),
-        source: 'ai',
-        intent: plan.intent,
-        execution: { status: 'needs_clarification', verified: true },
-      };
-    }
-
-    if (plan.intent === 'unsupported') {
-      return {
-        reply: unsupportedReply(state.lang),
-        source: 'ai',
-        intent: 'unsupported',
-        execution: { status: 'unsupported', verified: true },
-      };
-    }
-
-    if (plan.intent === 'general_question' && plan.reply && (!plan.tool || plan.confidence < AI_CONFIDENCE_THRESHOLD)) {
-      return {
-        reply: plan.reply,
-        source: 'ai',
-        intent: plan.intent,
-        execution: { status: 'completed', verified: true },
-      };
-    }
-
-    if (plan.tool && plan.confidence >= AI_CONFIDENCE_THRESHOLD && getTool(plan.tool)) {
-      const args = {
-        ...(plan.arguments || {}),
-        ...followHints,
-      };
-      try {
-        const toolResult = await executeToolCall({
-          user,
-          session,
-          toolName: plan.tool,
-          rawArgs: args,
-          lang: state.lang,
-          timeZone: input.timeZone,
-          legacyRespond: respondLegacy,
-        });
-        return toolResult;
-      } catch (error) {
-        // Fall through to legacy for unexpected tool failures on non-mutating reads.
-        if (process.env.NODE_ENV !== 'test') {
-          console.warn(`Assistant tool ${plan.tool} failed, using legacy: ${error.message}`);
-        }
-      }
-    }
-  } else if (understood.error && !understood.quiet && understood.error.code !== 'MODEL_NOT_CONFIGURED') {
-    // Do not invent answers when the model fails mid-flight after we preferred AI.
-    // Still allow legacy deterministic handlers for known operational requests.
-    if (process.env.NODE_ENV !== 'test') {
-      console.warn(`Assistant intent model issue (${understood.correlationId}): ${understood.error.code}`);
-    }
-  }
-
-  // Proven legacy keyword + existing AI document path.
-  try {
-    const legacy = await respondLegacy(user, input, session, state);
-    return {
-      ...legacy,
-      modelStatus: understood?.error?.code || (circuit.providerActionRequired ? 'MODEL_BILLING' : undefined),
-      execution: legacy.execution || { status: 'completed', verified: true },
-    };
-  } catch (error) {
-    if (understood?.error) {
-      return {
-        reply: modelUnavailableReply(understood.error, state.lang),
-        success: false,
-        source: 'ai',
-        error: understood.error,
-        execution: { status: 'failed', verified: true },
-      };
-    }
-    throw error;
-  }
+  // Fast path only: no external LLM (Ollama/Gemini). Rules + data handlers reply immediately.
+  const legacy = await respondLegacy(user, input, session, state);
+  return {
+    ...legacy,
+    execution: legacy.execution || { status: 'completed', verified: true },
+  };
 }
 
 async function handlePlan(user, input, session, state, { respondLegacy, lang }) {

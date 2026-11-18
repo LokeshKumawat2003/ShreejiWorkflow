@@ -17,6 +17,9 @@ const DEVANAGARI = {
 const ORG_ALIASES = [
   { alias: 'powergrid', forms: ['power grid', 'powergrid', 'pgcil', 'पावरग्रिड', 'पावर ग्रिड'] },
   { alias: 'ntpc', forms: ['ntpc', 'एनटीपीसी'] },
+  // Hindi/STT often hears GAIL as "गली" / "gail".
+  { alias: 'gail', forms: ['gail', 'गेल', 'गली', 'gayl', 'gael'] },
+  { alias: 'bhel', forms: ['bhel', 'भेल', 'भ्ेल', 'behel', 'bhael'] },
 ];
 
 function transliterate(text) {

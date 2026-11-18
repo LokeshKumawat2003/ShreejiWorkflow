@@ -62,17 +62,27 @@ function classifyError(status, message, name) {
   return { code: 'MODEL_ERROR', retryable: false, message: message || 'The AI service failed.' };
 }
 
+/** External LLM is off by default — assistant uses local rules/fallback for speed. */
+function externalModelEnabled() {
+  return process.env.ASSISTANT_USE_EXTERNAL_MODEL === '1';
+}
+
 function getModelConfig() {
+  if (!externalModelEnabled()) {
+    return { apiKey: '', baseUrl: '', model: '', enabled: false };
+  }
   return {
     apiKey: process.env.OLLAMA_API_KEY || '',
     baseUrl: (process.env.OLLAMA_BASE_URL || 'https://ollama.com/v1').replace(/\/$/, ''),
     model: process.env.OLLAMA_MODEL || 'deepseek-v4.1-flash',
+    enabled: true,
   };
 }
 
 function getCircuitStatus() {
   const now = Date.now();
   const open = now < circuit.openUntil;
+  const config = getModelConfig();
   return {
     open,
     halfOpen: !open && circuit.halfOpen === true,
@@ -81,7 +91,7 @@ function getCircuitStatus() {
     lastErrorDetail: circuit.lastErrorDetail,
     lastSuccessAt: circuit.lastSuccessAt || null,
     providerActionRequired: circuit.providerActionRequired === true,
-    available: Boolean(process.env.OLLAMA_API_KEY) && (!open || circuit.halfOpen === true),
+    available: Boolean(config.apiKey) && config.enabled && (!open || circuit.halfOpen === true),
   };
 }
 
@@ -137,11 +147,16 @@ function extractJson(text) {
 async function chatCompletions(options = {}) {
   const id = correlationId();
   const config = getModelConfig();
-  if (!config.apiKey) {
+  if (!config.enabled || !config.apiKey) {
     return {
       ok: false,
+      quiet: true,
       correlationId: id,
-      error: { code: 'MODEL_NOT_CONFIGURED', message: 'OLLAMA_API_KEY is not set.', retryable: false },
+      error: {
+        code: 'MODEL_NOT_CONFIGURED',
+        message: config.enabled ? 'OLLAMA_API_KEY is not set.' : 'External LLM is disabled. Using local rules.',
+        retryable: false,
+      },
     };
   }
 
@@ -273,6 +288,14 @@ async function chatCompletions(options = {}) {
  */
 async function probeModelAvailability() {
   const config = getModelConfig();
+  if (!config.enabled) {
+    return {
+      available: true,
+      code: 'LOCAL_RULES',
+      message: 'External LLM disabled. Assistant uses local rules/fallback.',
+      providerActionRequired: false,
+    };
+  }
   if (!config.apiKey) {
     return {
       available: false,

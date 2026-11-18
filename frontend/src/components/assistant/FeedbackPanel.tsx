@@ -120,7 +120,7 @@ export default function FeedbackPanel({ sessionId, lastUserText, lastAssistantTe
 			/>
 			<Textarea
 				size="sm"
-				placeholder="Expected behaviour (optional)"
+				placeholder='Expected reply (applied after Approve). Example: जवाब: "हाँ, मैं लड़की हूँ।"'
 				value={expected}
 				onChange={(event) => setExpected(event.target.value)}
 				maxLength={2000}

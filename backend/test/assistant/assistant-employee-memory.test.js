@@ -15,9 +15,16 @@ const {
   extractParentNameFilter,
   askedEmployeeFields,
   answerDocumentMonthFollowUp,
+  answerMarkAttendance,
+  wantsMarkAttendanceAction,
+  clearAssistantCaches,
 } = require('../../src/services/assistantService');
 const Employee = require('../../src/models/Employee');
 const bankInvoiceService = require('../../src/services/bankInvoiceService');
+
+test.beforeEach(() => {
+  clearAssistantCaches();
+});
 
 test('kitne Name hai counts employees with that name', async () => {
   const orgId = '507f1f77bcf86cd799439011';
@@ -566,4 +573,62 @@ test('named employee salary batao returns text amount not document', async () =>
     Employee.find = originalFind;
     bankInvoiceService.previewLocationsPayroll = originalPreview;
   }
+});
+
+test('attendance ful kar do and laga do present are mark actions', () => {
+  assert.equal(wantsMarkAttendanceAction('is location ki sari attendance ful kar do November manth ki'), true);
+  assert.equal(wantsMarkAttendanceAction('November month ki attendance laga do as a present full present'), true);
+  assert.equal(wantsMarkAttendanceAction('usmein housekeeping mein kitne employee hai'), false);
+  assert.equal(wantsMarkAttendanceAction('ke naam batao'), false);
+});
+
+test('sticky location attendance ful kar do builds mark plan', async () => {
+  const orgId = '507f1f77bcf86cd7994390a1';
+  const locId = '507f1f77bcf86cd7994390b1';
+  const directory = {
+    organizations: [{ id: orgId, name: 'Coal India Korba', status: 'active' }],
+    locations: [{
+      id: locId,
+      organizationId: orgId,
+      organizationName: 'Coal India Korba',
+      workName: 'Housekeeping',
+      name: 'Korba Admin Block',
+      designation: 'Housekeeping',
+      status: 'active',
+      address: 'Korba',
+    }],
+  };
+  const memory = {
+    organizationId: orgId,
+    organizationName: 'Coal India Korba',
+    locationId: locId,
+    locationIds: [locId],
+    topic: 'employees',
+    items: ['Pooja Reddy', 'Rekha Pillai'],
+  };
+  const result = await answerMarkAttendance(
+    { id: '1', role: 'admin' },
+    'is location ki sari attendance ful kar do November manth ki',
+    directory,
+    '2026-11-18',
+    memory,
+  );
+  assert.ok(result);
+  assert.ok(result.plan);
+  assert.equal(result.plan.type, 'mark_attendance');
+  assert.equal(result.plan.locationId, locId);
+  assert.equal(result.plan.month, '2026-11');
+  assert.equal(result.plan.status, 'present');
+  assert.equal(result.plan.employeeId, null);
+
+  const follow = await answerMarkAttendance(
+    { id: '1', role: 'admin' },
+    'November month ki attendance laga do as a present full present',
+    directory,
+    '2026-11-18',
+    memory,
+  );
+  assert.ok(follow?.plan);
+  assert.equal(follow.plan.locationId, locId);
+  assert.equal(follow.plan.status, 'present');
 });

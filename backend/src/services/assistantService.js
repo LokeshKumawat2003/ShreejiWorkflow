@@ -57,7 +57,14 @@ const MONTHS = [
 const TYPE_KEYWORDS = [
   ['salary_slip', ['slip', 'slips', 'स्लिप', 'पर्ची', 'parchi', 'payslip']],
   ['attendance_register', ['attendance', 'attorneys', 'attorney', 'अटेंडेंस', 'अटेंडन्स', 'एटर्नीज', 'एटर्नी', 'अटर्नीज', 'अटॉर्नीज', 'हाजिरी', 'हाज़िरी', 'उपस्थिति', 'hajiri', 'haziri', 'form xvi', 'musterroll', 'muster']],
-  ['wage_register', ['wage', 'wages', 'veggies', 'veggie', 'वेज', 'वेजेस', 'वेजस', 'वेजिस', 'वेजीज', 'वेतन रजिस्टर', 'form xvii', 'xvii']],
+  ['wage_register', [
+    'wage', 'wages', 'wage sheet', 'wages sheet', 'wage register', 'wages register',
+    // STT: wage → veg / veggies / which
+    'veg', 'vegs', 'veg sheet', 'vegsheet', 'vej', 'vej sheet', 'veggies', 'veggie', 'veggies sheet', 'veggie sheet',
+    'which sheet', 'wich sheet', 'wage seat', 'veg seat',
+    'वेज', 'वेज शीट', 'वेजशीट', 'वेजेस', 'वेजस', 'वेजिस', 'वेजीज', 'वेतन रजिस्टर', 'वेतन शीट',
+    'form xvii', 'xvii',
+  ]],
   ['payroll', [
     'payroll', 'pay roll', 'payrol', 'payrole', 'pay role', 'pairol', 'pairoll', 'pairo', 'pairon', 'pairons',
     'payron', 'peiron', 'perol', 'peroll', 'payarol', 'payerol',
@@ -292,10 +299,48 @@ function locationLabel(location) {
   return [location.workName, site !== location.workName && site].filter(Boolean).join(' – ');
 }
 
+const DIRECTORY_CACHE_TTL_MS = Number(process.env.ASSISTANT_DIRECTORY_CACHE_MS) || 60_000;
+const EMPLOYEE_CACHE_TTL_MS = Number(process.env.ASSISTANT_EMPLOYEE_CACHE_MS) || 45_000;
+const directoryCache = new Map();
+const employeeIndexCache = new Map();
+
+function cacheGet(map, key, ttlMs) {
+  const hit = map.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > ttlMs) {
+    map.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function cacheSet(map, key, value) {
+  map.set(key, { at: Date.now(), value });
+}
+
+function clearAssistantCaches() {
+  directoryCache.clear();
+  employeeIndexCache.clear();
+}
+
+function assistantCacheEnabled() {
+  if (process.env.ASSISTANT_DISABLE_CACHE === '1') return false;
+  if (process.env.NODE_ENV === 'test') return false;
+  // `node --test` does not set NODE_ENV=test.
+  if (process.execArgv.some((arg) => arg === '--test' || arg.startsWith('--test='))) return false;
+  return true;
+}
+
 async function loadDirectory(user) {
+  const cacheKey = `dir:${user.role}:${user.id}`;
+  const cached = assistantCacheEnabled()
+    ? cacheGet(directoryCache, cacheKey, DIRECTORY_CACHE_TTL_MS)
+    : null;
+  if (cached) return cached;
+
   const organizationFilter = user.role === 'admin' ? { role: 'organization' } : { _id: user.id, role: 'organization' };
   const [organizations, locations] = await Promise.all([
-    User.find(organizationFilter).select('_id organizationName name email status').lean(),
+    User.find(organizationFilter).select('_id organizationName name email status phone address').lean(),
     Location.find(user.role === 'admin' ? {} : { organizationId: user.id })
       .select('_id organizationId workName name address designation status opNumber')
       .lean(),
@@ -304,10 +349,14 @@ async function loadDirectory(user) {
     String(organization._id),
     organization.organizationName || organization.name || organization.email,
   ]));
-  return {
+  const directory = {
     organizations: organizations.map((organization) => ({
       id: String(organization._id),
       name: organizationNames.get(String(organization._id)),
+      contactName: organization.name || '',
+      email: organization.email || '',
+      phone: organization.phone || '',
+      address: organization.address || '',
       status: organization.status || 'active',
     })),
     locations: locations
@@ -324,6 +373,8 @@ async function loadDirectory(user) {
         status: location.status || 'active',
       })),
   };
+  cacheSet(directoryCache, cacheKey, directory);
+  return directory;
 }
 
 const COMMON_WORDS = new Set([
@@ -389,7 +440,15 @@ function matchOrganizations(text, directory) {
   return bestMatches(text, directory.organizations, (organization) => [organization.name]);
 }
 
-async function findEmployees(user, text, { organizationId, locationId, exactName } = {}) {
+async function loadEmployeeIndex(user, { organizationId, locationId } = {}) {
+  const scopeOrg = user.role !== 'admin' ? String(user.id) : (organizationId ? String(organizationId) : 'all');
+  const scopeLoc = locationId ? String(locationId) : '';
+  const cacheKey = `emp:${user.role}:${scopeOrg}:${scopeLoc}`;
+  const cached = assistantCacheEnabled()
+    ? cacheGet(employeeIndexCache, cacheKey, EMPLOYEE_CACHE_TTL_MS)
+    : null;
+  if (cached) return cached;
+
   const filter = { organizationId: { $ne: null } };
   if (user.role !== 'admin') filter.organizationId = user.id;
   else if (organizationId) filter.organizationId = organizationId;
@@ -407,6 +466,12 @@ async function findEmployees(user, text, { organizationId, locationId, exactName
     designation: employee.designation || '',
     status: employee.status,
   }));
+  cacheSet(employeeIndexCache, cacheKey, entries);
+  return entries;
+}
+
+async function findEmployees(user, text, { organizationId, locationId, exactName } = {}) {
+  const entries = await loadEmployeeIndex(user, { organizationId, locationId });
   if (exactName) {
     const target = skeleton(exactName);
     const exact = entries.filter((employee) => skeleton(employee.name) === target);
@@ -565,6 +630,15 @@ function choice(label, plan) {
 /** Short replies used when the model is unavailable; checked in order, so "who are you working for" wins over "who are you". */
 const SMALL_TALK = [
   {
+    words: [
+      'ladki', 'ladke', 'girl', 'woman', 'female', 'are you a girl', 'are you a woman', 'are you female',
+      'tum ladki', 'tu ladki', 'aap ladki', 'kya tum ladki', 'kya aap ladki',
+      'लड़की', 'लड़के', 'औरत', 'महिला', 'तुम लड़की', 'आप लड़की', 'क्या तुम लड़की', 'क्या आप लड़की',
+    ],
+    reply: 'हाँ, मैं लड़की हूँ। मेरा नाम श्रीजी है — Shreeji Caretaker की AI Assistant।',
+    replyEn: "Yes, I'm a girl. My name is Shreeji — the AI Assistant of Shreeji Caretaker.",
+  },
+  {
     words: ['working for', 'work for'],
     reply: 'मैं Shreeji Caretaker के लिए AI Assistant हूँ।',
     replyEn: 'I am the AI Assistant for Shreeji Caretaker.',
@@ -620,6 +694,13 @@ function helpReply(lang) {
 
 function smallTalkReply(entry, lang) {
   return say(lang, entry.reply, entry.replyEn || entry.reply);
+}
+
+/** Identity / greeting replies without DB — used by orchestrator for a fast path. */
+function answerSmallTalk(message, lang = 'hi') {
+  const entry = SMALL_TALK.find(({ words: list }) => includesAny(message, list));
+  if (!entry) return null;
+  return smallTalkReply(entry, lang);
 }
 
 const COUNT_WORDS = ['how many', 'number of', 'count', 'total', 'kitne', 'kitni', 'kitna', 'कितने', 'कितनी', 'कितना', 'कुल'];
@@ -881,11 +962,39 @@ async function answerAttendanceStatus(user, message, directory, today, timeZone,
 const MARK_WORDS = [
   'laga do', 'lagado', 'laga de', 'laga dijiye', 'laga dena', 'lagao', 'lagwa do', 'laga ke de', 'lagake de',
   'mark kar do', 'mark kardo', 'mark karo', 'mark kar de', 'mark karke', 'mark karke de', 'mark karke do', 'mark kar ke',
-  'fill kar do', 'bhar do', 'present kar do', 'absent kar do', 'mark all', 'mark attendance', 'mark the attendance', 'fill attendance',
+  'fill kar do', 'ful kar do', 'full kar do', 'ful kardo', 'full kardo', 'fill kardo',
+  'bhar do', 'present kar do', 'absent kar do', 'mark all', 'mark attendance', 'mark the attendance', 'fill attendance',
+  'attendance ful', 'attendance full', 'full attendance', 'ful attendance', 'complete attendance',
+  // STT often hears "मार्क" as "मार".
+  'mar kar do', 'mar kardo', 'mar karo', 'mar do', 'मार कर दो', 'मार करो', 'मार दो', 'मारकर दो',
   'लगा दो', 'लगा दे', 'लगा दें', 'लगा दीजिए', 'लगा देना', 'लगाओ', 'लगवा दो', 'लगा के दे', 'लगाकर दे', 'लगा करके',
   'मार्क कर दो', 'मार्क करो', 'मार्क कर दें', 'मार्क करके', 'मार्क कर के', 'मार्क करके दे', 'मार्क करके दो',
-  'भर दो', 'प्रेजेंट कर दो', 'प्रेजेंट लगा', 'प्रजेंट मार्क', 'प्रेजेंट मार्क', 'एब्सेंट कर दो', 'करके दे दो', 'कर के दे दो',
+  'भर दो', 'फुल कर दो', 'फुल करो', 'पूरी कर दो', 'पूरा कर दो',
+  'प्रेजेंट कर दो', 'प्रेजेंट लगा', 'प्रजेंट मार्क', 'प्रेजेंट मार्क', 'एब्सेंट कर दो', 'करके दे दो', 'कर के दे दो',
 ];
+
+/** True when the user wants to fill/mark attendance, not just read it. */
+function wantsMarkAttendanceAction(message) {
+  const text = String(message || '');
+  if (!(includesAny(text, ATTENDANCE_WORDS) || parseStatus(text))) return false;
+  if (includesAny(text, MARK_WORDS)) return true;
+  if (includesAny(text, EDIT_WORDS)) return false;
+  // "sari attendance ful kar do" / "attendance laga do as a present full present"
+  const actionVerb = includesAny(text, [
+    'kar do', 'kardo', 'karo', 'kar de', 'laga', 'lagao', 'lagado', 'fill', 'ful', 'full', 'bhar', 'complete',
+    'कर दो', 'करो', 'लगा', 'लगाओ', 'भर', 'फुल', 'पूरी कर', 'पूरा कर',
+  ]);
+  const fillScope = includesAny(text, ALL_WORDS)
+    || includesAny(text, ALL_DAYS_WORDS)
+    || includesAny(text, FULL_MONTH_WORDS)
+    || includesAny(text, ['ful', 'full', 'fill', 'फुल', 'complete', 'sari', 'saari', 'sabhi', 'सारी', 'सभी', 'पूरी'])
+    || includesAny(text, PRESENT_WORDS)
+    || includesAny(text, ABSENT_WORDS);
+  if (actionVerb && fillScope) return true;
+  // "attendance laga do" / "hajiri laga do" without needing "full"
+  if (includesAny(text, ['laga do', 'lagado', 'laga de', 'lagao', 'लगा दो', 'लगाओ', 'लगवा दो'])) return true;
+  return false;
+}
 const ABSENT_WORDS = ['absent', 'apsent', 'abcent', 'एब्सेंट', 'ऐब्सेंट', 'एबसेंट', 'अबसेंट', 'अब्सेंट', 'अपसेंट', 'एपसेंट', 'गैरहाजिर', 'गैरहाज़िर', 'अनुपस्थित', 'gairhajir'];
 const STATUS_WORDS = [
   ['paid_leave', ['paid leave', 'pl', 'पेड लीव', 'पेड छुट्टी']],
@@ -1176,9 +1285,10 @@ async function confirmMarkAttendanceBatch(user, plan, directory, today, timeZone
 const PLURAL_LOCATION_WORDS = ['locations', 'लोकेशंस', 'लोकेशन्स', 'sites', 'साइट्स', 'सारी लोकेशन', 'सभी लोकेशन', 'wali locations', 'वाली लोकेशन', 'वाली लोकेशंस'];
 
 /** "Mark everyone's attendance at <location> for <month>" — previews first; nothing is saved until the user confirms. */
-async function answerMarkAttendance(user, message, directory, today) {
-  const hasMark = includesAny(message, MARK_WORDS)
-    || (parseStatus(message) && includesAny(message, ALL_WORDS) && includesAny(message, ['mark', 'मार्क', 'लगा', 'करो', 'कर दो', 'दे दो']));
+async function answerMarkAttendance(user, message, directory, today, memory = null) {
+  const hasMark = wantsMarkAttendanceAction(message)
+    || includesAny(message, MARK_WORDS)
+    || (parseStatus(message) && includesAny(message, ALL_WORDS) && includesAny(message, ['mark', 'मार्क', 'मार', 'लगा', 'करो', 'कर दो', 'दे दो', 'ful', 'full', 'फुल']));
   if (!hasMark || !(includesAny(message, ATTENDANCE_WORDS) || parseStatus(message))) return null;
   if (parseFormat(message) || includesAny(message, DOCUMENT_REQUEST_WORDS)) return null;
   const currentMonth = today.slice(0, 7);
@@ -1191,7 +1301,15 @@ async function answerMarkAttendance(user, message, directory, today) {
     const organizations = matchOrganizations(message, directory);
     if (organizations.length === 1) [organization] = organizations;
   }
+  if (!organization && memory?.organizationId) {
+    organization = directory.organizations.find((item) => item.id === memory.organizationId) || null;
+  }
   let matches = matchLocations(message, directory, organization?.id).filter((item) => item.status !== 'disabled');
+  // Sticky "इस लोकेशन पर … attendance मार कर दो".
+  if (matches.length === 0 && memory?.locationId) {
+    const sticky = directory.locations.find((item) => item.id === memory.locationId && item.status !== 'disabled');
+    if (sticky) matches = [sticky];
+  }
   // "पिराना … वाली लोकेशंस" with no site name hit → all active locations of that organization.
   if (matches.length === 0 && organization) {
     matches = directory.locations.filter((item) => item.status !== 'disabled' && item.organizationId === organization.id);
@@ -1235,7 +1353,13 @@ async function answerMarkAttendance(user, message, directory, today) {
   const [location] = matches;
 
   let employee = null;
-  if (!includesAny(message, ALL_WORDS)) {
+  // "दोनों / सारे employees" on this location → mark the whole site, not one person.
+  const markAllAtSite = includesAny(message, ALL_WORDS)
+    || includesAny(message, BOTH_WORDS)
+    || includesAny(message, ALL_DAYS_WORDS)
+    || includesAny(message, ['dono', 'donon', 'दोनों', 'ful', 'full', 'fill', 'फुल', 'sari', 'saari', 'सारी', 'sabhi', 'सभी'])
+    || includesAny(message, ['is location', 'usi location', 'is location ki', 'location ki', 'इस लोकेशन', 'लोकेशन की']);
+  if (!markAllAtSite) {
     const locationKeys = new Set([location.workName, location.name].flatMap(words).map(skeleton));
     const text = words(message).filter((word) => !locationKeys.has(skeleton(word))).join(' ');
     const employees = await findEmployees(user, text, { organizationId: location.organizationId, locationId: location.id });
@@ -1856,7 +1980,9 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
     && memory?.employeeId
     && (memory.topic === 'employee_attendance' || includesAny(message, ATTENDANCE_WORDS) || includesAny(message, ATTENDANCE_REPORT_WORDS) || includesAny(message, REFERENCE_WORDS));
   if (!hasAttendance && !textFollowUp && !monthFollowUp && !pdfFollowUp && !includesAny(message, ATTENDANCE_REPORT_WORDS)) return null;
-  if (includesAny(message, MARK_WORDS) || includesAny(message, EDIT_WORDS) || runKindOf(message)) return null;
+  if (wantsMarkAttendanceAction(message) || includesAny(message, MARK_WORDS) || includesAny(message, EDIT_WORDS) || runKindOf(message)) {
+    return null;
+  }
 
   // Explicit PDF/Excel wins over bare "रिपोर्ट" — unless user also asked for text / rejected PDF.
   const forceText = includesAny(message, TEXT_REPLY_WORDS) || rejectsDocumentFormat(message);
@@ -1906,7 +2032,29 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
     }];
   } else if (hasAttendance || wantsText || wantsDocument || wantsCount || status || includesAny(message, ATTENDANCE_REPORT_WORDS)) {
     employees = (await findEmployees(user, message)).filter((item) => item.locationId || item.organizationId);
-    if (employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
+    // "इस लोकेशन पर दोनों employees की attendance" — sticky site, not a person-name search.
+    const stickyLocationAttendance = Boolean(
+      memory?.locationId
+      && employees.length === 0
+      && (includesAny(message, REFERENCE_WORDS)
+        || includesAny(message, BOTH_WORDS)
+        || includesAny(message, ['ismein', 'isme', 'usmein', 'usme', 'is location', 'usi location', 'इस', 'उसी', 'लोकेशन'])
+        || includesAny(message, ALL_WORDS)
+        || includesAny(message, STAFF_WORDS)),
+    );
+    if (stickyLocationAttendance) {
+      const people = await Employee.find({
+        organizationId: memory.organizationId || { $ne: null },
+        locationId: memory.locationId,
+        status: { $ne: 'disabled' },
+      }).select('_id name organizationId locationId').sort({ name: 1 }).limit(MAX_LISTED).lean();
+      employees = people.map((item) => ({
+        id: String(item._id),
+        name: item.name,
+        locationId: String(item.locationId || ''),
+        organizationId: String(item.organizationId || ''),
+      }));
+    } else if (employees.length === 0 && memory?.employeeId && (wantsText || wantsDocument || textFollowUp || monthFollowUp || pdfFollowUp || includesAny(message, REFERENCE_WORDS))) {
       employees = [{
         id: String(memory.employeeId),
         name: memory.employeeName || '',
@@ -1931,6 +2079,33 @@ async function answerEmployeeAttendance(user, message, directory, today, memory 
     return null;
   }
   if (employees.length > 1) {
+    const sameStickySite = Boolean(
+      memory?.locationId
+      && employees.every((item) => item.locationId === memory.locationId)
+      && (includesAny(message, BOTH_WORDS) || includesAny(message, ALL_WORDS) || includesAny(message, REFERENCE_WORDS)
+        || includesAny(message, ['ismein', 'isme', 'is location', 'इस', 'लोकेशन'])),
+    );
+    if (sameStickySite && !wantsDocument) {
+      const detailed = months.length === 1 && (wantsText || !status);
+      const sections = [];
+      for (const employee of employees.slice(0, MAX_LISTED)) {
+        for (const item of months) {
+          sections.push(await employeeAttendanceReply(employee.id, item, status, today, { detailed: detailed || months.length <= 3 }));
+        }
+      }
+      return {
+        reply: sections.join('\n\n'),
+        context: {
+          topic: 'employee_attendance',
+          organizationId: memory.organizationId || employees[0].organizationId || '',
+          locationId: memory.locationId,
+          locationIds: [memory.locationId],
+          month: months[months.length - 1],
+          months,
+          items: employees.map((item) => item.name),
+        },
+      };
+    }
     const label = months.length > 1
       ? `${monthLabel(months[0])} – ${monthLabel(months[months.length - 1])}`
       : monthLabel(month);
@@ -3007,6 +3182,14 @@ async function answerFromContext(user, message, directory, context) {
     };
   }
 
+  // Organization profile follow-ups ("उसकी फुल डिटेल्स") belong to directory sticky org details.
+  if (context.topic === 'organization'
+    && includesAny(message, DETAIL_WORDS)
+    && !includesAny(message, DATA_TOPICS[0][1])
+    && !includesAny(message, DATA_TOPICS[1][1])) {
+    return null;
+  }
+
   if ((includesAny(message, DATA_TOPICS[0][1]) || includesAny(message, DETAIL_WORDS)) && targetPlaces.length) {
     const lines = await Promise.all(targetPlaces.slice(0, MAX_LISTED).map(async (place) => {
       const employees = await Employee.find({
@@ -3028,7 +3211,13 @@ async function answerFromContext(user, message, directory, context) {
       },
     };
   }
-  if (!context.items?.length) return { reply: 'पिछले जवाब में कोई location नहीं थी।', context };
+  // Named site from a pending list ("सिक्योरिटी") — let directory selection / location details handle it.
+  if (namedInScope.length === 1) return null;
+  if (context.pendingSelection?.options?.length) return null;
+  if (!context.items?.length) {
+    if (stickyLocationIds.length || context.organizationId) return null;
+    return { reply: 'पिछले जवाब में कोई location नहीं थी।', context };
+  }
   const shown = context.items.slice(0, MAX_LISTED).map((item) => `• ${item}`).join('\n');
   const more = context.items.length > MAX_LISTED ? `\n(+${context.items.length - MAX_LISTED} और)` : '';
   return { reply: `${context.title}:\n${shown}${more}`, context };
@@ -3036,7 +3225,7 @@ async function answerFromContext(user, message, directory, context) {
 
 const DETAIL_WORDS = [
   'detail', 'details', 'detailed', 'info', 'information', 'profile', 'bio', 'data', 'jankari', 'jaankari', 'bare me', 'bare mein', 'baare me', 'sab kuch',
-  'about', 'who is', "who's", 'who is she', 'who is he', 'tell me about', 'full info', 'full details',
+  'about', 'who is', "who's", 'who is she', 'who is he', 'tell me about', 'full info', 'full details', 'full detail', 'फुल डिटेल्स', 'फुल डिटेल',
   'डिटेल', 'डिटेल्स', 'डीटेल', 'जानकारी', 'प्रोफाइल', 'प्रोफ़ाइल', 'बारे में', 'सब कुछ', 'डेटा', 'डाटा', 'विवरण', 'इन्फो', 'कौन है', 'कौन हैं',
 ];
 const AVAILABLE_WORDS = [
@@ -3461,6 +3650,14 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     if (asksLocationSubject) {
       return { reply: say(lang, 'किस location के बारे में?', 'Which location?') };
     }
+    // Sticky organization conversation ("उसकी फुल डिटेल्स") is not an employee ask.
+    if (memory?.organizationId && !memory?.employeeId
+      && (memory.topic === 'organization' || memory.topic === 'locations'
+        || memory.lastIntent === 'organization_details'
+        || memory.lastIntent === 'organization_location_list'
+        || memory.lastIntent === 'organization_employee_count')) {
+      return null;
+    }
     return { reply: say(lang, 'किस employee के बारे में?', 'Which employee?') };
   }
   if (matches.length === 0) return null;
@@ -3472,21 +3669,8 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     // Count every employee id — same name in two orgs counts as two.
     let people = exact;
     if (wantsNameCount && nameBits.length > 0) {
-      const all = await Employee.find(user.role === 'admin' ? { organizationId: { $ne: null } } : { organizationId: user.id })
-        .select('_id name parentName organizationId locationId designation status')
-        .limit(5000)
-        .lean();
-      people = all
-        .filter((row) => employeeNameCoversQuery(row.name, nameBits))
-        .map((row) => ({
-          id: String(row._id),
-          name: row.name,
-          parentName: row.parentName || '',
-          organizationId: row.organizationId ? String(row.organizationId) : '',
-          locationId: row.locationId ? String(row.locationId) : '',
-          designation: row.designation || '',
-          status: row.status,
-        }));
+      const all = await loadEmployeeIndex(user);
+      people = all.filter((row) => employeeNameCoversQuery(row.name, nameBits));
     }
     const seenIds = new Set();
     people = people.filter((item) => {
@@ -4026,7 +4210,8 @@ async function chat(user, input = {}) {
 
 async function respond(user, input, session, state = {}) {
   const today = todayIn(input.timeZone);
-  const directory = await loadDirectory(user);
+  const directory = state.preloadedDirectory || await loadDirectory(user);
+  if (state.preloadedDirectory) delete state.preloadedDirectory;
   const assistantTurns = session.messages.filter((item) => item.role === 'assistant').length;
   const context = session.context && assistantTurns - session.context.turn <= CONTEXT_TURNS ? session.context : null;
   const spoken = typeof input.message === 'string' ? input.message : '';
@@ -4157,28 +4342,34 @@ async function respond(user, input, session, state = {}) {
   const memory = answerMemory(originalMessage, session);
   if (memory) return { reply: memory, source: 'data' };
 
-  // Deterministic org/location/employee directory intelligence (works even when AI is unavailable).
-  const directoryAnswer = await answerDirectoryQuery({
-    user,
-    message: originalMessage,
-    directory,
-    context,
-    lang,
-  });
-  if (directoryAnswer) {
-    return {
-      reply: directoryAnswer.reply,
-      choices: directoryAnswer.choices,
-      context: directoryAnswer.context,
-      source: 'data',
-      intent: directoryAnswer.intent,
-      data: directoryAnswer.data,
-    };
-  }
+  // Identity / greetings first — don't fall through to "which document?" help text.
+  const earlySmallTalk = answerSmallTalk(originalMessage, lang) || answerSmallTalk(message, lang);
+  if (earlySmallTalk) return { reply: earlySmallTalk, source: 'rules' };
 
-  // "October ki chahiye" / "अक्टूबर मंथ की बताओ" — same document/location/employee, new month.
-  const monthFollowUp = await answerDocumentMonthFollowUp(user, originalMessage, directory, today, context);
-  if (monthFollowUp) return { ...monthFollowUp, source: 'data' };
+  // Orchestrator already ran directory + month follow-up on this turn — skip the duplicate DB work.
+  if (!state.directoryChecked) {
+    const directoryAnswer = await answerDirectoryQuery({
+      user,
+      message: originalMessage,
+      directory,
+      context,
+      lang,
+    });
+    if (directoryAnswer) {
+      return {
+        reply: directoryAnswer.reply,
+        choices: directoryAnswer.choices,
+        context: directoryAnswer.context,
+        source: 'data',
+        intent: directoryAnswer.intent,
+        data: directoryAnswer.data,
+      };
+    }
+
+    // "October ki chahiye" / "अक्टूबर मंथ की बताओ" — same document/location/employee, new month.
+    const monthFollowUp = await answerDocumentMonthFollowUp(user, originalMessage, directory, today, context);
+    if (monthFollowUp) return { ...monthFollowUp, source: 'data' };
+  }
 
   // Fallback: rewrite the previous substantive query with the new month words.
   if (context?.query && words(originalMessage).length <= 8 && parseMonth(originalMessage, today.slice(0, 7))
@@ -4248,6 +4439,20 @@ async function respond(user, input, session, state = {}) {
   const acronym = answerAcronym(message, lang);
   if (acronym) return { ...acronym, source: 'data' };
 
+  // Mark/edit attendance before read-only attendance text so
+  // "sari attendance ful kar do" / "laga do as present" is never answered as a status dump.
+  const editRequest = await answerEditAttendance(user, message, directory, today);
+  if (editRequest) {
+    if (!editRequest.plan) return { ...editRequest, source: 'data' };
+    return { ...(await previewEditAttendance(user, editRequest.plan, directory, today, input.timeZone)), source: 'data' };
+  }
+
+  const markRequest = await answerMarkAttendance(user, message, directory, today, session.context);
+  if (markRequest) {
+    if (!markRequest.plan) return { ...markRequest, source: 'data' };
+    return { ...(await previewMarkAttendance(user, markRequest.plan, directory, today, input.timeZone)), source: 'data' };
+  }
+
   // Attendance text/count before profile details — "अटेंडेंस डिटेल्स / टेक्स्ट में" is not employee Basic+DA.
   const employeeAttendanceEarly = await answerEmployeeAttendance(user, message, directory, today, session.context);
   if (employeeAttendanceEarly) return { ...employeeAttendanceEarly, source: 'data' };
@@ -4290,18 +4495,6 @@ async function respond(user, input, session, state = {}) {
     return { ...(await previewPaymentRun(kind, user, runRequest.plan, directory, lang)), source: 'data' };
   }
 
-  const editRequest = await answerEditAttendance(user, message, directory, today);
-  if (editRequest) {
-    if (!editRequest.plan) return { ...editRequest, source: 'data' };
-    return { ...(await previewEditAttendance(user, editRequest.plan, directory, today, input.timeZone)), source: 'data' };
-  }
-
-  const markRequest = await answerMarkAttendance(user, message, directory, today);
-  if (markRequest) {
-    if (!markRequest.plan) return { ...markRequest, source: 'data' };
-    return { ...(await previewMarkAttendance(user, markRequest.plan, directory, today, input.timeZone)), source: 'data' };
-  }
-
   const out = {};
   const attendanceAnswer = await answerAttendanceStatus(user, message, directory, today, input.timeZone, out);
   if (attendanceAnswer) return { reply: attendanceAnswer, context: out.context, source: 'data' };
@@ -4311,22 +4504,7 @@ async function respond(user, input, session, state = {}) {
     if (dataAnswer) return { reply: dataAnswer, context: out.context, source: 'data' };
   }
 
-  const summary = await dataSummary(user, directory);
-  const { result, error, quiet } = await askModel(message, history, directory, today, summary);
-  if (result) {
-    if (result.intent === 'chat' || !DOCUMENT_TYPES.includes(result.type)) {
-      const reply = typeof result.reply === 'string' && result.reply.trim() ? result.reply.trim().slice(0, 1000) : helpReply(lang);
-      return { reply, source: 'ai' };
-    }
-    const draft = {
-      ...result,
-      format: result.format || parseFormat(message),
-      employeeName: typeof result.employeeName === 'string' && result.employeeName.trim() ? result.employeeName.trim().slice(0, 100) : null,
-    };
-    return { ...(await resolvePlan(user, draft, directory, { message, today })), source: 'ai' };
-  }
-
-  if (!quiet && process.env.NODE_ENV !== 'test') console.warn(`Assistant model unavailable, using rules: ${error}`);
+  // No external LLM — deterministic rules only (fast local fallback).
   const draft = await interpretWithRules(user, message, directory, today);
   if (!draft.type) {
     const smallTalk = SMALL_TALK.find(({ words: list }) => includesAny(message, list));
@@ -4357,6 +4535,7 @@ module.exports = {
   skeleton,
   // Exported for Assistant 2.0 modules / tests — not a public HTTP API.
   respondLegacy: respond,
+  clearAssistantCaches,
   askModel,
   answerEmployeeDetails,
   answerSalaryAmount,
@@ -4365,6 +4544,9 @@ module.exports = {
   askedEmployeeFields,
   answerDocumentMonthFollowUp,
   answerEmployeeAttendance,
+  answerMarkAttendance,
+  wantsMarkAttendanceAction,
   answerPaymentRun,
+  answerSmallTalk,
   EMPLOYEE_FIELDS,
 };

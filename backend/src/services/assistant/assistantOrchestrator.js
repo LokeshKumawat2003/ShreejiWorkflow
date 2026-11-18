@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const AssistantSession = require('../../models/AssistantSession');
 const { httpError } = require('../../utils/httpError');
-const { preferLang, localizeAnswer } = require('../assistantLanguage');
+const { preferLang, localizeAnswer, enrichMessageForRules } = require('../assistantLanguage');
 const { registerAllTools } = require('./tools');
 const { detectLanguageHeuristic } = require('./assistantIntent');
 const { getActiveContext, mergeContext, isShortSubjectFollowUp } = require('./assistantContext');
@@ -9,6 +9,7 @@ const { answerMemoryQuestion } = require('./assistantMemory');
 const { confirmPendingAction } = require('./assistantToolExecutor');
 const { answerDirectoryQuery } = require('./assistantDirectoryQuery');
 const { applyApprovedFeedback } = require('./assistantFeedback');
+const { prepareMessageForIntent } = require('./assistantNlu');
 
 const MAX_MESSAGE_LENGTH = 500;
 const MAX_SESSION_MESSAGES = 200;
@@ -220,9 +221,12 @@ async function handleTurn(user, input, session, state, { respondLegacy, loadDire
       // Reuse in respondLegacy — avoid a second full directory fetch / directory query on the same turn.
       state.preloadedDirectory = directory;
       state.directoryChecked = true;
+      // Normalize + synonym-bridge before directory intent (no LLM).
+      const nluPrepared = prepareMessageForIntent(message);
+      const directoryMessage = enrichMessageForRules(nluPrepared.expanded || message);
       const directoryAnswer = await answerDirectoryQuery({
         user,
-        message,
+        message: directoryMessage,
         directory,
         context,
         lang,

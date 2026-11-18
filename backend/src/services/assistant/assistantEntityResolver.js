@@ -1,8 +1,11 @@
 /**
  * Reliable organization / location entity resolution for Shreeji AI 2.0.
  * Uses exact → normalized → case-insensitive → skeleton → safe fuzzy matching.
+ * Fuse.js is a spelling assist only — never the sole decision maker.
  * Never silently picks among ambiguous candidates.
  */
+
+const Fuse = require('fuse.js');
 
 const DEVANAGARI = {
   'अ': 'a', 'आ': 'a', 'इ': 'i', 'ई': 'i', 'उ': 'u', 'ऊ': 'u', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au',
@@ -156,9 +159,43 @@ function scoreOrganization(message, organization) {
   return 0;
 }
 
+/** Fuse spelling assist — high threshold; ignored when multiple near-ties remain. */
+function fuseOrganizationBoost(message, organizations) {
+  const list = (organizations || []).filter((item) => item?.name);
+  if (!list.length) return new Map();
+  const fuse = new Fuse(list, {
+    keys: ['name'],
+    includeScore: true,
+    threshold: 0.28,
+    ignoreLocation: true,
+    minMatchCharLength: 4,
+  });
+  const hay = normalizeName(message);
+  if (hay.length < 4) return new Map();
+  const hits = fuse.search(hay).slice(0, 5);
+  const boosts = new Map();
+  for (const hit of hits) {
+    // Fuse score 0 = perfect; reject weak hits.
+    if (hit.score == null || hit.score > 0.28) continue;
+    const boost = Math.round((1 - hit.score) * 20);
+    if (boost >= 10) boosts.set(hit.item.id, Math.min(18, boost));
+  }
+  // Ambiguity guard: near-equal Fuse hits cancel each other.
+  const values = [...boosts.values()].sort((a, b) => b - a);
+  if (values.length >= 2 && values[0] - values[1] < 3) return new Map();
+  return boosts;
+}
+
 function resolveOrganizations(message, organizations, { minScore = 45 } = {}) {
+  const fuseBoosts = fuseOrganizationBoost(message, organizations);
   const scored = (organizations || [])
-    .map((organization) => ({ organization, score: scoreOrganization(message, organization) }))
+    .map((organization) => {
+      const base = scoreOrganization(message, organization);
+      const boost = fuseBoosts.get(organization.id) || 0;
+      // Fuse may assist spelling but cannot invent a match from near-zero base scores.
+      const score = base >= 40 ? base + boost : base;
+      return { organization, score };
+    })
     .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score);
 

@@ -235,9 +235,24 @@ export async function downloadAssistantDocument(document: AssistantDocument) {
 
   if (type === 'wage_register') {
     const register = await getWageRegister({ organizationId, locationId, month });
-    if (register.rows.length === 0) throw new EmptyDocumentError('इस location पर इस महीने कोई wage data नहीं मिला।');
-    if (format === 'excel') await exportWageRegisterExcel(register);
-    else await exportWageRegisterPdf(register);
+    const wageRows = employeeIds
+      ? register.rows.filter((row) => employeeIds.includes(row.employeeId))
+      : register.rows;
+    if (wageRows.length === 0) {
+      throw new EmptyDocumentError(
+        employeeIds?.length
+          ? 'इस employee का इस महीने कोई wage data नहीं मिला।'
+          : 'इस location पर इस महीने कोई wage data नहीं मिला।',
+      );
+    }
+    const filteredRegister = employeeIds
+      ? {
+        ...register,
+        rows: wageRows.map((row, index) => ({ ...row, serial: index + 1 })),
+      }
+      : register;
+    if (format === 'excel') await exportWageRegisterExcel(filteredRegister);
+    else await exportWageRegisterPdf(filteredRegister);
     return;
   }
 

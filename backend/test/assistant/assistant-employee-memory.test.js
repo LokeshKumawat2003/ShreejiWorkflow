@@ -575,6 +575,225 @@ test('named employee salary batao returns text amount not document', async () =>
   }
 });
 
+test('unique bare employee name returns full details directly', async () => {
+  const orgId = '507f1f77bcf86cd799439011';
+  const locId = '507f1f77bcf86cd799439022';
+  const employeeId = '507f1f77bcf86cd7994390b1';
+  const directory = {
+    organizations: [{ id: orgId, name: 'NTPC Solapur', status: 'active' }],
+    locations: [{
+      id: locId, organizationId: orgId, organizationName: 'NTPC Solapur',
+      workName: 'Horticulture', name: 'Garden', designation: 'Mali', status: 'active', address: '',
+    }],
+  };
+  const doc = {
+    _id: employeeId,
+    name: 'Pooja Reddy',
+    parentName: 'Suresh Reddy',
+    organizationId: orgId,
+    locationId: locId,
+    designation: 'Mali',
+    status: 'active',
+    phone: '9876501234',
+    aadhaarNumber: '112233445566',
+  };
+  const originalFind = Employee.find;
+  const originalFindById = Employee.findById;
+  Employee.find = () => ({
+    select() { return this; },
+    limit() { return this; },
+    lean: async () => [{
+      _id: employeeId, name: 'Pooja Reddy', parentName: 'Suresh Reddy',
+      organizationId: orgId, locationId: locId, designation: 'Mali', status: 'active',
+    }],
+  });
+  Employee.findById = () => ({
+    select() { return this; },
+    lean: async () => doc,
+  });
+  try {
+    const result = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'Pooja Reddy',
+      directory,
+      'en',
+      null,
+    );
+    assert.ok(result);
+    assert.match(result.reply, /Pooja Reddy'?s details|details:/i);
+    assert.match(result.reply, /Suresh Reddy|Parent/i);
+    assert.match(result.reply, /9876501234|Phone/i);
+    assert.equal(result.context?.employeeId, employeeId);
+    assert.equal(result.choices, undefined);
+    assert.doesNotMatch(result.reply, /What else do you need|और क्या जानना/i);
+  } finally {
+    Employee.find = originalFind;
+    Employee.findById = originalFindById;
+  }
+});
+
+test('duplicate bare employee name lists father names as clickable choices', async () => {
+  const orgId = '507f1f77bcf86cd799439011';
+  const locId = '507f1f77bcf86cd799439022';
+  const directory = {
+    organizations: [{ id: orgId, name: 'Campus Care', status: 'active' }],
+    locations: [{
+      id: locId, organizationId: orgId, organizationName: 'Campus Care',
+      workName: 'Pisangan', name: 'Campus Care – Pisangan', designation: 'Mali', status: 'active', address: '',
+    }],
+  };
+  const rows = [
+    {
+      _id: '507f1f77bcf86cd7994390c1', id: '507f1f77bcf86cd7994390c1', name: 'Lalit Jain',
+      parentName: 'Ram Lal', organizationId: orgId, locationId: locId, designation: 'Mali', status: 'active',
+    },
+    {
+      _id: '507f1f77bcf86cd7994390c2', id: '507f1f77bcf86cd7994390c2', name: 'Lalit Jain',
+      parentName: 'Shyam Lal', organizationId: orgId, locationId: locId, designation: 'Guard', status: 'active',
+    },
+    {
+      _id: '507f1f77bcf86cd7994390c3', id: '507f1f77bcf86cd7994390c3', name: 'Lalit Jain',
+      parentName: 'Mohan Lal', organizationId: orgId, locationId: locId, designation: 'Supervisor', status: 'active',
+    },
+  ];
+  const originalFind = Employee.find;
+  Employee.find = () => ({
+    select() { return this; },
+    limit() { return this; },
+    lean: async () => rows,
+  });
+  try {
+    const result = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'Lalit Jain',
+      directory,
+      'en',
+      null,
+    );
+    assert.ok(result);
+    assert.match(result.reply, /3 employees match/i);
+    assert.match(result.reply, /S\/O Ram Lal/);
+    assert.match(result.reply, /S\/O Shyam Lal/);
+    assert.match(result.reply, /S\/O Mohan Lal/);
+    assert.equal(result.choices?.length, 3);
+    assert.ok(result.choices.every((choice) => /S\/O /.test(choice.label)));
+    assert.ok(result.choices.every((choice) => choice.plan?.type === 'directory_select'));
+    assert.ok(result.choices.every((choice) => choice.plan?.resumeIntent === 'employee_details'));
+    assert.equal(result.choices[2].plan.selectedId, '507f1f77bcf86cd7994390c3');
+    assert.match(result.choices[2].label, /Mohan Lal/);
+  } finally {
+    Employee.find = originalFind;
+  }
+});
+
+test('selected duplicate employee stays sticky on bare name follow-up', async () => {
+  const orgCampus = '507f1f77bcf86cd799439011';
+  const orgPark = '507f1f77bcf86cd799439012';
+  const locPisangan = '507f1f77bcf86cd799439021';
+  const locHurda = '507f1f77bcf86cd799439022';
+  const firstId = '507f1f77bcf86cd7994390a1';
+  const selectedId = '507f1f77bcf86cd7994390a3';
+  const directory = {
+    organizations: [
+      { id: orgCampus, name: 'Campus Care', status: 'active' },
+      { id: orgPark, name: 'Happy Yard Care', status: 'active' },
+    ],
+    locations: [
+      {
+        id: locPisangan, organizationId: orgCampus, organizationName: 'Campus Care',
+        workName: 'Pisangan', name: 'Campus Care – Pisangan', designation: 'Mali', status: 'active', address: '',
+      },
+      {
+        id: locHurda, organizationId: orgPark, organizationName: 'Happy Yard Care',
+        workName: 'Park Care – Hurda Depot', name: 'Hurda Depot', designation: 'Mali', status: 'active', address: '',
+      },
+    ],
+  };
+  const rows = [
+    {
+      _id: firstId, id: firstId, name: 'Lalit Jain', parentName: 'Ram', organizationId: orgCampus,
+      locationId: locPisangan, designation: 'Mali', status: 'active',
+    },
+    {
+      _id: '507f1f77bcf86cd7994390a2', id: '507f1f77bcf86cd7994390a2', name: 'Lalit Jain', parentName: 'Shyam',
+      organizationId: orgCampus, locationId: locPisangan, designation: 'Guard', status: 'active',
+    },
+    {
+      _id: selectedId, id: selectedId, name: 'Lalit Jain', parentName: 'Mohan', organizationId: orgPark,
+      locationId: locHurda, designation: 'Supervisor', status: 'active',
+    },
+  ];
+  const selectedDoc = {
+    _id: selectedId,
+    name: 'Lalit Jain',
+    parentName: 'Mohan',
+    organizationId: orgPark,
+    locationId: locHurda,
+    designation: 'Supervisor',
+    status: 'active',
+    phone: '9000000003',
+  };
+  const firstDoc = {
+    _id: firstId,
+    name: 'Lalit Jain',
+    parentName: 'Ram',
+    organizationId: orgCampus,
+    locationId: locPisangan,
+    designation: 'Mali',
+    status: 'active',
+    phone: '9000000001',
+  };
+
+  const originalFind = Employee.find;
+  const originalFindById = Employee.findById;
+  Employee.find = () => ({
+    select() { return this; },
+    limit() { return this; },
+    lean: async () => rows,
+  });
+  Employee.findById = (id) => ({
+    select() { return this; },
+    lean: async () => (String(id) === selectedId ? selectedDoc : firstDoc),
+  });
+
+  try {
+    const counted = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'कितने ललित जैन हैं',
+      directory,
+      'hi',
+      null,
+    );
+    assert.ok(counted);
+    assert.match(counted.reply, /3 employee/i);
+    assert.ok(counted.choices?.length >= 3);
+    assert.equal(counted.choices[2].plan.selectedId, selectedId);
+
+    const afterSelect = await answerEmployeeDetails(
+      { id: '1', role: 'admin' },
+      'ललित जैन',
+      directory,
+      'hi',
+      {
+        topic: 'employee',
+        employeeId: selectedId,
+        employeeName: 'Lalit Jain',
+        organizationId: orgPark,
+        locationId: locHurda,
+      },
+    );
+    assert.ok(afterSelect);
+    assert.equal(afterSelect.context?.employeeId, selectedId);
+    assert.match(afterSelect.reply, /details|Parent|Designation|Location/i);
+    assert.match(afterSelect.reply, /Park Care|Hurda|Supervisor|Happy Yard/i);
+    assert.doesNotMatch(afterSelect.reply, /Pisangan|Campus Care – Pisangan/i);
+    assert.doesNotMatch(afterSelect.reply, /What else do you need|और क्या जानना/i);
+  } finally {
+    Employee.find = originalFind;
+    Employee.findById = originalFindById;
+  }
+});
+
 test('attendance ful kar do and laga do present are mark actions', () => {
   assert.equal(wantsMarkAttendanceAction('is location ki sari attendance ful kar do November manth ki'), true);
   assert.equal(wantsMarkAttendanceAction('November month ki attendance laga do as a present full present'), true);

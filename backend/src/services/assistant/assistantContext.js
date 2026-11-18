@@ -41,13 +41,38 @@ function mergeContext(previous, next) {
     query: next.query || previous?.query || null,
     documentType: replacingDocument ? next.documentType : pickSticky(next, previous, 'documentType'),
     format: pickSticky(next, previous, 'format'),
+    // Preserve list filters for pronoun follow-ups ("inke naam", "inmein employees").
+    statusFilter: Object.prototype.hasOwnProperty.call(next, 'statusFilter')
+      ? (next.statusFilter || null)
+      : (previous?.statusFilter || null),
+    employeeStatusFilter: Object.prototype.hasOwnProperty.call(next, 'employeeStatusFilter')
+      ? (next.employeeStatusFilter || null)
+      : (previous?.employeeStatusFilter || null),
+    title: Object.prototype.hasOwnProperty.call(next, 'title')
+      ? (next.title || null)
+      : (previous?.title || null),
+    items: Object.prototype.hasOwnProperty.call(next, 'items')
+      ? next.items
+      : (previous?.items || null),
   };
+
+  // Explicit null organizationId clears sticky org (e.g. "another organization").
+  if (Object.prototype.hasOwnProperty.call(next, 'organizationId') && next.organizationId == null) {
+    merged.organizationId = null;
+    merged.organizationName = null;
+  }
 
   if (Object.prototype.hasOwnProperty.call(next, 'locationIds')) {
     merged.locationIds = next.locationIds;
   } else if (replacingOrg) {
     // New org answer without locationIds clears previous org's location list.
     merged.locationIds = next.locationIds || null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(next, 'organizationIds')) {
+    merged.organizationIds = next.organizationIds;
+  } else if (replacingOrg) {
+    merged.organizationIds = next.organizationIds || null;
   }
 
   // Explicitly replace pending selection when a new list is returned; clear when omitted on a final answer.
@@ -82,8 +107,8 @@ function isShortSubjectFollowUp(message) {
   if (!text) return false;
   const tokens = text.toLowerCase().match(/[a-z0-9\u0900-\u097F]+/gi) || [];
   if (tokens.length > 8) return false;
-  return /\b(uski|uska|uske|unki|unka|unke|usko|same|wahi|vahi|chahiye|chahie|chahye|batao|bhejo|do|de)\b/i.test(text)
-    || /(उसकी|उसका|उसके|उनकी|उनका|वही|चाहिए|बताओ)/.test(text)
+  return /\b(uski|uska|uske|unki|unka|unke|usko|inke|inki|inka|inmein|ismein|same|wahi|vahi|chahiye|chahie|chahye|batao|bhejo|do|de)\b/i.test(text)
+    || /(उसकी|उसका|उसके|उनकी|उनका|इनके|इनकी|इनका|वही|चाहिए|बताओ)/.test(text)
     || /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|जनवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|अक्टूबर|नवंबर|दिसंबर)\b/i.test(text);
 }
 

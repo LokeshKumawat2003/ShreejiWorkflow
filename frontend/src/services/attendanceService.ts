@@ -139,6 +139,7 @@ export type PayrollLine = {
 
 export type WageRates = {
   bonusRate: number;
+  bonusWageCeiling: number;
   epfRate: number;
   epfWageCeiling: number;
   esiRate: number;

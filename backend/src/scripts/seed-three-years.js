@@ -37,27 +37,27 @@ const PRICE_LEVELS = [
 ];
 
 const WAGE_RATE_LEVELS = [
-  { from: '2023-12', bonusRate: '8.33', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75', esiWageCeiling: '21000' },
-  { from: '2024-04', bonusRate: '8.33', epfRate: '12', epfWageCeiling: '15000', esiRate: '0.75', esiWageCeiling: '21000' },
-  { from: '2024-10', bonusRate: '10', epfRate: '12', epfWageCeiling: '15000', esiRate: '0.75', esiWageCeiling: '21000' },
-  { from: '2025-04', bonusRate: '10', epfRate: '12.5', epfWageCeiling: '20000', esiRate: '0.75', esiWageCeiling: '21000' },
-  { from: '2025-07', bonusRate: '12', epfRate: '12.5', epfWageCeiling: '20000', esiRate: '1', esiWageCeiling: '25000' },
-  { from: '2025-10', bonusRate: '8.33', epfRate: '13', epfWageCeiling: '20000', esiRate: '1', esiWageCeiling: '25000' },
-  { from: '2026-01', bonusRate: '9', epfRate: '13', epfWageCeiling: '25000', esiRate: '0.75', esiWageCeiling: '25000' },
-  { from: '2026-04', bonusRate: '8.33', epfRate: '12', epfWageCeiling: '25000', esiRate: '0.75', esiWageCeiling: '21000' },
-  { from: '2026-08', bonusRate: '8.33', epfRate: '12', epfWageCeiling: '', esiRate: '0.75', esiWageCeiling: '21000' },
+  { from: '2023-12', bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75', esiWageCeiling: '21000' },
+  { from: '2024-04', bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '15000', esiRate: '0.75', esiWageCeiling: '21000' },
+  { from: '2024-10', bonusRate: '10', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '15000', esiRate: '0.75', esiWageCeiling: '21000' },
+  { from: '2025-04', bonusRate: '10', bonusWageCeiling: '21000', epfRate: '12.5', epfWageCeiling: '20000', esiRate: '0.75', esiWageCeiling: '21000' },
+  { from: '2025-07', bonusRate: '12', bonusWageCeiling: '21000', epfRate: '12.5', epfWageCeiling: '20000', esiRate: '1', esiWageCeiling: '25000' },
+  { from: '2025-10', bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '13', epfWageCeiling: '20000', esiRate: '1', esiWageCeiling: '25000' },
+  { from: '2026-01', bonusRate: '9', bonusWageCeiling: '21000', epfRate: '13', epfWageCeiling: '25000', esiRate: '0.75', esiWageCeiling: '25000' },
+  { from: '2026-04', bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '25000', esiRate: '0.75', esiWageCeiling: '21000' },
+  { from: '2026-08', bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '', esiRate: '0.75', esiWageCeiling: '21000' },
 ];
 
 const INVOICE_RATE_LEVELS = [
-  { from: '2023-12', epfRate: '13', esicRate: '4.75', bonusRate: '8.33', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2024-04', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2024-09', epfRate: '13', esicRate: '3.25', bonusRate: '10', serviceChargeRate: '2', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2025-01', epfRate: '13.5', esicRate: '3.25', bonusRate: '10', serviceChargeRate: '2', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2025-04', epfRate: '13.5', esicRate: '3.25', bonusRate: '12', serviceChargeRate: '3', relievingRate: '15', monthDays: '26' },
-  { from: '2025-10', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', serviceChargeRate: '3', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2026-01', epfRate: '13', esicRate: '3.5', bonusRate: '9', serviceChargeRate: '2.5', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2026-06', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
-  { from: '2026-10', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', serviceChargeRate: '1.5', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2023-12', epfRate: '13', esicRate: '4.75', bonusRate: '8.33', bonusWageCeiling: '21000', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2024-04', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', bonusWageCeiling: '21000', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2024-09', epfRate: '13', esicRate: '3.25', bonusRate: '10', bonusWageCeiling: '21000', serviceChargeRate: '2', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2025-01', epfRate: '13.5', esicRate: '3.25', bonusRate: '10', bonusWageCeiling: '21000', serviceChargeRate: '2', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2025-04', epfRate: '13.5', esicRate: '3.25', bonusRate: '12', bonusWageCeiling: '21000', serviceChargeRate: '3', relievingRate: '15', monthDays: '26' },
+  { from: '2025-10', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', bonusWageCeiling: '21000', serviceChargeRate: '3', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2026-01', epfRate: '13', esicRate: '3.5', bonusRate: '9', bonusWageCeiling: '21000', serviceChargeRate: '2.5', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2026-06', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', bonusWageCeiling: '21000', serviceChargeRate: '0', relievingRate: '16.6667', monthDays: '26' },
+  { from: '2026-10', epfRate: '13', esicRate: '3.25', bonusRate: '8.33', bonusWageCeiling: '21000', serviceChargeRate: '1.5', relievingRate: '16.6667', monthDays: '26' },
 ];
 
 const POSTS = [

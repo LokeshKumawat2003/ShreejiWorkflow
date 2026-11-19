@@ -387,7 +387,8 @@ function LocationPayrollPage({ organizationId, locationId }: LocationPayrollPage
 										<InfoOutlineIcon mt="2px" />
 										<Text>
 											Wages = days × daily wage · OT wages = OT hours × daily wage ÷ {register.rates.overtimeHoursPerDay} × {register.rates.overtimeRateMultiplier}
-											{' '}(type the hours in the OT box; it saves when you leave the box) · Bonus {register.rates.bonusRate}% on wages · EPF {register.rates.epfRate}%
+											{' '}(type the hours in the OT box; it saves when you leave the box) · Bonus {register.rates.bonusRate}% on wages
+											{register.rates.bonusWageCeiling ? ` (up to ${register.rates.bonusWageCeiling})` : ''} · EPF {register.rates.epfRate}%
 											{register.rates.epfWageCeiling ? ` (on wages up to ${register.rates.epfWageCeiling})` : ''} · ESI {register.rates.esiRate}% on wages + OT
 											{register.rates.esiWageCeiling ? ` (up to ${register.rates.esiWageCeiling})` : ''} · Net = wages + bonus + OT − EPF − ESI.
 											The Excel and PDF downloads use the FORM XVII layout; edit it in Settings → Wage register.

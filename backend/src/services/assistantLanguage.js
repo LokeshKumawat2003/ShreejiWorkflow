@@ -53,6 +53,45 @@ const INTENT_BRIDGES = [
   { add: ['location', 'locations'], when: ['unit', 'units', 'plant', 'plants', 'यूनिट', 'प्लांट'] },
   { add: ['list', 'names'], when: ['roster', 'dump', 'nikaal'] },
   { add: ['payroll', 'salary'], when: ['payslip', 'tanakhwa', 'तनख्वाह'] },
+  // Location payroll sheet / report / register / data (normal download unless history mark).
+  {
+    add: ['payroll', 'sheet', 'download'],
+    when: [
+      'payroll sheet', 'payroll report', 'payroll data', 'payroll register', 'payroll record', 'payroll excel',
+      // Do NOT bridge bare "salary details" — that is an employee amount ask ("uski salary details batao").
+      'salary sheet', 'salary register', 'salary report', 'salary data', 'salary record', 'salary excel',
+      'पेरोल शीट', 'पेरोल रिपोर्ट', 'पेरोल डेटा', 'पेरोल रजिस्टर', 'सैलरी शीट', 'सैलरी रजिस्टर', 'सैलरी रिपोर्ट',
+    ],
+  },
+  {
+    add: ['bank', 'invoice', 'download'],
+    when: [
+      'bank invoice sheet', 'bank invoice pdf', 'bank invoice excel', 'bank letter pdf', 'bank letter excel',
+      'neft letter', 'neft pdf', 'बैंक इनवॉइस', 'बैंक लेटर', 'नेफ्ट लेटर',
+    ],
+  },
+  // Org-wide: all locations under a company / organization.
+  {
+    add: ['organization', 'locations', 'all', 'payroll', 'generate'],
+    when: [
+      'ke andar jitni', 'ke andar sari', 'ke andar sabhi', 'jitni bhi location', 'jitni locations',
+      'mein jitne', 'me jitne', 'jitne bhi location', 'jitne bhi locations', 'jitne location',
+      'unka payroll', 'unki payroll', 'un sabhi location', 'un sari location',
+      'all locations under', 'every location under', 'org ke andar', 'company ke andar', 'organization ke andar',
+      'wali company', 'all its locations', 'across all locations', 'all branches', 'har location',
+      'के अंदर जितनी', 'के अंदर सारी', 'जितनी भी लोकेशन', 'जितने भी लोकेशन', 'सभी लोकेशन की पेरोल', 'सारी लोकेशन का पेरोल',
+      'उनका पेरोल', 'उनकी पेरोल',
+    ],
+  },
+  // STT: history → histry / histri; "print mark" = mark in printed history tabs
+  {
+    add: ['history', 'printed', 'mark'],
+    when: [
+      'histry', 'histri', 'histroy', 'histary', 'hisstory',
+      'histry me', 'histry mein', 'histri me', 'print mark', 'printmark', 'print me mark', 'print mein mark',
+      'हिस्ट्री', 'हिस्टरी', 'प्रिंट मार्क',
+    ],
+  },
   { add: ['attendance'], when: ['हाजिरी', 'हाज़िरी', 'हाजरी', 'hajiri', 'haziri', 'hajri', 'अटेंडेंस', 'अटेंडन्स', 'एटर्नीज', 'एटर्नी', 'अटर्नीज', 'अटॉर्नीज', 'attorneys', 'attorney'] },
   { add: ['present'], when: ['उपस्थित', 'परसेंट', 'पर्सेंट', 'प्रसेंट', 'प्रजेंट', 'परेजेंट', 'प्रेजेंट'] },
   { add: ['absent'], when: ['अनुपस्थित', 'एब्सेंट', 'absant'] },

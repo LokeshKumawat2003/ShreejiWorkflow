@@ -22,7 +22,7 @@ const PRICE_LEVELS = [
   ['', 0.55], ['2024-04-01', 0.6], ['2024-10-01', 0.66], ['2025-01-01', 0.71], ['2025-04-01', 0.76],
   ['2025-08-01', 0.82], ['2025-12-01', 0.88], ['2026-04-01', 0.94], ['2026-09-16', 1],
 ];
-const WAGE_DEFAULT = { bonusRate: 8.33, epfRate: 12, epfWageCeiling: 25000, esiRate: 0.75, esiWageCeiling: 21000 };
+const WAGE_DEFAULT = { bonusRate: 8.33, bonusWageCeiling: 21000, epfRate: 12, epfWageCeiling: 25000, esiRate: 0.75, esiWageCeiling: 21000 };
 const WAGE_LEVELS = [
   ['2023-12', 8.33, 12, 15000, 1.75, 21000], ['2024-04', 8.33, 12, 15000, 0.75, 21000], ['2024-10', 10, 12, 15000, 0.75, 21000],
   ['2025-04', 10, 12.5, 20000, 0.75, 21000], ['2025-07', 12, 12.5, 20000, 1, 25000], ['2025-10', 8.33, 13, 20000, 1, 25000],
@@ -67,7 +67,7 @@ function wageLevel(month) {
   const level = [...WAGE_LEVELS].reverse().find(([from]) => from <= month);
   if (!level) return WAGE_DEFAULT;
   const [, bonusRate, epfRate, epfWageCeiling, esiRate, esiWageCeiling] = level;
-  return { bonusRate, epfRate, epfWageCeiling, esiRate, esiWageCeiling };
+  return { bonusRate, bonusWageCeiling: 21000, epfRate, epfWageCeiling, esiRate, esiWageCeiling };
 }
 function invoiceLevel(month) {
   const level = [...INVOICE_LEVELS].reverse().find(([from]) => from <= month);
@@ -153,7 +153,8 @@ class Model {
 
 function expectedRow(daily, paid, employee, rates) {
   const wages = r2(daily * paid);
-  const bonus = (wages * rates.bonusRate) / 100;
+  const bonusBase = rates.bonusWageCeiling > 0 ? Math.min(wages, rates.bonusWageCeiling) : wages;
+  const bonus = (bonusBase * rates.bonusRate) / 100;
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
   const esiBase = rates.esiWageCeiling > 0 ? Math.min(wages, rates.esiWageCeiling) : wages;
   const epf = employee.epfoApplicable ? (epfBase * rates.epfRate) / 100 : 0;
@@ -162,7 +163,7 @@ function expectedRow(daily, paid, employee, rates) {
 }
 
 function ratesMatch(actual, expected) {
-  return ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling'].every((field) => near(actual?.[field] || 0, expected[field] || 0, 0.0001));
+  return ['bonusRate', 'bonusWageCeiling', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling'].every((field) => near(actual?.[field] || 0, expected[field] || 0, 0.0001));
 }
 
 async function testOldMonthRates(model, admin) {

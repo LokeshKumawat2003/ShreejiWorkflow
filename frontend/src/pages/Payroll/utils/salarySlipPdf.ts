@@ -6,6 +6,7 @@ import { fitInto, loadSignatureImage } from './wageRegisterExport';
 /** Percentages, e.g. 8.33 for 8.33%. */
 export type SalarySlipRates = {
   bonusRate: number;
+  bonusWageCeiling: number;
   washingAllowanceRate: number;
   epfRate: number;
   epfWageCeiling: number;
@@ -102,7 +103,8 @@ export function buildSalarySlip(line: PayrollLine, monthYear: string, rates: Sal
   const overtimeHours = line.overtimeHours || 0;
   const overtimeRate = round2((dailyWage / (rates.overtimeHoursPerDay || 8)) * rates.overtimeRateMultiplier);
   const overtime = round2(overtimeHours * overtimeRate);
-  const bonus = round2(basic * (rates.bonusRate / 100));
+  const bonusBase = rates.bonusWageCeiling > 0 ? Math.min(basic, rates.bonusWageCeiling) : basic;
+  const bonus = round2(bonusBase * (rates.bonusRate / 100));
   const washingAllowance = round2(basic * (rates.washingAllowanceRate / 100));
   const conveyance = 0;
   const totalAddition = round2(basic + overtime + bonus + washingAllowance + conveyance);
@@ -154,6 +156,7 @@ export async function downloadSalarySlipsPdf(lines: PayrollLine[], fromDate: str
   ]);
   const rates: SalarySlipRates = {
     bonusRate: rateOf(register.bonusRate),
+    bonusWageCeiling: rateOf(register.bonusWageCeiling),
     washingAllowanceRate: rateOf(company.washingAllowanceRate),
     epfRate: rateOf(register.epfRate),
     epfWageCeiling: rateOf(register.epfWageCeiling),

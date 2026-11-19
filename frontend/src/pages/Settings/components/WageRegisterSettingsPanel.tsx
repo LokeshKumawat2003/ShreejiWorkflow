@@ -68,7 +68,8 @@ function WageRegisterSettingsPanel() {
 			</FormSection>
 			<FormSection title="Rates">
 				<SimpleGrid columns={{ base: 1, sm: 2 }} spacing={4}>
-					<FormInput label="Bonus rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.bonusRate} helperText="Column H = Wages × rate" onChange={(event) => setField('bonusRate', event.target.value)} />
+					<FormInput label="Bonus rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.bonusRate} helperText="Column H = wages (up to the bonus ceiling) × rate" onChange={(event) => setField('bonusRate', event.target.value)} />
+					<FormInput label="Bonus wage ceiling" inputMode="numeric" maxLength={12} value={values.bonusWageCeiling} helperText="Bonus is charged on wages up to this amount; above it bonus stays fixed (e.g. 21000 × 8.33%). Leave blank for no limit." onChange={(event) => setField('bonusWageCeiling', event.target.value)} />
 					<FormInput label="ESI rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.esiRate} helperText="Column L, for ESIC applicable employees" onChange={(event) => setField('esiRate', event.target.value)} />
 					<FormInput label="EPF rate (%)" isRequired inputMode="decimal" maxLength={10} value={values.epfRate} helperText="Column K, for EPFO applicable employees" onChange={(event) => setField('epfRate', event.target.value)} />
 					<FormInput label="EPF wage ceiling" inputMode="numeric" maxLength={12} value={values.epfWageCeiling} helperText="EPF is charged on wages up to this amount; above it EPF stays fixed. Leave blank for no limit." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
@@ -85,7 +86,7 @@ function WageRegisterSettingsPanel() {
 				/>
 				<RateHistoryList
 					history={settings.rateHistory}
-					describe={(old) => `Bonus ${old.bonusRate}% · EPF ${old.epfRate}% (ceiling ${old.epfWageCeiling || 'none'}) · ESI ${old.esiRate}% (ceiling ${old.esiWageCeiling || 'none'}) · OT ${old.overtimeRateMultiplier || '2'}× after ${old.overtimeHoursPerDay || '8'} hrs`}
+					describe={(old) => `Bonus ${old.bonusRate}% (ceiling ${old.bonusWageCeiling || 'none'}) · EPF ${old.epfRate}% (ceiling ${old.epfWageCeiling || 'none'}) · ESI ${old.esiRate}% (ceiling ${old.esiWageCeiling || 'none'}) · OT ${old.overtimeRateMultiplier || '2'}× after ${old.overtimeHoursPerDay || '8'} hrs`}
 				/>
 			</FormSection>
 			<FormSection title="Signature">

@@ -31,6 +31,8 @@ const STT_CORRECTIONS = [
   [/loaction|lokation|locaton|lokations/gi, 'location'],
   [/attenden+ce|attendence/gi, 'attendance'],
   [/payrol+|pairol|pairon|peyroll/gi, 'payroll'],
+  [/\bhistr(?:y|i|oy|ary)\b/gi, 'history'],
+  [/\bprint\s*mark\b/gi, 'printed mark'],
   [/aktiv[e]?|aktive/gi, 'active'],
   [/inactiv[e]?/gi, 'inactive'],
   [/\bmeny\b/gi, 'many'],

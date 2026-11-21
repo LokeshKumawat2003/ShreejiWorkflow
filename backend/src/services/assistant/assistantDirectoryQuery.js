@@ -96,12 +96,13 @@ const ORG_WORDS = [
   'organization', 'organizations', 'organisation', 'organisations', 'org', 'orgs', 'client', 'clients',
   'company', 'companies', 'firm', 'firms', 'business', 'businesses',
   'companiyan', 'companyan', 'kampaniyan', 'campaniyan', 'kompaniyan',
-  'ऑर्गेनाइजेशन', 'ऑर्गनाइजेशन', 'संगठन', 'क्लाइंट', 'कंपनी', 'कंपनियां', 'कंपनियाँ', 'कम्पनी', 'फर्म',
+  'ऑर्गेनाइजेशन', 'ऑर्गनाइजेशन', 'आर्गेनाइजेशन', 'आर्गनाइजेशन', 'ऑरगेनाइजेशन',
+  'संगठन', 'क्लाइंट', 'कंपनी', 'कंपनियां', 'कंपनियाँ', 'कम्पनी', 'फर्म',
   ...SYNONYM_GROUPS.organization,
 ];
 const LOCATION_WORDS = [
   'location', 'locations', 'site', 'sites', 'place', 'places', 'branch', 'branches',
-  'लोकेशन', 'लोकेशंस', 'साइट', 'साइट्स', 'जगह',
+  'लोकेशन', 'लोकेशंस', 'लोकेशन्स', 'लोकेशनस', 'साइट', 'साइट्स', 'जगह',
   ...SYNONYM_GROUPS.location,
 ];
 const EMPLOYEE_WORDS = [
@@ -156,12 +157,17 @@ function wantsAttendanceMarkAction(text) {
   }
   return false;
 }
-const PAYROLL_WORDS = ['payroll', 'salary', 'wage', 'पेरोल', 'सैलरी', 'वेतन', 'पगार'];
+const PAYROLL_WORDS = [
+  'payroll', 'pay roll', 'payrol', 'pairol', 'pairoll', 'pairon', 'pairo', 'perol', 'petrol',
+  'salary', 'wage', 'wages',
+  'पेरोल', 'पैरोल', 'पे रोल', 'सैलरी', 'वेतन', 'पगार', 'पेट्रोल',
+];
 const DOCUMENT_WORDS = [
   'slip', 'register', 'pdf', 'excel', 'form xvi', 'form xvii', 'स्लिप', 'रजिस्टर',
   // Wage register / STT "veg sheet"
   'sheet', 'seat', 'wage', 'wages', 'veg', 'vegs', 'veggie', 'veggies', 'vej',
   'wage sheet', 'wages sheet', 'veg sheet', 'vegsheet', 'which sheet', 'wich sheet',
+  'payroll sheet', 'payroll seat', 'pairol sheet', 'pairol seat', 'petrol sheet', 'petrol seat',
   'वेज', 'वेज शीट', 'वेजशीट', 'वेतन रजिस्टर', 'वेतन शीट',
 ];
 const DOCUMENT_MAKE_WORDS = [
@@ -525,6 +531,21 @@ function isDirectoryCandidate(message) {
   // Document downloads (payroll / wage-veg sheet / attendance register) belong to legacy handlers.
   if (isDocumentGenerationAsk(text)) return false;
   if (includesAny(text, DOCUMENT_WORDS) && includesAny(text, DOCUMENT_MAKE_WORDS)) return false;
+  // Location payroll / salary sheet / report / bank invoice asks belong to legacy handlers.
+  if (includesAny(text, PAYROLL_WORDS)
+    && (includesAny(text, DOCUMENT_MAKE_WORDS)
+      || includesAny(text, DOCUMENT_WORDS)
+      || includesAny(text, [
+        'report', 'data', 'export', 'file', 'record', 'details', 'excel', 'pdf',
+        'history', 'histry', 'histri', 'printed', 'print mark',
+        'रिपोर्ट', 'डेटा', 'फाइल', 'रिकॉर्ड', 'डिटेल्स', 'हिस्ट्री', 'प्रिंट',
+      ]))) {
+    return false;
+  }
+  if (includesAny(text, ['bank invoice', 'bank letter', 'neft', 'बैंक इनवॉइस', 'नेफ्ट'])
+    && includesAny(text, DOCUMENT_MAKE_WORDS)) {
+    return false;
+  }
   return includesAny(text, COUNT_WORDS)
     || includesAny(text, LIST_WORDS)
     || includesAny(text, DETAIL_WORDS)
@@ -1096,6 +1117,51 @@ function selectionContext(type, options, extras = {}) {
   };
 }
 
+/** Clickable org picker: name + owner + email so duplicate names are identifiable. */
+function organizationChoiceLabel(organization) {
+  const owner = organization.contactName && organization.contactName !== organization.name
+    ? organization.contactName
+    : (organization.contactName || '');
+  const email = organization.email || '';
+  return [organization.name, owner && `Owner: ${owner}`, email && `Email: ${email}`].filter(Boolean).join(' · ');
+}
+
+function buildOrganizationChoiceAnswer({
+  organizations: orgList,
+  intent,
+  lang,
+  resumeIntent,
+  promptHi = null,
+  promptEn = null,
+}) {
+  const options = (orgList || []).slice(0, 12).map((item) => ({
+    id: item.id,
+    name: organizationChoiceLabel(item),
+    organizationId: item.id,
+  }));
+  const lines = options.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
+  return {
+    intent,
+    reply: say(
+      lang,
+      `${promptHi || 'एक से अधिक organization मिल सकती हैं। कौन-सी चाहिए?'}\n${lines}`,
+      `${promptEn || 'Multiple organizations matched. Which one did you mean?'}\n${lines}`,
+    ),
+    source: 'data',
+    context: selectionContext('organization', options, { lastIntent: resumeIntent || intent }),
+    data: { intent, ambiguous: true, options, needsOrganization: true },
+    choices: options.map((item) => ({
+      label: item.name,
+      plan: {
+        type: 'directory_select',
+        selectionType: 'organization',
+        selectedId: item.id,
+        resumeIntent: resumeIntent || intent,
+      },
+    })),
+  };
+}
+
 function scorePendingOptionName(message, optionName) {
   const text = normalizeName(message);
   const name = normalizeName(optionName || '');
@@ -1498,6 +1564,12 @@ async function answerDirectoryQuery({
     if (!clearlyNamedSite) {
       locResolve = { matches: [], ambiguous: false };
     }
+  }
+  // "X organization में कितनी locations" — org name wins; do not treat shared tokens
+  // (work/road) as a named site under that org or another org.
+  if (strongOrg && includesAny(original, ORG_WORDS) && includesAny(original, LOCATION_WORDS)
+    && (includesAny(original, COUNT_WORDS) || includesAny(original, LIST_WORDS))) {
+    locResolve = { matches: [], ambiguous: false };
   }
   if ((!locResolve.matches.length && !locResolve.ambiguous)
     && (includesAny(original, SECURITY_WORDS) || includesAny(original, HOUSEKEEPING_WORDS))) {
@@ -2167,10 +2239,12 @@ async function answerDirectoryQuery({
     intent = INTENTS.LOCATION_DETAILS;
   }
   if (!intent && effectiveHasOrgMention && !isAllOrganizationsListQuery(original)
-    && !includesAny(original, EMPLOYEE_WORDS) && !includesAny(original, ATTENDANCE_WORDS)) {
+    && !includesAny(original, EMPLOYEE_WORDS) && !includesAny(original, ATTENDANCE_WORDS)
+    && !includesAny(original, PAYROLL_WORDS) && !includesAny(original, DOCUMENT_WORDS)) {
     intent = INTENTS.ORGANIZATION_DETAILS;
   }
-  if (!intent && effectiveHasOrgMention && shortBare && !includesAny(original, EMPLOYEE_WORDS) && !includesAny(original, ATTENDANCE_WORDS)) {
+  if (!intent && effectiveHasOrgMention && shortBare && !includesAny(original, EMPLOYEE_WORDS) && !includesAny(original, ATTENDANCE_WORDS)
+    && !includesAny(original, PAYROLL_WORDS) && !includesAny(original, DOCUMENT_WORDS)) {
     intent = INTENTS.ORGANIZATION_DETAILS;
   }
   if (!intent && effectiveHasOrgMention && includesAny(original, EMPLOYEE_WORDS) && includesAny(original, COUNT_WORDS)) {
@@ -2194,32 +2268,12 @@ async function answerDirectoryQuery({
     && intent !== INTENTS.ACTIVE_ORGANIZATION_COUNT
     && intent !== INTENTS.LOCATION_DETAILS
     && intent !== INTENTS.LOCATION_EMPLOYEE_COUNT) {
-    const options = orgResolve.matches.slice(0, 12).map((item) => ({
-      id: item.id,
-      name: item.name,
-      organizationId: item.id,
-    }));
-    const lines = options.map((item, index) => `${index + 1}. ${item.name}`).join('\n');
-    return {
+    return buildOrganizationChoiceAnswer({
+      organizations: orgResolve.matches,
       intent,
-      reply: say(
-        lang,
-        `एक से अधिक organization मिल सकती हैं। कौन-सी चाहिए?\n${lines}`,
-        `Multiple organizations matched. Which one did you mean?\n${lines}`,
-      ),
-      source: 'data',
-      context: selectionContext('organization', options, { lastIntent: intent }),
-      data: { intent, ambiguous: true, options },
-      choices: options.map((item) => ({
-        label: item.name,
-        plan: {
-          type: 'directory_select',
-          selectionType: 'organization',
-          selectedId: item.id,
-          resumeIntent: intent,
-        },
-      })),
-    };
+      lang,
+      resumeIntent: intent,
+    });
   }
 
   // Prefer a strongly named org; otherwise use the org of a uniquely resolved location
@@ -2227,7 +2281,14 @@ async function answerDirectoryQuery({
   let organization = (strongOrg ? orgResolve.matches[0] : null)
     || (context?.organizationId ? organizations.find((item) => item.id === context.organizationId) : null)
     || null;
-  if (!organization && locResolve.matches.length === 1 && !locResolve.ambiguous) {
+  // Never inherit org from a location when the user clearly asked about an organization
+  // by name/word — wrong site tokens (e.g. लोकेशंस ≈ lokesh) must not pick North Gate.
+  const orgScopedLocationAsk = includesAny(original, ORG_WORDS)
+    && (intent === INTENTS.ORGANIZATION_LOCATION_LIST
+      || intent === INTENTS.ORGANIZATION_EMPLOYEE_COUNT
+      || intent === INTENTS.ORGANIZATION_EMPLOYEE_LIST
+      || intent === INTENTS.ORGANIZATION_DETAILS);
+  if (!organization && !orgScopedLocationAsk && locResolve.matches.length === 1 && !locResolve.ambiguous) {
     organization = organizations.find((item) => item.id === locResolve.matches[0].organizationId) || null;
   }
   if (!organization && orgResolve.matches.length === 1 && !orgResolve.ambiguous) {
@@ -2507,12 +2568,15 @@ async function answerDirectoryQuery({
       organization = organizations.find((item) => item.id === locResolve.matches[0].organizationId) || null;
     }
     if (!organization) {
-      return {
+      const candidates = organizations.filter((item) => (item.status || 'active') !== 'disabled');
+      return buildOrganizationChoiceAnswer({
+        organizations: candidates,
         intent,
-        reply: say(lang, 'किस organization की locations चाहिए?', 'Which organization\'s locations do you need?'),
-        source: 'data',
-        data: { intent, needsOrganization: true },
-      };
+        lang,
+        resumeIntent: intent,
+        promptHi: 'किस organization की locations चाहिए? नीचे से चुनें:',
+        promptEn: 'Which organization\'s locations do you need? Pick one:',
+      });
     }
     const list = locations.filter((item) => item.organizationId === organization.id && item.status !== 'disabled');
     if (list.length === 0) {

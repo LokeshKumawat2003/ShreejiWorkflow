@@ -380,6 +380,7 @@ function rate(settings, field) {
 function wageRates(settings) {
   return {
     bonusRate: rate(settings, 'bonusRate'),
+    bonusWageCeiling: rate(settings, 'bonusWageCeiling'),
     epfRate: rate(settings, 'epfRate'),
     epfWageCeiling: rate(settings, 'epfWageCeiling'),
     esiRate: rate(settings, 'esiRate'),
@@ -409,7 +410,8 @@ function wageRegisterRow(line, rates) {
   const multiplier = rates.overtimeRateMultiplier ?? 2;
   const overtimeRate = round2((dailyWage / hoursPerDay) * multiplier);
   const overtimeWages = round2(overtimeHours * overtimeRate);
-  const bonus = (wages * rates.bonusRate) / 100;
+  const bonusBase = rates.bonusWageCeiling > 0 ? Math.min(wages, rates.bonusWageCeiling) : wages;
+  const bonus = (bonusBase * rates.bonusRate) / 100;
   const totalWages = wages + bonus + overtimeWages;
   const epfBase = rates.epfWageCeiling > 0 ? Math.min(wages, rates.epfWageCeiling) : wages;
   const epf = line.epfoApplicable ? (epfBase * rates.epfRate) / 100 : 0;

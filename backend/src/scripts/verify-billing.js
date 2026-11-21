@@ -93,7 +93,9 @@ async function verifyLocationMonth({ user, organization, location, month, skills
   for (const line of register.rows) {
     const row = expected.get(line.employeeId);
     const wages = r2(row.daily * row.paidDays);
-    const bonus = (wages * Number(wageRates.bonusRate)) / 100;
+    const bonusCeiling = Number(wageRates.bonusWageCeiling) || 0;
+    const bonusBase = bonusCeiling > 0 ? Math.min(wages, bonusCeiling) : wages;
+    const bonus = (bonusBase * Number(wageRates.bonusRate)) / 100;
     const epf = row.employee.epfoApplicable ? (Math.min(wages, Number(wageRates.epfWageCeiling) || wages) * Number(wageRates.epfRate)) / 100 : 0;
     const esi = row.employee.esicApplicable ? (Math.min(wages, Number(wageRates.esiWageCeiling) || wages) * Number(wageRates.esiRate)) / 100 : 0;
     expect(`${tag} ${line.employeeName} register daily wage`, line.dailyWage, row.daily);

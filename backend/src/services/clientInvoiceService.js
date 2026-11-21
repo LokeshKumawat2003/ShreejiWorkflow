@@ -108,6 +108,7 @@ function rateRules(settings) {
     overhead: percent(settings.overheadRate),
     service,
     epfCeiling: percent(settings.epfWageCeiling),
+    bonusCeiling: percent(settings.bonusWageCeiling),
     relieving: percent(settings.relievingRate) / 100,
     monthDays: Math.max(1, Math.round(percent(settings.monthDays)) || 26),
   };
@@ -123,12 +124,18 @@ function epfCapPerUnit(item, rules) {
   return isMonthly(item) ? rules.epfCeiling : rules.epfCeiling / rules.monthDays;
 }
 
+/** Bonus is charged on wages up to the monthly ceiling; a day line uses ceiling ÷ paid days in a month. */
+function bonusCapPerUnit(item, rules) {
+  if (!rules.bonusCeiling) return Infinity;
+  return isMonthly(item) ? rules.bonusCeiling : rules.bonusCeiling / rules.monthDays;
+}
+
 /** One unit (day or month) of a labour line: wages, statutory loadings, overhead on those, then service charge. */
 function unitParts(item, wage, rules) {
   const wages = wage * (isMonthly(item) ? rules.monthDays : 1);
   const epf = (Math.min(wages, epfCapPerUnit(item, rules)) * rules.epf) / 100;
   const esic = (wages * rules.esic) / 100;
-  const bonus = (wages * rules.bonus) / 100;
+  const bonus = (Math.min(wages, bonusCapPerUnit(item, rules)) * rules.bonus) / 100;
   const statutory = wages + epf + esic + bonus;
   const overhead = (statutory * rules.overhead) / 100;
   const service = ((statutory + overhead) * rules.service) / 100;
@@ -169,7 +176,7 @@ function rateDetail(source, item, stats, rules, auto) {
   const parts = [
     `EPF ${rules.epf}%${rules.epfCeiling ? ` (ceiling ${rules.epfCeiling})` : ''}`,
     `ESIC ${rules.esic}%`,
-    `Bonus ${rules.bonus}%`,
+    `Bonus ${rules.bonus}%${rules.bonusCeiling ? ` (ceiling ${rules.bonusCeiling})` : ''}`,
     rules.overhead ? `Overhead ${rules.overhead}%` : '',
     rules.service ? `Service ${rules.service}%` : '',
   ].filter(Boolean).join(' + ');
@@ -244,7 +251,7 @@ function breakupItems(item, description, stats, rules, qty) {
     row('wage', description, { qty, rate: round(parts.wages), amount: wages }, isMonthly(item) ? `Daily wage ${stats.wage.toFixed(2)} × ${rules.monthDays} days` : 'Daily wage'),
     rules.epf ? row('epf', epfText, { qty: epf.qty, qtyDecimals: epf.qtyDecimals, rate: epf.rate, amount: epf.amount }, `${rules.epf}% of wages${rules.epfCeiling ? `, capped at ${rules.epfCeiling} per month` : ''}`) : null,
     rules.esic ? row('esic', `ESIC @ ${rules.esic}% for ${who}`, share(esic, parts.esic), `${rules.esic}% of wages`) : null,
-    rules.bonus ? row('bonus', `BONUS @ ${rules.bonus}% for ${who}`, share(bonus, parts.bonus), `${rules.bonus}% of wages`) : null,
+    rules.bonus ? row('bonus', `BONUS @ ${rules.bonus}% for ${who}`, share(bonus, parts.bonus), `${rules.bonus}% of wages${rules.bonusCeiling ? `, capped at ${rules.bonusCeiling} per month` : ''}`) : null,
     rules.overhead ? row('overhead', `Overhead Charge @ ${rules.overhead}%`, share(overhead, parts.overhead), `${rules.overhead}% of wages + EPF + ESIC + bonus`) : null,
     rules.service ? row('service', `Service Charge @ ${rules.service}% ( Excluding GST )`, share(service, parts.service), `${rules.service}% of wages + EPF + ESIC + bonus + overhead`) : null,
   ].filter(Boolean);

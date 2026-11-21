@@ -6,8 +6,8 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 /** Values that price an invoice or a wage register; earlier values are kept so old months use old rates. */
 const RATE_FIELDS = {
-	invoice: ['epfRate', 'epfWageCeiling', 'esicRate', 'bonusRate', 'overheadRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
-	wageRegister: ['bonusRate', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling', 'overtimeHoursPerDay', 'overtimeRateMultiplier'],
+	invoice: ['epfRate', 'epfWageCeiling', 'esicRate', 'bonusRate', 'bonusWageCeiling', 'overheadRate', 'serviceChargeRate', 'relievingRate', 'monthDays'],
+	wageRegister: ['bonusRate', 'bonusWageCeiling', 'epfRate', 'epfWageCeiling', 'esiRate', 'esiWageCeiling', 'overtimeHoursPerDay', 'overtimeRateMultiplier'],
 };
 
 /** Field rules per document; `default` is used until an admin saves the document. */
@@ -52,6 +52,7 @@ const DOCUMENT_FIELDS = {
 		contractorName: { label: 'Name of contractor', max: 200, required: true, default: 'M/s.Shreeji Caretaker Company , kankroli , Distt- Rajsamand' },
 		note: { label: 'Footer note', max: 300, default: 'Payment will be made as per central Govt. Minimum wages act. W.e.f-01-04-2026 ( "C" Class City )' },
 		bonusRate: { label: 'Bonus rate (%)', max: 10, number: { min: 0, max: 100 }, required: true, default: '8.33' },
+		bonusWageCeiling: { label: 'Bonus wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '21000' },
 		epfRate: { label: 'EPF rate (%)', max: 10, number: { min: 0, max: 100 }, required: true, default: '12' },
 		epfWageCeiling: { label: 'EPF wage ceiling', max: 12, number: { min: 0, max: 10000000 }, default: '25000' },
 		esiRate: { label: 'ESI rate (%)', max: 10, number: { min: 0, max: 100 }, required: true, default: '0.75' },
@@ -103,6 +104,7 @@ const DOCUMENT_FIELDS = {
 		epfRate: { label: 'EPF on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '13' },
 		esicRate: { label: 'ESIC on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '3.25' },
 		bonusRate: { label: 'Bonus on wages (%)', max: 10, number: { min: 0, max: 100 }, default: '8.33' },
+		bonusWageCeiling: { label: 'Bonus wage ceiling per month', max: 12, number: { min: 0, max: 10000000 }, blankUsesDefault: true, default: '21000' },
 		epfWageCeiling: { label: 'EPF wage ceiling per month', max: 12, number: { min: 0, max: 10000000 }, blankUsesDefault: true, default: '0' },
 		overheadRate: { label: 'Overhead charge (%)', max: 10, number: { min: 0, max: 100 }, blankUsesDefault: true, default: '0' },
 		serviceChargeRate: { label: 'Service charge (%)', max: 10, number: { min: 0, max: 100 }, default: '0' },

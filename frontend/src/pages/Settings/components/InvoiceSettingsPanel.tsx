@@ -68,6 +68,7 @@ function InvoiceSettingsPanel() {
 					<FormInput label="EPF wage ceiling per month" type="number" min={0} step="1" value={values.epfWageCeiling} helperText="e.g. 15000. 0 = no ceiling." onChange={(event) => setField('epfWageCeiling', event.target.value)} />
 					<FormInput label="ESIC (%)" type="number" min={0} max={100} step="0.01" value={values.esicRate} onChange={(event) => setField('esicRate', event.target.value)} />
 					<FormInput label="Bonus (%)" type="number" min={0} max={100} step="0.01" value={values.bonusRate} onChange={(event) => setField('bonusRate', event.target.value)} />
+					<FormInput label="Bonus wage ceiling per month" type="number" min={0} step="1" value={values.bonusWageCeiling} helperText="e.g. 21000. 0 = no ceiling." onChange={(event) => setField('bonusWageCeiling', event.target.value)} />
 					<FormInput label="Overhead charge (%)" type="number" min={0} max={100} step="0.01" value={values.overheadRate} onChange={(event) => setField('overheadRate', event.target.value)} />
 					<FormInput label="Service charge (%)" type="number" min={0} max={100} step="0.01" value={values.serviceChargeRate} onChange={(event) => setField('serviceChargeRate', event.target.value)} />
 					<FormInput label="Relieving charge (% of rate)" type="number" min={0} max={100} step="0.0001" value={values.relievingRate} helperText="16.6667 = one sixth" onChange={(event) => setField('relievingRate', event.target.value)} />
@@ -91,7 +92,7 @@ function InvoiceSettingsPanel() {
 				/>
 				<RateHistoryList
 					history={settings.rateHistory}
-					describe={(old) => `EPF ${old.epfRate}%${Number(old.epfWageCeiling) ? ` (ceiling ${old.epfWageCeiling})` : ''} · ESIC ${old.esicRate}% · Bonus ${old.bonusRate}% · Overhead ${old.overheadRate || '0'}% · Service ${old.serviceChargeRate}% · Relieving ${old.relievingRate}% · ${old.monthDays} days`}
+					describe={(old) => `EPF ${old.epfRate}%${Number(old.epfWageCeiling) ? ` (ceiling ${old.epfWageCeiling})` : ''} · ESIC ${old.esicRate}% · Bonus ${old.bonusRate}%${Number(old.bonusWageCeiling) ? ` (ceiling ${old.bonusWageCeiling})` : ''} · Overhead ${old.overheadRate || '0'}% · Service ${old.serviceChargeRate}% · Relieving ${old.relievingRate}% · ${old.monthDays} days`}
 				/>
 			</FormSection>
 			<FormSection title="Signature">

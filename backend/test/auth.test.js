@@ -1635,6 +1635,8 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
       { dailySalary: 1500, paidDays: 26, epfoApplicable: true, esicApplicable: true },
       register.rates,
     );
+    assert.equal(capped.wages, 39000);
+    assert.equal(capped.bonus, 1749.3);
     assert.equal(capped.epf, 3000);
     assert.equal(capped.esi, 158);
 
@@ -1655,7 +1657,7 @@ test('wage register reproduces the FORM XVII paper figures', async () => {
 
 test('wage register rates of an old month come from the rates valid in that month', async () => {
   const originals = { findOne: DocumentSettings.findOne, findOneAndUpdate: DocumentSettings.findOneAndUpdate };
-  const oldRates = { bonusRate: '8.33', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75', esiWageCeiling: '21000' };
+  const oldRates = { bonusRate: '8.33', bonusWageCeiling: '21000', epfRate: '12', epfWageCeiling: '15000', esiRate: '1.75', esiWageCeiling: '21000' };
   let stored = { key: 'wageRegister', values: { title: 'Register of wages', contractorName: 'Shreeji', ...oldRates, ratesEffectiveFrom: '' }, rateHistory: [] };
   let update;
   DocumentSettings.findOne = () => ({ lean: async () => stored });

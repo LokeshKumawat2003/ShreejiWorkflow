@@ -17,6 +17,12 @@ const DEVANAGARI = {
   'ं': 'n', 'ँ': 'n', '्': '', '़': '',
 };
 
+const DEVANAGARI_CONSONANTS = new Set([
+  'क', 'ख', 'ग', 'घ', 'च', 'छ', 'ज', 'झ', 'ट', 'ठ', 'ड', 'ढ', 'ण',
+  'त', 'थ', 'द', 'ध', 'न', 'प', 'फ', 'ब', 'भ', 'म', 'य', 'र', 'ल', 'व', 'श', 'ष', 'स', 'ह',
+]);
+const DEVANAGARI_MATRAS = new Set(['ा', 'ि', 'ी', 'ु', 'ू', 'े', 'ै', 'ो', 'ौ', 'ं', 'ँ', '़']);
+
 const ORG_ALIASES = [
   { alias: 'powergrid', forms: ['power grid', 'powergrid', 'pgcil', 'पावरग्रिड', 'पावर ग्रिड'] },
   { alias: 'ntpc', forms: ['ntpc', 'एनटीपीसी'] },
@@ -25,10 +31,47 @@ const ORG_ALIASES = [
   { alias: 'bhel', forms: ['bhel', 'भेल', 'भ्ेल', 'behel', 'bhael'] },
 ];
 
+/** Hindi / STT spellings of common English org/site tokens. */
+const TOKEN_PHONETIC_ALIASES = [
+  { canonical: 'white', forms: ['white', 'whait', 'whaita', 'vhait', 'vhaait', 'whit', 'waite'] },
+  { canonical: 'road', forms: ['road', 'rod', 'roda', 'rode', 'raad'] },
+  { canonical: 'work', forms: ['work', 'works', 'vark', 'varka', 'vrk', 'wrk', 'werk'] },
+  { canonical: 'gate', forms: ['gate', 'gat', 'gata', 'gait'] },
+  { canonical: 'north', forms: ['north', 'north', 'nort'] },
+  { canonical: 'organization', forms: [
+    'organization', 'organisation', 'argenaijeshn', 'argenaijeshana', 'orgenaijeshn',
+    'organaijeshn', 'orgnaizeshn',
+  ] },
+];
+
+/**
+ * Devanagari → Latin with inherent 'a' and व्ह → wh (so व्हाइट रोड वर्क ≈ white road work).
+ */
 function transliterate(text) {
-  return String(text || '')
-    .normalize('NFC')
-    .replace(/[\u0900-\u097F]/g, (char) => DEVANAGARI[char] ?? '');
+  const input = String(text || '').normalize('NFC');
+  let out = '';
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    const next = input[i + 1];
+    const next2 = input[i + 2];
+    // व् + ह → wh (white / when / …)
+    if (ch === 'व' && next === '्' && next2 === 'ह') {
+      out += 'wh';
+      i += 2;
+      continue;
+    }
+    if (/[\u0900-\u097F]/.test(ch)) {
+      out += DEVANAGARI[ch] ?? '';
+      if (DEVANAGARI_CONSONANTS.has(ch)) {
+        if (next === '्') continue;
+        if (DEVANAGARI_MATRAS.has(next)) continue;
+        out += 'a';
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 function normalizeName(text) {
@@ -79,21 +122,45 @@ function levenshtein(a, b) {
   return row[right.length];
 }
 
-function similarEnough(a, b) {
+function phoneticCanonical(token) {
+  const compact = compactName(token);
+  if (!compact) return '';
+  for (const entry of TOKEN_PHONETIC_ALIASES) {
+    if (entry.forms.some((form) => compactName(form) === compact || similarEnoughRaw(form, compact))) {
+      return entry.canonical;
+    }
+  }
+  return compact;
+}
+
+/** Raw similarity without phonetic expansion (avoids recursion). */
+function similarEnoughRaw(a, b) {
   const left = compactName(a);
   const right = compactName(b);
   if (!left || !right) return false;
   if (left === right) return true;
-  if (left.includes(right) || right.includes(left)) {
-    return Math.min(left.length, right.length) >= 5;
+  // Drop trailing schwa from Hindi transliteration (roda ≈ road, varka ≈ vark).
+  const leftStem = left.endsWith('a') && left.length >= 4 ? left.slice(0, -1) : left;
+  const rightStem = right.endsWith('a') && right.length >= 4 ? right.slice(0, -1) : right;
+  if (leftStem === rightStem) return true;
+  if (left.includes(right) || right.includes(left) || leftStem.includes(rightStem) || rightStem.includes(leftStem)) {
+    return Math.min(leftStem.length, rightStem.length) >= 4;
   }
-  const skLeft = skeleton(left);
-  const skRight = skeleton(right);
+  const skLeft = skeleton(leftStem);
+  const skRight = skeleton(rightStem);
   if (skLeft && skLeft === skRight && skLeft.length >= 3) return true;
-  const maxLen = Math.max(left.length, right.length);
-  if (maxLen < 5) return false;
-  const distance = levenshtein(left, right);
-  return distance <= Math.max(1, Math.floor(maxLen * 0.2));
+  const maxLen = Math.max(leftStem.length, rightStem.length);
+  if (maxLen < 4) return false;
+  const distance = levenshtein(leftStem, rightStem);
+  return distance <= Math.max(1, Math.floor(maxLen * 0.25));
+}
+
+function similarEnough(a, b) {
+  if (similarEnoughRaw(a, b)) return true;
+  const leftCanon = phoneticCanonical(a);
+  const rightCanon = phoneticCanonical(b);
+  if (leftCanon && rightCanon && leftCanon === rightCanon) return true;
+  return false;
 }
 
 function expandAliases(text) {
@@ -103,6 +170,14 @@ function expandAliases(text) {
       if (value.includes(normalizeName(form))) value += ` ${entry.alias}`;
     }
   }
+  // Expand phonetic Hindi/STT tokens (व्हाइट → white, रोड → road, वर्क → work).
+  const parts = value.split(/\s+/).filter(Boolean);
+  const extras = [];
+  for (const part of parts) {
+    const canon = phoneticCanonical(part);
+    if (canon && canon !== part) extras.push(canon);
+  }
+  if (extras.length) value = `${value} ${extras.join(' ')}`;
   return value;
 }
 
@@ -111,6 +186,18 @@ const ORG_NAME_STOPWORDS = new Set([
   'of', 'the', 'a', 'an', 'and', 'or', 'for', 'with', 'name', 'names', 'naam',
   'organisation', 'organization', 'organisations', 'organizations', 'org', 'orgs',
   'company', 'companies', 'client', 'clients', 'firm',
+  'argenaijeshn', 'argenaijeshana', 'orgenaijeshn', 'organaijeshn',
+  'hai', 'hain', 'mein', 'me', 'ki', 'ke', 'ka', 'men',
+]);
+
+/** Query tokens that must never pick a location by themselves ("लोकेशंस" → lokeshns ≈ lokesh). */
+const LOCATION_QUERY_NOISE = new Set([
+  'location', 'locations', 'lokeshns', 'lokeshnsa', 'lokeshans', 'lokation', 'lokations',
+  'site', 'sites', 'place', 'places', 'branch', 'branches',
+  'kitni', 'kitne', 'kitna', 'how', 'many', 'count', 'total', 'number', 'numbers',
+  'organization', 'organisation', 'organizations', 'organisations', 'org', 'company', 'companies',
+  'argenaijeshn', 'argenaijeshana', 'active', 'inactive', 'disabled',
+  'hai', 'hain', 'mein', 'me', 'ki', 'ke', 'ka', 'men', 'wali', 'wala',
 ]);
 
 function significantOrgWords(name) {
@@ -159,6 +246,23 @@ function scoreOrganization(message, organization) {
   return 0;
 }
 
+function scoreOrganizationOwner(message, organization) {
+  const owner = String(organization.contactName || '').trim();
+  if (!owner || owner === organization.name) return 0;
+  const hay = expandAliases(message);
+  const hayWords = words(hay).filter((word) => word.length >= 3 && !ORG_NAME_STOPWORDS.has(word));
+  const ownerWords = significantOrgWords(owner);
+  if (!ownerWords.length || !hayWords.length) return 0;
+  let matched = 0;
+  for (const part of ownerWords) {
+    if (hayWords.some((word) => similarEnough(word, part))) matched += 1;
+  }
+  if (matched === 0) return 0;
+  if (matched === ownerWords.length) return 40 + matched;
+  if (matched >= 2) return 30 + matched;
+  return ownerWords.length === 1 ? 28 : 18;
+}
+
 /** Fuse spelling assist — high threshold; ignored when multiple near-ties remain. */
 function fuseOrganizationBoost(message, organizations) {
   const list = (organizations || []).filter((item) => item?.name);
@@ -186,9 +290,16 @@ function fuseOrganizationBoost(message, organizations) {
   return boosts;
 }
 
+/**
+ * Progressive org resolve:
+ * 1) match spoken org name tokens
+ * 2) if many, narrow by 2nd spoken word
+ * 3) if still many, match owner/contactName
+ * Never silently picks among remaining ties — caller shows choice chips.
+ */
 function resolveOrganizations(message, organizations, { minScore = 45 } = {}) {
   const fuseBoosts = fuseOrganizationBoost(message, organizations);
-  const scored = (organizations || [])
+  let scored = (organizations || [])
     .map((organization) => {
       const base = scoreOrganization(message, organization);
       const boost = fuseBoosts.get(organization.id) || 0;
@@ -198,6 +309,48 @@ function resolveOrganizations(message, organizations, { minScore = 45 } = {}) {
     })
     .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score);
+
+  const queryTokens = significantOrgWords(message);
+
+  // Step 1–2: progressive name-token narrowing (1st word, then 2nd).
+  if (scored.length > 1 && queryTokens.length >= 1) {
+    const byFirst = scored.filter((item) => {
+      const nameWords = significantOrgWords(item.organization.name);
+      return nameWords[0] && similarEnough(nameWords[0], queryTokens[0]);
+    });
+    if (byFirst.length >= 1) scored = byFirst;
+
+    if (scored.length > 1 && queryTokens.length >= 2) {
+      const bySecond = scored.filter((item) => {
+        const nameWords = significantOrgWords(item.organization.name);
+        return nameWords.some((part, index) => index > 0 && similarEnough(part, queryTokens[1]))
+          || nameWords.slice(0, 2).some((part) => similarEnough(part, queryTokens[1]));
+      });
+      if (bySecond.length >= 1) scored = bySecond;
+    }
+  }
+
+  // Step 3: owner / contact name when still ambiguous.
+  if (scored.length > 1) {
+    const withOwner = scored
+      .map((item) => ({
+        ...item,
+        ownerScore: scoreOrganizationOwner(message, item.organization),
+        score: item.score + scoreOrganizationOwner(message, item.organization),
+      }))
+      .filter((item) => item.ownerScore > 0)
+      .sort((a, b) => b.score - a.score);
+    if (withOwner.length === 1) {
+      return {
+        matches: [withOwner[0].organization],
+        ambiguous: false,
+        scores: [{ id: withOwner[0].organization.id, name: withOwner[0].organization.name, score: withOwner[0].score }],
+      };
+    }
+    if (withOwner.length > 1) {
+      scored = withOwner;
+    }
+  }
 
   if (scored.length === 0) return { matches: [], ambiguous: false };
   const best = scored[0].score;
@@ -219,7 +372,8 @@ function resolveOrganizations(message, organizations, { minScore = 45 } = {}) {
 /** Department / role tokens that alone must not uniquely pick a location. */
 const GENERIC_LOCATION_TOKENS = new Set([
   'housekeeping', 'security', 'horticulture', 'cleaner', 'sweeper', 'guard', 'supervisor',
-  'admin', 'block', 'gate', 'post', 'staff', 'worker', 'location', 'locations', 'site', 'sites',
+  'admin', 'block', 'gate', 'post', 'staff', 'worker', 'workers', 'work', 'works',
+  'location', 'locations', 'site', 'sites', 'road', 'roads',
   // Shared org/site suffixes — "Green Valley Care" must not match location "Park Care".
   'care', 'services', 'service', 'private', 'limited', 'ltd', 'pvt', 'company', 'corp', 'group',
 ]);
@@ -284,10 +438,24 @@ function messagePoTokens(message) {
     .filter((token) => token.length >= 3 && /[0-9]/.test(token));
 }
 
+function stripLocationQueryNoise(message) {
+  const parts = words(expandAliases(message)).filter((word) => {
+    if (LOCATION_QUERY_NOISE.has(word)) return false;
+    const canon = phoneticCanonical(word);
+    if (LOCATION_QUERY_NOISE.has(canon)) return false;
+    // Transliterated "लोकेशंस" / "locations" often becomes lokesh* — never treat as a site name.
+    if (/^lokesh/.test(word) && word.length <= 10) return false;
+    return true;
+  });
+  return parts.join(' ');
+}
+
 function scoreLocation(message, location) {
-  const hay = expandLocationHay(message);
-  const hayWords = words(hay);
-  const hayCompact = compactName(hay);
+  // Strip "kitni locations / लोकेशंस / organization" so they never match a site named "lokesh".
+  const cleaned = stripLocationQueryNoise(message);
+  const hay = expandLocationHay(cleaned);
+  const hayWords = words(hay).filter((word) => !LOCATION_QUERY_NOISE.has(word) && !(/^lokesh/.test(word) && word.length <= 10));
+  const hayCompact = compactName(hayWords.join(' '));
   const name = normalizeName(location.name || '');
   const work = normalizeName(location.workName || '');
   const designation = normalizeName(location.designation || '');
@@ -343,7 +511,8 @@ function scoreLocation(message, location) {
       score = Math.max(score, 90);
     } else if (distinctiveWorkParts.length === 1 && workHits.length === 1 && distinctiveWorkParts[0].length >= 5) {
       score = Math.max(score, 72);
-    } else if (hayWords.some((word) => similarEnough(word, work))) {
+    } else if (workParts.length === 1 && hayWords.some((word) => similarEnough(word, work))) {
+      // Only single-token workNames may match a lone query token ("Security", not "Field Work" via "work").
       score = Math.max(score, GENERIC_LOCATION_TOKENS.has(work) ? 42 : 68);
     }
   }

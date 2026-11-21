@@ -70,17 +70,33 @@ const TYPE_KEYWORDS = [
     'payron', 'peiron', 'perol', 'peroll', 'payarol', 'payerol',
     // STT: "payroll sheet" → pairon/petrol seat/sheet
     'pairon seat', 'pairon sheet', 'pairol seat', 'pairol sheet', 'payroll seat', 'petrol seat', 'petrol sheet',
+    'payroll sheet', 'payroll sheets', 'payroll excel', 'payroll pdf', 'payroll report', 'payroll data',
+    'payroll register', 'payroll record', 'payroll records', 'salary sheet', 'salary sheets', 'salary register',
+    'salary report', 'salary data', 'salary record', 'salary records', 'salary excel', 'salary details',
     'पेरोल', 'पे रोल', 'पैरोल', 'पै रोल', 'पेरॉल', 'पैरॉल', 'पेयरोल', 'पे-रोल', 'पेरौल', 'पैरौल',
     'पेट्रोल', 'पैट्रोल', 'petrol',
+    'पेरोल शीट', 'पेरोल सीट', 'पेरोल रिपोर्ट', 'पेरोल डेटा', 'पेरोल रजिस्टर', 'पेरोल रिकॉर्ड',
+    'सैलरी शीट', 'सैलरी सीट', 'सैलरी रजिस्टर', 'सैलरी रिपोर्ट', 'सैलरी डिटेल्स', 'सैलरी रिकॉर्ड',
     'salary', 'सैलरी', 'सेलरी', 'तनख्वाह', 'तनखा', 'वेतन', 'tankhwah', 'pagar', 'पगार',
   ]],
 ];
 
-const EXCEL_WORDS = ['excel', 'xlsx', 'xls', 'spreadsheet', 'एक्सेल', 'एक्सल', 'exel'];
+const EXCEL_WORDS = ['excel', 'xlsx', 'xls', 'spreadsheet', 'एक्सेल', 'एक्सल', 'exel', 'एक्सेल फाइल', 'excel file'];
 const PDF_WORDS = ['pdf', 'पीडीएफ', 'पीडीऍफ़'];
-const ALL_WORDS = ['all', 'every', 'sabhi', 'sabki', 'sab', 'sare', 'saare', 'सभी', 'सब', 'सारे', 'सबकी', 'सबका', 'सारी', 'पूरे', 'सारे एम्पलाइज', 'सभी एम्पलाई', 'all employees', 'every employee'];
+const ALL_WORDS = ['all', 'every', 'sabhi', 'sabki', 'sab', 'sare', 'saare', 'सभी', 'सब', 'सारे', 'सबकी', 'सबका', 'सारी', 'पूरे', 'सारे एम्पलाइज', 'सभी एम्पलाई', 'all employees', 'every employee', 'सभी कर्मचारियों', 'सभी कर्मचारी'];
 const LAST_MONTH_WORDS = ['last month', 'previous month', 'pichle mahine', 'pichhle mahine', 'pichla mahina', 'पिछले महीने', 'पिछला महीना', 'पिछले मंथ', 'लास्ट मंथ'];
 const THIS_MONTH_WORDS = ['this month', 'current month', 'is mahine', 'iss mahine', 'is month', 'इस महीने', 'इस मंथ', 'यह महीना', 'चालू महीने'];
+const TILL_NOW_WORDS = [
+  'abhi tak', 'abhi tak ki', 'abhi tak ka', 'till now', 'until now', 'to date', 'till date', 'upto now', 'up to now',
+  'lekar abhi', 'lekar abhi tak', 'se lekar abhi', 'se abhi tak', 'through now',
+  'अभी तक', 'अभी तक की', 'अभी तक का', 'लेकर अभी', 'लेकर अभी तक', 'से अभी तक',
+];
+const LAST_N_MONTHS_RE = /(?:last|past|previous|pichle|pichhle|पिछले)\s+(\d+|two|three|four|five|six|2|3|4|5|6|दो|तीन|चार|पाँच|पांच|छह)\s+(?:months?|mahine|mahino|महीने|महीनों|मंथ)/i;
+const NUMBER_WORD_VALUES = {
+  two: 2, three: 3, four: 4, five: 5, six: 6,
+  '2': 2, '3': 3, '4': 4, '5': 5, '6': 6,
+  दो: 2, तीन: 3, चार: 4, पाँच: 5, पांच: 5, छह: 6,
+};
 
 const DEVANAGARI = {
   'अ': 'a', 'आ': 'a', 'इ': 'i', 'ई': 'i', 'उ': 'u', 'ऊ': 'u', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'ऋ': 'ri',
@@ -212,7 +228,10 @@ function parseMonth(text, currentMonth) {
   return null;
 }
 
-const RANGE_WORDS = ['se', 'sey', 'say', 'to', 'till', 'until', 'through', 'from', 'से', 'तक', 'तक की', 'तक का', 'लेकर'];
+const RANGE_WORDS = [
+  'se', 'sey', 'say', 'to', 'till', 'until', 'through', 'from', 'and', 'aur', 'or',
+  'से', 'तक', 'तक की', 'तक का', 'लेकर', 'और', 'व',
+];
 
 /** Inclusive list of YYYY-MM values from start through end (max 12 months). */
 function monthsBetween(start, end) {
@@ -224,14 +243,8 @@ function monthsBetween(start, end) {
   return list;
 }
 
-/**
- * "सितंबर से नवंबर" / "from Sep to Nov" → [2026-09, 2026-10, 2026-11].
- * Returns null when there is no clear range (caller falls back to parseMonth).
- */
-function parseMonthRange(text, currentMonth) {
+function monthHitsInText(text) {
   const lower = String(text || '').toLowerCase();
-  if (!includesAny(lower, RANGE_WORDS)) return null;
-
   const hits = [];
   MONTHS.forEach((names, monthIndex) => {
     let best = -1;
@@ -248,7 +261,39 @@ function parseMonthRange(text, currentMonth) {
     if (best >= 0) hits.push({ at: best, monthIndex });
   });
   hits.sort((left, right) => left.at - right.at);
-  if (hits.length < 2) return null;
+  return hits;
+}
+
+/** "last 3 months" / "पिछले तीन महीनों" → inclusive months ending at currentMonth. */
+function parseLastNMonths(text, currentMonth) {
+  const match = String(text || '').match(LAST_N_MONTHS_RE);
+  if (!match) return null;
+  const raw = String(match[1] || '').toLowerCase();
+  const count = NUMBER_WORD_VALUES[raw] || Number(raw);
+  if (!Number.isInteger(count) || count < 2 || count > 12) return null;
+  const list = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    list.push(shiftMonth(currentMonth, -offset));
+  }
+  return list;
+}
+
+/**
+ * "सितंबर से नवंबर" / "from Sep to Nov" / "Aug और Sep" / "Oct से अभी तक" /
+ * "last 3 months" → list of YYYY-MM (max 12).
+ * Returns null when there is no clear range (caller falls back to parseMonth).
+ */
+function parseMonthRange(text, currentMonth) {
+  const lastN = parseLastNMonths(text, currentMonth);
+  if (lastN) return lastN;
+
+  const lower = String(text || '').toLowerCase();
+  const tillNow = includesAny(lower, TILL_NOW_WORDS);
+  const hasRangeCue = includesAny(lower, RANGE_WORDS) || tillNow;
+  if (!hasRangeCue) return null;
+
+  const hits = monthHitsInText(lower);
+  if (hits.length === 0) return null;
 
   const yearMatch = lower.match(/\b(20\d{2})\b/);
   const [currentYear, currentMonthNumber] = currentMonth.split('-').map(Number);
@@ -259,8 +304,19 @@ function parseMonthRange(text, currentMonth) {
     return `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
   };
 
+  // "October se lekar abhi tak" — one named month through current month.
+  if (hits.length === 1 && tillNow) {
+    let start = resolve(hits[0].monthIndex);
+    if (start > currentMonth) start = shiftMonth(start, -12);
+    if (start > currentMonth) return null;
+    const list = monthsBetween(start, currentMonth);
+    return list.length >= 2 ? list : null;
+  }
+
+  if (hits.length < 2) return null;
+
   let start = resolve(hits[0].monthIndex);
-  let end = resolve(hits[hits.length - 1].monthIndex);
+  let end = tillNow ? currentMonth : resolve(hits[hits.length - 1].monthIndex);
   if (end < start) end = shiftMonth(end, 12);
   if (end > currentMonth) end = currentMonth;
   if (start > end) return null;
@@ -436,8 +492,17 @@ function matchLocations(text, directory, organizationId) {
 
 function matchOrganizations(text, directory) {
   const reliable = resolveOrganizationsReliable(text, directory.organizations || []);
-  if (reliable.matches.length > 0) return reliable.matches;
-  return bestMatches(text, directory.organizations, (organization) => [organization.name]);
+  const matched = reliable.matches.length > 0
+    ? reliable.matches
+    : bestMatches(text, directory.organizations, (organization) => [organization.name]);
+  // Same display name (e.g. two "Green Valley Care") → always offer every duplicate for pickers.
+  if (matched.length === 0) return matched;
+  const nameKeys = new Set(matched.map((item) => skeleton(item.name)).filter(Boolean));
+  const extras = (directory.organizations || []).filter((organization) => (
+    nameKeys.has(skeleton(organization.name))
+    && !matched.some((item) => item.id === organization.id)
+  ));
+  return extras.length ? [...matched, ...extras] : matched;
 }
 
 async function loadEmployeeIndex(user, { organizationId, locationId } = {}) {
@@ -1707,11 +1772,129 @@ const AMOUNT_WORDS = [
   'calculate', 'calculation', 'hisab', 'hisaab', 'कैलकुलेट', 'कैलकुलेशन', 'हिसाब', 'गणना',
 ];
 const RUN_STATUS_WORDS = ['pending', 'baki', 'baaki', 'printed', 'ban chuka', 'ban gaya', 'bana hai', 'exported', 'बाकी', 'बाक़ी', 'पेंडिंग', 'प्रिंट', 'बन चुका', 'बन चुकी', 'बन गया', 'बना है', 'बनी है', 'निकल चुका', 'निकल गया'];
+/** Explicit ask to save into Payroll / Bank Invoice printed-history tabs. */
+const PRINTED_HISTORY_MARK_WORDS = [
+  'history', 'histry', 'histri', 'histroy', 'histary', 'hisstory',
+  'history me', 'history mein', 'histry me', 'histry mein', 'histri me', 'histri mein',
+  'in history', 'to history', 'printed history', 'print history', 'print mark', 'printmark',
+  'mark history', 'history mark', 'histry mark', 'mark as printed', 'mark printed', 'printed mark', 'as printed',
+  'print me mark', 'print mein mark', 'print me printed', 'print mein printed',
+  'history me mark', 'history mein mark', 'histry me mark', 'histry mein mark',
+  'history me laga', 'history mein laga', 'history me add', 'history mein add',
+  'tab me mark', 'tab mein mark', 'history wale tab',
+  'हिस्ट्री', 'हिस्टरी', 'हिस्ट्री में', 'हिस्ट्री मे', 'प्रिंटेड हिस्ट्री', 'प्रिंटेड मार्क', 'प्रिंट मार्क',
+  'हिस्ट्री में मार्क', 'हिस्ट्री मे मार्क', 'हिस्ट्री में लगा', 'टैब में मार्क',
+];
+/** PDF / Excel / sheet style download — must NOT create a printed-history batch. */
+const PLAIN_SHEET_DOWNLOAD_WORDS = [
+  ...PDF_WORDS, ...EXCEL_WORDS,
+  'sheet', 'sheets', 'seat', 'register', 'download', 'slip', 'slips',
+  'report', 'reports', 'data', 'export', 'file', 'record', 'records', 'details',
+  'provide', 'send', 'bhejo', 'bhej', 'nikalkar', 'nikal kar',
+  'शीट', 'सीट', 'शीट्स', 'रजिस्टर', 'डाउनलोड', 'स्लिप', 'स्लिप्स',
+  'रिपोर्ट', 'डेटा', 'फाइल', 'रिकॉर्ड', 'डिटेल्स', 'भेजो', 'निकालकर',
+];
 const MAX_RUN_LOCATIONS = 50;
 const RUN_KINDS = {
   bank: { type: 'bank_invoice', label: 'Bank invoice', lower: 'bank invoice', thing: 'letter' },
   payroll: { type: 'payroll_run', label: 'Payroll', lower: 'payroll', thing: 'payroll' },
 };
+
+function wantsPrintedHistoryMark(message) {
+  return includesAny(message, PRINTED_HISTORY_MARK_WORDS);
+}
+
+function wantsPlainSheetDownload(message) {
+  return includesAny(message, PLAIN_SHEET_DOWNLOAD_WORDS);
+}
+
+/** "org ke andar jitni locations / all sites under company" — org-wide run, not one site. */
+const ORG_WIDE_RUN_WORDS = [
+  'organization', 'organisation', 'org', 'company', 'firm', 'client',
+  'ke andar', 'ke under', 'mein jitni', 'me jitni', 'mein jitne', 'me jitne',
+  'jitni location', 'jitni locations', 'jitne location', 'jitne locations',
+  'jitni bhi location', 'jitni bhi locations', 'jitne bhi location', 'jitne bhi locations',
+  'jitne bhi', 'jitni bhi', 'sari location', 'saari location', 'sabhi location',
+  'all locations', 'every location', 'all sites', 'under this', 'under the', 'across locations',
+  'all its locations', 'all branches', 'across all locations', 'har location', 'wali company',
+  'uske andar', 'iske andar', 'inmein', 'in me', 'org ke', 'company ke',
+  'unka payroll', 'unki payroll', 'un sabhi', 'un sari', 'un saari', 'un locations', 'unki locations',
+  'ऑर्गेनाइजेशन', 'संगठन', 'कंपनी', 'फर्म', 'क्लाइंट',
+  'के अंदर', 'के अन्दर', 'जितनी लोकेशन', 'जितने लोकेशन', 'जितनी लोकेशंस', 'जितने लोकेशंस',
+  'जितनी भी लोकेशन', 'जितने भी लोकेशन', 'जितने भी', 'जितनी भी',
+  'सारी लोकेशन', 'सभी लोकेशन', 'उनका पेरोल', 'उनकी पेरोल', 'उन सभी',
+  'सभी साइट', 'सारी साइट', 'सारी साइट्स',
+];
+const LOCATION_SCOPE_CUE_WORDS = [
+  'location', 'locations', 'site', 'sites', 'loaction', 'lokesh',
+  'लोकेशन', 'लोकेशंस', 'साइट', 'साइट्स',
+];
+
+function wantsOrgWideRun(message) {
+  return includesAny(message, ORG_WIDE_RUN_WORDS);
+}
+
+/**
+ * "X mein jitne bhi location hai unka payroll chahiye" — another natural way to ask for
+ * payroll sheet for all locations under that name (org or named place). Additive to sheet/PDF cues.
+ */
+function wantsAllLocationsPayrollAsk(message) {
+  if (!includesAny(message, PAYROLL_WORDS) && !includesAny(message, BANK_WORDS)) return false;
+  if (!wantsOrgWideRun(message) && !includesAny(message, [
+    'jitne', 'jitni', 'jitne bhi', 'jitni bhi', 'sabhi location', 'sari location', 'saari location',
+    'all locations', 'every location', 'un locations', 'unka', 'unki', 'unke',
+    'जितने', 'जितनी', 'सभी लोकेशन', 'सारी लोकेशन', 'उनका', 'उनकी', 'उनके',
+  ])) return false;
+  return includesAny(message, MAKE_WORDS)
+    || wantsPlainSheetDownload(message)
+    || Boolean(parseFormat(message));
+}
+
+function wantsLocationScopeCue(message) {
+  return includesAny(message, LOCATION_SCOPE_CUE_WORDS)
+    && !wantsOrgWideRun(message)
+    && !wantsAllLocationsPayrollAsk(message);
+}
+
+/** Choice chip label: org name + owner/contact + email so duplicate names are identifiable. */
+function organizationChoiceLabel(organization) {
+  const owner = organization.contactName && organization.contactName !== organization.name
+    ? organization.contactName
+    : (organization.contactName || '');
+  const email = organization.email || '';
+  return [organization.name, owner && `Owner: ${owner}`, email && `Email: ${email}`].filter(Boolean).join(' · ');
+}
+
+function offerOrganizationRunChoices(organizations, kind, month, format, { markHistory = true, mode = 'run' } = {}, lang = 'hi') {
+  const { lower } = RUN_KINDS[kind];
+  return {
+    reply: say(
+      lang,
+      `${organizations.length} organizations मिले — किसका ${lower} चाहिए? Owner/email से पहचानें।`,
+      `${organizations.length} organizations matched — whose ${lower} do you need? Use owner/email to identify.`,
+    ),
+    choices: organizations.slice(0, MAX_CHOICES).map((organization) => choice(
+      organizationChoiceLabel(organization),
+      mode === 'text'
+        ? { type: 'org_scope_text', kind, month, organizationId: organization.id }
+        : runPlan(kind, month, format, {
+          organizationId: organization.id,
+          ...(markHistory === false ? { markHistory: false } : {}),
+        }),
+    )),
+    context: {
+      topic: 'run_org_pick',
+      kind,
+      month,
+      format,
+      markHistory: markHistory !== false,
+      mode,
+      organizationIds: organizations.map((item) => item.id),
+      title: say(lang, `इनमें से किस organization का ${lower}?`, `Which organization's ${lower}?`),
+      items: organizations.map((item) => item.name),
+    },
+  };
+}
 
 const CAN_BE_MADE_WORDS = ['ban sakta', 'ban sakti', 'ban sakte', 'bana sakte', 'bana sakti', 'बन सकता', 'बन सकती', 'बन सकते', 'बना सकते', 'बना सकती', 'बनना है', 'बनाना बाकी', 'banana baki', 'bana sakta', 'ban sake', 'bana sake', 'बना सकता', 'बन सके', 'बना सके', 'बना सकूं', 'बना सकूँ'];
 const ORGANIZATION_WORDS = DATA_TOPICS.find(([topic]) => topic === 'organization')[1];
@@ -1804,6 +1987,8 @@ function runPlan(kind, month, format, fields = {}) {
     locationIds: fields.locationIds || [],
     employeeId: fields.employeeId || null,
     batchId: fields.batchId || null,
+    // false = PDF/sheet download only; omit/true = Payroll / Bank Invoice history tab create.
+    ...(fields.markHistory === false ? { markHistory: false } : {}),
   };
 }
 
@@ -2372,12 +2557,13 @@ async function answerPaymentRun(user, message, directory, today, context = null,
   // "Amit … Uske salary batao" is an amount question — never a payroll PDF for a random location.
   if (asksSalaryAmount(message)) return null;
 
-  const stickyRun = context?.topic === 'run_status' || context?.topic === 'run_pick';
+  const stickyRun = context?.topic === 'run_status' || context?.topic === 'run_pick'
+    || context?.topic === 'run_org_pick' || context?.topic === 'organization';
   const stickyKind = stickyRun && RUN_KINDS[context.kind] ? context.kind : null;
   const bareMakeFollowUp = stickyKind
-    && context?.locationIds?.length
+    && (context?.locationIds?.length || context?.organizationId)
     && includesAny(message, MAKE_WORDS)
-    && words(message).length <= 6
+    && words(message).length <= 8
     && !includesAny(message, DETAIL_WORDS)
     && !includesAny(message, COUNT_WORDS)
     && matchLocations(message, directory).length === 0
@@ -2387,6 +2573,15 @@ async function answerPaymentRun(user, message, directory, today, context = null,
   if (!kind && stickyKind && includesAny(message, MAKE_WORDS) && words(message).length <= 8
     && matchLocations(message, directory).length === 0) {
     kind = stickyKind;
+  }
+  // Sticky org: "PDF mein do" / "Excel chahiye" after org payroll text keeps that organization.
+  if (context?.organizationId && (kind || stickyKind)
+    && words(message).length <= 10
+    && matchOrganizations(message, directory).length === 0
+    && matchLocations(message, directory).length === 0) {
+    const stickyOrg = directory.organizations.find((item) => item.id === context.organizationId);
+    if (stickyOrg?.name) message = `${stickyOrg.name} organization ${message}`;
+    if (!kind && stickyKind) kind = stickyKind;
   }
   if (!kind) return null;
   // "both locations ki employee ki details" must not become a payroll/bank run
@@ -2410,11 +2605,94 @@ async function answerPaymentRun(user, message, directory, today, context = null,
     || currentMonth;
   if (month > currentMonth) month = currentMonth;
   const format = parseFormat(message) || 'pdf';
-  const plan = (fields, planFormat = format) => runPlan(kind, month, planFormat, fields);
+  // PDF / sheet / excel without an explicit history-mark ask → normal download (no tab mark).
+  // Sticky "बना" after pending list still creates into printed history.
+  const wantsHistory = wantsPrintedHistoryMark(message) || bareMakeFollowUp;
+  const allLocationsAsk = wantsAllLocationsPayrollAsk(message);
+  const plainSheet = (wantsPlainSheetDownload(message) || allLocationsAsk) && !wantsHistory;
+  const wantsDownload = plainSheet || Boolean(parseFormat(message)) || allLocationsAsk;
+  const plan = (fields, planFormat = format) => runPlan(kind, month, planFormat, {
+    ...fields,
+    ...((plainSheet || fields.markHistory === false) ? { markHistory: false } : {}),
+  });
 
-  const organizations = matchOrganizations(message, directory);
-  const organization = organizations.length === 1 ? organizations[0] : null;
-  const locations = matchLocations(message, directory, organization?.id).filter((item) => item.status !== 'disabled');
+  let organizations = matchOrganizations(message, directory);
+  // Sticky org after "which Green Valley Care?" pick / prior org-scoped run.
+  if (organizations.length === 0 && context?.organizationId && (stickyRun || context.topic === 'run_org_pick' || context.topic === 'organization')) {
+    const stickyOrg = directory.organizations.find((item) => item.id === context.organizationId);
+    if (stickyOrg) organizations = [stickyOrg];
+  }
+  let organization = organizations.length === 1 ? organizations[0] : null;
+  let locations = matchLocations(message, directory, organization?.id).filter((item) => item.status !== 'disabled');
+
+  // Auto-search: same token may be org or location — prefer by cues.
+  // "North Gate Work mein jitne bhi location … payroll" → org/place-wide, not employee picker.
+  const orgWide = wantsOrgWideRun(message) || allLocationsAsk
+    || (Boolean(organization) && locations.length === 0 && includesAny(message, MAKE_WORDS));
+  if (organizations.length > 0 && locations.length > 0) {
+    if (orgWide || includesAny(message, ORGANIZATION_WORDS) || allLocationsAsk) {
+      locations = [];
+    } else if (wantsLocationScopeCue(message)) {
+      organizations = [];
+      organization = null;
+    }
+  }
+  // Named place matched only as location(s) but ask is "jitne bhi location unka payroll"
+  // → if one location matched by name, still treat as that location's payroll sheet;
+  // if the name is really an org, organizations path above already won.
+  if (allLocationsAsk && !organization && locations.length === 1 && kind === 'payroll' && wantsDownload && !wantsHistory) {
+    return resolvePlan(user, {
+      type: 'payroll',
+      format: parseFormat(message) || 'pdf',
+      month,
+      months: parseMonthRange(message, currentMonth),
+      organizationId: locations[0].organizationId,
+      locationId: locations[0].id,
+    }, directory, { message, today });
+  }
+  if (allLocationsAsk && !organization && locations.length > 1 && kind === 'payroll' && wantsDownload && !wantsHistory) {
+    const sameOrg = locations.every((item) => item.organizationId === locations[0].organizationId);
+    if (sameOrg) {
+      return resolvePlan(user, {
+        type: 'payroll',
+        format: parseFormat(message) || 'pdf',
+        month,
+        months: parseMonthRange(message, currentMonth),
+        organizationId: locations[0].organizationId,
+      }, directory, { message, today });
+    }
+    return {
+      reply: say(lang, `${locations.length} locations मिलीं — किसका payroll चाहिए?`, `${locations.length} locations matched — whose payroll do you need?`),
+      choices: locations.slice(0, MAX_CHOICES).map((item) => choice(
+        `${locationLabel(item)} · ${item.organizationName}`,
+        { type: 'payroll', format: parseFormat(message) || 'pdf', month, organizationId: item.organizationId, locationId: item.id },
+      )),
+      context: {
+        topic: 'run_pick',
+        kind,
+        month,
+        locationIds: locations.map((item) => item.id),
+      },
+    };
+  }
+
+  // Duplicate org names → clickable chips with owner + email.
+  if (organizations.length > 1) {
+    const mode = !wantsDownload && !wantsHistory ? 'text' : 'run';
+    return offerOrganizationRunChoices(
+      organizations,
+      kind,
+      month,
+      format,
+      { markHistory: wantsHistory, mode },
+      lang,
+    );
+  }
+
+  // Location payroll sheet/PDF (not org-wide) → document handlers (no history batch).
+  if (plainSheet && kind === 'payroll' && !orgWide && !organization && !allLocationsAsk) {
+    return null;
+  }
 
   // "बना" / "बनाओ" after a pending payroll/bank list → create for those sticky locations.
   if (bareMakeFollowUp || (stickyRun && context.locationIds?.length && includesAny(message, MAKE_WORDS)
@@ -2454,15 +2732,38 @@ async function answerPaymentRun(user, message, directory, today, context = null,
   }
 
   let employees = [];
+  // "Lokesh location ki payroll … history mark" is a location run — do not fuzzy-match
+  // leftover words ("location", "histry", "mark") as employee names.
+  const locationScopedRun = locations.length === 1
+    && includesAny(message, ['location', 'locations', 'site', 'sites', 'लोकेशन', 'लोकेशंस', 'साइट'])
+    && (includesAny(message, MAKE_WORDS) || wantsPrintedHistoryMark(message) || wantsPlainSheetDownload(message));
   // In "अगर सारे दिन present हो" the "सारे" is about days, not "all employees".
-  if (!includesAny(message, ALL_WORDS) || asksFullMonth(message)) {
+  // Org-wide / "jitne bhi location … payroll" must not fuzzy-match leftover tokens as people.
+  if (!locationScopedRun && !orgWide && !allLocationsAsk && !organization
+    && (!includesAny(message, ALL_WORDS) || asksFullMonth(message))) {
     const placeKeys = new Set([...locations.flatMap((item) => [item.workName, item.name]), organization?.name || '']
       .flatMap(words).map(skeleton));
-    const text = words(message).filter((word) => !placeKeys.has(skeleton(word))).join(' ');
-    employees = (await findEmployees(user, text, {
-      organizationId: organization?.id,
-      locationId: locations.length === 1 ? locations[0].id : undefined,
-    })).filter((employee) => employee.status !== 'disabled' && employee.locationId);
+    const runNoise = new Set([
+      'location', 'locations', 'site', 'sites', 'loaction',
+      'payroll', 'pairol', 'pairon', 'petrol', 'payrol', 'salary', 'bank', 'invoice', 'neft',
+      'history', 'histry', 'histri', 'histroy', 'printed', 'print', 'mark', 'printmark',
+      'sheet', 'seat', 'register', 'pdf', 'excel', 'download', 'aur', 'and', 'mein', 'me', 'manth',
+      'mujhe', 'please',
+      'लोकेशन', 'साइट', 'पेरोल', 'पैरोल', 'हिस्ट्री', 'हिस्टरी', 'प्रिंट', 'मार्क', 'शीट', 'सीट',
+    ]);
+    for (const aliases of MONTHS) {
+      for (const alias of aliases) runNoise.add(String(alias).toLowerCase());
+    }
+    const text = words(message)
+      .filter((word) => !placeKeys.has(skeleton(word)) && !runNoise.has(word) && !runNoise.has(word.toLowerCase()))
+      .filter(isNameToken)
+      .join(' ');
+    if (text) {
+      employees = (await findEmployees(user, text, {
+        organizationId: organization?.id,
+        locationId: locations.length === 1 ? locations[0].id : undefined,
+      })).filter((employee) => employee.status !== 'disabled' && employee.locationId);
+    }
   }
 
   // "Could you generate payroll for all?" is a request; plain "can you make payroll?" is ability-only.
@@ -2523,7 +2824,64 @@ async function answerPaymentRun(user, message, directory, today, context = null,
       context: { topic: 'run_pick', kind, month, locationIds: locations.map((item) => item.id) },
     };
   }
-  if (organization) return { plan: plan({ organizationId: organization.id }) };
+  if (organization) {
+    const orgContext = {
+      topic: 'organization',
+      kind,
+      month,
+      organizationId: organization.id,
+      organizationName: organization.name,
+      locationIds: directory.locations
+        .filter((item) => item.organizationId === organization.id && item.status !== 'disabled')
+        .map((item) => item.id),
+    };
+    // Org-wide as chat text when user did not ask PDF/Excel/sheet or history mark.
+    if (!wantsDownload && !wantsHistory) {
+      if (kind === 'payroll') {
+        return {
+          reply: await payrollAmountReply(user, directory, month, { employee: null, locations: [], organization }),
+          context: orgContext,
+        };
+      }
+      const data = await bankInvoiceService.listDocumentLocations(user, { month }, 'bank');
+      const group = data.organizations.find((item) => item.organizationId === organization.id);
+      const sites = (group?.locations || []).filter((item) => item.employees > 0);
+      if (sites.length === 0) {
+        return {
+          reply: say(lang, `${organization.name} · ${monthLabel(month)} में कोई bank payment नहीं बनता।`, `${organization.name} · no bank payments for ${monthLabel(month)}.`),
+          context: orgContext,
+        };
+      }
+      const lines = sites.map((item) => `• ${bankLocationName(item, directory)} — ${people(item.employees)}, ${rupees(item.total)}`);
+      return {
+        reply: say(
+          lang,
+          `${organization.name} · Bank invoice · ${monthLabel(month)}\n${lines.join('\n')}\nकुल ${people(sites.reduce((sum, item) => sum + item.employees, 0))} · ${rupees(sites.reduce((sum, item) => sum + item.total, 0))}`,
+          `${organization.name} · Bank invoice · ${monthLabel(month)}\n${lines.join('\n')}\nTotal ${people(sites.reduce((sum, item) => sum + item.employees, 0))} · ${rupees(sites.reduce((sum, item) => sum + item.total, 0))}`,
+        ),
+        context: orgContext,
+      };
+    }
+    // Org-wide payroll sheet/PDF/Excel → one downloadable payroll (no history tab mark).
+    if (kind === 'payroll' && wantsDownload && !wantsHistory) {
+      const months = parseMonthRange(message, currentMonth);
+      return resolvePlan(user, {
+        type: 'payroll',
+        format: parseFormat(message) || format,
+        month,
+        months,
+        organizationId: organization.id,
+      }, directory, { message, today });
+    }
+    // Bank PDF/Excel for whole org without history → preview non-marking downloads per location.
+    if (kind === 'bank' && wantsDownload && !wantsHistory) {
+      return { plan: plan({ organizationId: organization.id, markHistory: false }), context: orgContext };
+    }
+    return {
+      plan: plan({ organizationId: organization.id }),
+      context: orgContext,
+    };
+  }
 
   const data = await bankInvoiceService.listDocumentLocations(user, { month }, kind);
   const all = data.organizations.flatMap((group) => group.locations);
@@ -2585,6 +2943,7 @@ function runDocument(kind, plan, title, fields = {}) {
 async function previewPaymentRun(kind, user, plan, directory, lang = 'hi') {
   const { label, lower, thing } = RUN_KINDS[kind];
   const period = monthLabel(plan.month);
+  const markHistory = plan.markHistory !== false;
   if (plan.batchId) {
     return {
       reply: say(lang, `पहले से बना ${thing} तैयार है। नीचे से PDF या Excel download करें।`, `A saved ${thing} is ready. Download the PDF or Excel below.`),
@@ -2690,6 +3049,35 @@ async function previewPaymentRun(kind, user, plan, directory, lang = 'hi') {
     };
   }
 
+  // PDF / sheet download only — do not create a printed-history batch in Payroll / Bank Invoice tabs.
+  if (!markHistory && kind === 'bank') {
+    if (pending.length > 1) {
+      return {
+        reply: say(
+          lang,
+          `${period} का bank invoice PDF/Excel किस location का चाहिए? (यह history में मार्क नहीं होगा।)`,
+          `Which location's bank invoice PDF/Excel do you need for ${period}? (This will not be marked in history.)`,
+        ),
+        choices: pending.slice(0, MAX_CHOICES).map((item) => choice(
+          `${name(item)} · ${people(item.employees)} · ${rupees(item.total)}`,
+          runPlan(kind, plan.month, plan.format, { locationIds: [item.locationId], markHistory: false }),
+        )),
+      };
+    }
+    const [item] = pending;
+    return {
+      reply: say(
+        lang,
+        `Bank invoice · ${name(item)} · ${period}\n${people(item.employees)} · ${rupees(item.total)}\nनीचे से PDF या Excel download करें — यह Bank Invoice history में मार्क नहीं होगा।`,
+        `Bank invoice · ${name(item)} · ${period}\n${people(item.employees)} · ${rupees(item.total)}\nDownload PDF or Excel below — this will not be marked in Bank Invoice history.`,
+      ),
+      document: runDocument(kind, plan, `Bank invoice · ${name(item)} · ${period}`, {
+        organizationId: item.organizationId,
+        locationId: item.locationId,
+      }),
+    };
+  }
+
   let employees = pending.reduce((sum, item) => sum + item.employees, 0);
   let total = pending.reduce((sum, item) => sum + item.total, 0);
   if (kind === 'payroll') {
@@ -2707,8 +3095,8 @@ async function previewPaymentRun(kind, user, plan, directory, lang = 'hi') {
   return {
     reply: say(
       lang,
-      `${label} · ${period}\n${listText(pending.map(name))}\n${people(employees)} · ${kind === 'payroll' ? 'Net payable' : 'कुल'} ${rupees(total)}${notes ? `\n${notes}` : ''}\nबनाने पर ${pending.length === 1 ? 'यह location' : 'ये locations'} ${period} के लिए printed मार्क हो ${pending.length === 1 ? 'जाएगी' : 'जाएँगी'}। बना दूँ?`,
-      `${label} · ${period}\n${listText(pending.map(name))}\n${people(employees)} · ${kind === 'payroll' ? 'Net payable' : 'Total'} ${rupees(total)}${notes ? `\n${notes}` : ''}\nCreating this will mark ${pending.length === 1 ? 'this location' : 'these locations'} as printed for ${period}. Create it?`,
+      `${label} · ${period}\n${listText(pending.map(name))}\n${people(employees)} · ${kind === 'payroll' ? 'Net payable' : 'कुल'} ${rupees(total)}${notes ? `\n${notes}` : ''}\nबनाने पर ${pending.length === 1 ? 'यह location' : 'ये locations'} ${period} के लिए printed मार्क हो ${pending.length === 1 ? 'जाएगी' : 'जाएँगी'} (Payroll / Bank Invoice history)। बना दूँ?`,
+      `${label} · ${period}\n${listText(pending.map(name))}\n${people(employees)} · ${kind === 'payroll' ? 'Net payable' : 'Total'} ${rupees(total)}${notes ? `\n${notes}` : ''}\nCreating this will mark ${pending.length === 1 ? 'this location' : 'these locations'} as printed for ${period} in Payroll / Bank Invoice history. Create it?`,
     ),
     choices: [
       choice(
@@ -2723,6 +3111,8 @@ async function previewPaymentRun(kind, user, plan, directory, lang = 'hi') {
 
 async function confirmPaymentRun(kind, user, plan, directory, today, lang = 'hi') {
   const { label } = RUN_KINDS[kind];
+  // Never create a history batch for plain PDF/sheet downloads.
+  if (plan.markHistory === false) return previewPaymentRun(kind, user, plan, directory, lang);
   if (plan.locationIds.length === 0) return previewPaymentRun(kind, user, plan, directory, lang);
   try {
     const body = kind === 'bank'
@@ -2760,6 +3150,7 @@ function runPlanFromInput(kind, plan, today) {
     locationIds,
     employeeId: plan.employeeId ? String(plan.employeeId) : null,
     batchId: plan.batchId ? String(plan.batchId) : null,
+    ...(plan.markHistory === false ? { markHistory: false } : {}),
   });
 }
 
@@ -3053,6 +3444,42 @@ const ABILITY_LABELS = {
  * Turns a request into a document plan the dashboard can download, asking the user to pick when a
  * location or employee is ambiguous. Each data endpoint still enforces its own access rules.
  */
+/** Month-range document asks → one download chip per month (same as attendance). */
+function offerDocumentMonthChoices(type, format, months, scope, lang = 'hi') {
+  const label = DOCUMENT_LABELS[type] || 'Document';
+  const place = scope.employeeName || scope.locationName || scope.organizationName || '';
+  return {
+    reply: say(
+      lang,
+      `${label}${place ? ` · ${place}` : ''} — ${months.length} महीने मिले। कौन-सा महीना download करें?`,
+      `${label}${place ? ` · ${place}` : ''} — ${months.length} months matched. Which month should I download?`,
+    ),
+    choices: months.slice(0, MAX_CHOICES).map((month) => choice(monthLabel(month), {
+      type,
+      format,
+      month,
+      organizationId: scope.organizationId || null,
+      locationId: scope.locationId || null,
+      employeeId: scope.employeeId || null,
+    })),
+    context: {
+      topic: scope.employeeId ? 'employee_attendance' : 'document',
+      documentType: type,
+      format,
+      month: months[months.length - 1],
+      months,
+      organizationId: scope.organizationId || null,
+      organizationName: scope.organizationName || null,
+      locationId: scope.locationId || null,
+      locationName: scope.locationName || null,
+      locationIds: scope.locationId ? [scope.locationId] : null,
+      employeeId: scope.employeeId || null,
+      employeeName: scope.employeeName || null,
+      query: scope.query || null,
+    },
+  };
+}
+
 async function resolvePlan(user, draft, directory, { message = '', today }) {
   const currentMonth = today.slice(0, 7);
   const type = DOCUMENT_TYPES.includes(draft.type) ? draft.type : null;
@@ -3060,6 +3487,10 @@ async function resolvePlan(user, draft, directory, { message = '', today }) {
   const format = draft.format === 'excel' ? 'excel' : 'pdf';
   let month = isMonth(draft.month) ? draft.month : currentMonth;
   if (month > currentMonth) month = currentMonth;
+  const monthRange = Array.isArray(draft.months)
+    ? draft.months.filter((item) => isMonth(item) && item <= currentMonth).slice(0, 12)
+    : (message ? parseMonthRange(message, currentMonth) : null);
+  const lang = messageLang(message);
 
   const knownOrganization = directory.organizations.find((organization) => organization.id === draft.organizationId);
   let organizationId = user.role === 'admin' ? knownOrganization?.id || null : String(user.id);
@@ -3145,6 +3576,17 @@ async function resolvePlan(user, draft, directory, { message = '', today }) {
       : organization && user.role === 'admin'
         ? organization.name
         : 'सभी employees';
+  if (monthRange && monthRange.length > 1) {
+    return offerDocumentMonthChoices(type, format, monthRange, {
+      organizationId: organizationId || null,
+      organizationName: organization?.name || null,
+      locationId: location?.id || null,
+      locationName: location ? locationLabel(location) : null,
+      employeeId: employee?.id || null,
+      employeeName: employee?.name || null,
+      query: message || null,
+    }, lang);
+  }
   const title = `${DOCUMENT_LABELS[type]} · ${scopeLabel} · ${monthLabel(month)}`;
   return {
     reply: `${title} — तैयार है। नीचे से PDF या Excel download करें।`,
@@ -3162,6 +3604,7 @@ async function resolvePlan(user, draft, directory, { message = '', today }) {
       documentType: type,
       format,
       month,
+      months: monthRange || null,
       organizationId: organizationId || null,
       organizationName: organization?.name || null,
       locationId: location?.id || null,
@@ -3181,11 +3624,18 @@ function documentPersonSearchText(message, location = null) {
     'sheet', 'sheets', 'register', 'form', 'xvi', 'xvii', 'pdf', 'excel', 'seat',
     'wage', 'wages', 'veg', 'vegs', 'veggies', 'veggie', 'vej', 'which', 'wich',
     'payroll', 'pay', 'roll', 'salary', 'salaries', 'slip', 'slips', 'payslip',
+    'pairol', 'pairon', 'petrol', 'payrol', 'bank', 'invoice', 'neft',
     'attendance', 'hajiri', 'haziri', 'hajri', 'muster', 'musterroll', 'attorney', 'attorneys',
-    'month', 'months', 'mahina', 'mahine', 'manth', 'ki', 'ka', 'ke', 'ko', 'se', 'ki',
-    'do', 'de', 'dedo', 'bana', 'banao', 'banado', 'nikal', 'nikalo', 'chahiye', 'please', 'pls',
+    'location', 'locations', 'site', 'sites', 'loaction',
+    'history', 'histry', 'histri', 'histroy', 'histary', 'printed', 'print', 'mark', 'printmark',
+    'report', 'reports', 'data', 'export', 'file', 'record', 'records', 'details', 'complete', 'pura', 'poora',
+    'employees', 'employee', 'karmachari', 'staff', 'workers', 'provide', 'send', 'bhejo', 'download',
+    'aur', 'and', 'mein', 'me', 'month', 'months', 'mahina', 'mahine', 'manth', 'ki', 'ka', 'ke', 'ko', 'se', 'ki',
+    'do', 'de', 'dedo', 'bana', 'banao', 'banado', 'nikal', 'nikalo', 'chahiye', 'please', 'pls', 'mujhe',
     'वेज', 'वेतन', 'शीट', 'सीट', 'रजिस्टर', 'पेरोल', 'पैरोल', 'सैलरी', 'स्लिप', 'हाजिरी', 'अटेंडेंस',
-    'महीना', 'महीने', 'मंथ', 'की', 'का', 'के', 'को', 'से', 'दो', 'दे', 'देदो', 'बना', 'बनाओ', 'निकाल', 'चाहिए',
+    'लोकेशन', 'साइट', 'हिस्ट्री', 'हिस्टरी', 'प्रिंट', 'मार्क', 'रिपोर्ट', 'डेटा', 'फाइल', 'रिकॉर्ड', 'डिटेल्स',
+    'कर्मचारी', 'कर्मचारियों', 'पूरा', 'पूरी',
+    'महीना', 'महीने', 'मंथ', 'की', 'का', 'के', 'को', 'से', 'दो', 'दे', 'देदो', 'बना', 'बनाओ', 'निकाल', 'चाहिए', 'मुझे',
   ]);
   for (const [, list] of TYPE_KEYWORDS) {
     for (const phrase of list) phrase.split(/\s+/).forEach((part) => skip.add(String(part).toLowerCase()));
@@ -3255,9 +3705,12 @@ async function interpretWithRules(user, message, directory, today, memory = null
       }
     }
   }
+  const currentMonth = today.slice(0, 7);
+  const months = parseMonthRange(message, currentMonth);
   return {
     type,
-    month: parseMonth(message, today.slice(0, 7)),
+    month: (months && months[months.length - 1]) || parseMonth(message, currentMonth),
+    months: months || null,
     format: parseFormat(message),
     organizationId,
     locationId,
@@ -3272,8 +3725,11 @@ const REFERENCE_WORDS = [
   'ये', 'यह', 'वो', 'वह', 'उन', 'उनका', 'उनकी', 'उनके', 'उसका', 'उसकी', 'उसके', 'इसका', 'इसकी', 'इसके', 'इन', 'इनका', 'इनकी', 'इनके', 'ऊपर', 'वही', 'उपर',
 ];
 const MAKE_WORDS = [
-  'bana', 'banaa', 'banao', 'bana do', 'banado', 'banana', 'nikal', 'nikalo', 'nikal do', 'create', 'make', 'generate', 'chahiye', 'kar do', 'karo', 'de do',
-  'बना', 'बनाओ', 'बना दो', 'बनाना', 'निकाल', 'निकालो', 'निकाल दो', 'चाहिए', 'कर दो', 'करो', 'दे दो', 'क्रिएट', 'जनरेट',
+  'bana', 'banaa', 'banao', 'bana do', 'banado', 'banana', 'nikal', 'nikalo', 'nikal do', 'nikalkar', 'nikal kar',
+  'create', 'make', 'generate', 'export', 'provide', 'send', 'download', 'chahiye', 'chahie', 'chahye', 'kar do', 'karo', 'de do', 'do', 'de', 'dedo',
+  'bhejo', 'bhej do', 'bhej',
+  'बना', 'बनाओ', 'बना दो', 'बनाना', 'निकाल', 'निकालो', 'निकाल दो', 'निकालकर', 'चाहिए', 'चाहिये', 'कर दो', 'करो', 'दे दो', 'दो', 'दे',
+  'भेजो', 'भेज दो', 'क्रिएट', 'जनरेट', 'एक्सपोर्ट', 'डाउनलोड',
 ];
 const TELL_WORDS = ['batao', 'batana', 'bataiye', 'bata do', 'btao', 'detail', 'details', 'naam', 'names', 'show', 'बताओ', 'बताना', 'बताइए', 'बता दो', 'डिटेल', 'नाम', 'दिखाओ'];
 const FRESH_SCOPE_WORDS = [
@@ -3575,7 +4031,11 @@ function asksSalaryAmount(message) {
     return false;
   }
   if (includesAny(message, MAKE_WORDS)) return false;
-  if (includesAny(message, ['slip', 'slips', 'स्लिप', 'pdf', 'excel', 'register', 'रजिस्टर'])) return false;
+  // Strong document cues only — soft words like "details" must not kill amount asks
+  // ("uski salary details batao").
+  if (includesAny(message, ['slip', 'slips', 'स्लिप', 'pdf', 'excel', 'register', 'sheet', 'seat', 'report', 'download', 'export', 'file', 'रजिस्टर', 'शीट', 'रिपोर्ट', 'डाउनलोड'])) {
+    return false;
+  }
   if (includesAny(message, ['payroll', 'pay roll', 'पेरोल', 'पे रोल', 'पैरोल']) && includesAny(message, MAKE_WORDS)) {
     return false;
   }
@@ -3831,6 +4291,13 @@ function answerAcronym(message, lang = 'hi') {
 
 /** "Sunita who is" / "details do" / "kahan assign hai" — one employee’s record or location. */
 async function answerEmployeeDetails(user, message, directory, lang = 'hi', memory = null) {
+  // "Warm Earth Care ke andar jitni location … payroll PDF" / "North Gate Work mein jitne bhi
+  // location … payroll chahiye" is a payment-run — "location" is not an employee field ask.
+  if ((runKindOf(message) || wantsOrgWideRun(message) || wantsAllLocationsPayrollAsk(message)
+    || wantsPlainSheetDownload(message))
+    && (includesAny(message, PAYROLL_WORDS) || includesAny(message, BANK_WORDS) || parseType(message))) {
+    if (!asksBankDetails(message)) return null;
+  }
   const parentFilter = extractParentNameFilter(message);
   let fields = askedEmployeeFields(message);
   const wantsDetails = includesAny(message, DETAIL_WORDS);
@@ -3872,6 +4339,12 @@ async function answerEmployeeDetails(user, message, directory, lang = 'hi', memo
     return null;
   }
   if (fields.length === 0 && !wantsBank && !bareName && !staffNameAsk && !wantsNameCount && (includesAny(message, ATTENDANCE_WORDS) || includesAny(message, INVOICE_WORDS))) return null;
+  // "jitni location … payroll" still sets location field — never steal payment runs.
+  if (runKindOf(message) || parseType(message) || wantsOrgWideRun(message)) {
+    const onlyPlaceFields = fields.length > 0
+      && fields.every((field) => field.id === 'location' || field.id === 'organization');
+    if (onlyPlaceFields || fields.length === 0) return null;
+  }
   if (runKindOf(message) && fields.length === 0 && !wantsDetails && !wantsWhere && !wantsBank && !wantsAvailable && !bareName && !staffNameAsk && !wantsNameCount) return null;
   const asksFollowUp = !named && (fields.length > 0 || wantsBank || wantsDetails || wantsWhere || wantsAvailable || refersToPrior || Boolean(parentFilter));
   let matches = [];
@@ -4432,7 +4905,7 @@ function whatCanBeMade(user, lang = 'hi') {
         ? ['• Payroll (one location / organization / one employee)', '• Bank invoice (NEFT letter)', '• Location invoice (bill)', '• Mark and edit attendance']
         : ['• Payroll', '• Mark today’s attendance']),
     ];
-    return `I can create:\n${lines.join('\n')}\nTry: "Which locations can get October payroll?" or "Children's Park November wages sheet".`;
+    return `I can create:\n${lines.join('\n')}\nTry: "Which locations can get October payroll?" (marks history) or "Children's Park November wages sheet / payroll PDF" (download only, no history mark).`;
   }
   const lines = [
     '• Salary slip',
@@ -4442,7 +4915,7 @@ function whatCanBeMade(user, lang = 'hi') {
       ? ['• Payroll (location / organization / किसी एक employee का)', '• Bank invoice (NEFT letter)', '• Location का invoice (bill)', '• Attendance लगाना और edit करना']
       : ['• Payroll', '• आज की attendance लगाना']),
   ];
-  return `मैं ये बना सकती हूँ:\n${lines.join('\n')}\nजैसे पूछें: "October का payroll किन locations का बन सकता है?" या "Children's Park की November की wages sheet"।`;
+  return `मैं ये बना सकती हूँ:\n${lines.join('\n')}\nजैसे पूछें: "October का payroll किन locations का बन सकता है?" (history में मार्क) या "Children's Park की November की wages sheet / payroll PDF" (सिर्फ़ download, history में नहीं)।`;
 }
 
 async function loadSession(user, sessionId) {
@@ -4541,6 +5014,49 @@ async function respond(user, input, session, state = {}) {
         ? await confirmMarkAttendanceBatch(user, batchPlan, directory, today, input.timeZone)
         : await previewMarkAttendanceBatch(user, batchPlan, directory, today, input.timeZone);
       return { ...answer, source: 'plan' };
+    }
+    if (plan.type === 'org_scope_text' || plan.type === 'payroll_scope_text') {
+      if (user.role !== 'admin') {
+        return { reply: say(lang, 'यह जानकारी सिर्फ़ admin login से मिलती है।', 'This information is only available from an admin login.'), source: 'plan' };
+      }
+      if (!mongoose.isValidObjectId(plan.organizationId)) throw httpError(400, 'Invalid organization.');
+      if (!isMonth(plan.month) || plan.month > today.slice(0, 7)) throw httpError(400, 'Select a valid month.');
+      const organization = directory.organizations.find((item) => item.id === String(plan.organizationId));
+      if (!organization) throw httpError(404, 'Organization not found.');
+      const scopeKind = plan.kind === 'bank' ? 'bank' : 'payroll';
+      const orgContext = {
+        topic: 'organization',
+        kind: scopeKind,
+        month: plan.month,
+        organizationId: organization.id,
+        organizationName: organization.name,
+        locationIds: directory.locations
+          .filter((item) => item.organizationId === organization.id && item.status !== 'disabled')
+          .map((item) => item.id),
+      };
+      if (scopeKind === 'payroll') {
+        return {
+          reply: await payrollAmountReply(user, directory, plan.month, { employee: null, locations: [], organization }),
+          context: orgContext,
+          source: 'plan',
+        };
+      }
+      const data = await bankInvoiceService.listDocumentLocations(user, { month: plan.month }, 'bank');
+      const group = data.organizations.find((item) => item.organizationId === organization.id);
+      const sites = (group?.locations || []).filter((item) => item.employees > 0);
+      if (sites.length === 0) {
+        return {
+          reply: say(lang, `${organization.name} · ${monthLabel(plan.month)} में कोई bank payment नहीं बनता।`, `${organization.name} · no bank payments for ${monthLabel(plan.month)}.`),
+          context: orgContext,
+          source: 'plan',
+        };
+      }
+      const lines = sites.map((item) => `• ${bankLocationName(item, directory)} — ${people(item.employees)}, ${rupees(item.total)}`);
+      return {
+        reply: `${organization.name} · Bank invoice · ${monthLabel(plan.month)}\n${lines.join('\n')}`,
+        context: orgContext,
+        source: 'plan',
+      };
     }
     if (plan.type === 'bank_invoice' || plan.type === 'payroll_run') {
       const kind = plan.type === 'payroll_run' ? 'payroll' : 'bank';
@@ -4726,14 +5242,11 @@ async function respond(user, input, session, state = {}) {
   if (employeeAttendanceEarly) return { ...employeeAttendanceEarly, source: 'data' };
 
   // Salary amount before full profile details ("salary details batao" ≠ dump whole card).
-  const salaryAmount = await answerSalaryAmount(user, originalMessage, directory, today, session.context, lang);
-  if (salaryAmount) return { ...salaryAmount, source: 'data' };
-
-  const employeeDetails = await answerEmployeeDetails(user, message, directory, lang, session.context);
-  if (employeeDetails) return { ...employeeDetails, source: 'data' };
-
-  const staffing = await answerLocationStaffing(user, message, directory, session.context);
-  if (staffing) return { ...staffing, source: 'data' };
+  // Skip when this is clearly an org/location payroll or bank document ask.
+  if (!runKindOf(originalMessage) && !wantsOrgWideRun(originalMessage) && !wantsPlainSheetDownload(originalMessage)) {
+    const salaryAmount = await answerSalaryAmount(user, originalMessage, directory, today, session.context, lang);
+    if (salaryAmount) return { ...salaryAmount, source: 'data' };
+  }
 
   // "Colony Park वाले का बना दो" / bare "बना" after "किन locations का payroll बन सकता है".
   if ((context?.topic === 'run_status' || context?.topic === 'run_pick')
@@ -4747,21 +5260,28 @@ async function respond(user, input, session, state = {}) {
     }
   }
 
-  const followUp = await answerFromContext(user, message, directory, context);
-  if (followUp) return { ...followUp, source: 'data' };
-
-  const invoiceRequest = answerClientInvoice(user, message, directory, today, context);
-  if (invoiceRequest) {
-    if (!invoiceRequest.plan) return { ...invoiceRequest, source: 'data' };
-    return { ...(await previewClientInvoice(user, invoiceRequest.plan, directory, invoiceRequest.fallbackMonth)), source: 'data' };
+  // Org/location payroll & bank invoice before employee-profile matching
+  // ("Warm Earth Care ke andar jitni location … payroll PDF" must not become a person card).
+  const invoiceRequestEarly = answerClientInvoice(user, message, directory, today, context);
+  if (invoiceRequestEarly) {
+    if (!invoiceRequestEarly.plan) return { ...invoiceRequestEarly, source: 'data' };
+    return { ...(await previewClientInvoice(user, invoiceRequestEarly.plan, directory, invoiceRequestEarly.fallbackMonth)), source: 'data' };
   }
-
   const runRequest = await answerPaymentRun(user, message, directory, today, context, lang);
   if (runRequest) {
     if (!runRequest.plan) return { ...runRequest, source: 'data' };
     const kind = runRequest.plan.type === 'payroll_run' ? 'payroll' : 'bank';
     return { ...(await previewPaymentRun(kind, user, runRequest.plan, directory, lang)), source: 'data' };
   }
+
+  const employeeDetails = await answerEmployeeDetails(user, message, directory, lang, session.context);
+  if (employeeDetails) return { ...employeeDetails, source: 'data' };
+
+  const staffing = await answerLocationStaffing(user, message, directory, session.context);
+  if (staffing) return { ...staffing, source: 'data' };
+
+  const followUp = await answerFromContext(user, message, directory, context);
+  if (followUp) return { ...followUp, source: 'data' };
 
   const out = {};
   const attendanceAnswer = await answerAttendanceStatus(user, message, directory, today, input.timeZone, out);
@@ -4814,7 +5334,13 @@ module.exports = {
   answerEmployeeAttendance,
   answerMarkAttendance,
   wantsMarkAttendanceAction,
+  wantsPrintedHistoryMark,
+  wantsPlainSheetDownload,
+  wantsOrgWideRun,
+  wantsAllLocationsPayrollAsk,
+  organizationChoiceLabel,
   answerPaymentRun,
+  previewPaymentRun,
   answerSmallTalk,
   EMPLOYEE_FIELDS,
   maskSensitiveEmployeeValue,

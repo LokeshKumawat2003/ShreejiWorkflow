@@ -311,7 +311,7 @@ test('absences are saved even after the month has 26 paid days', async (t) => {
 });
 
 const WAGE_RATES = {
-  bonusRate: 8.33, epfRate: 12, epfWageCeiling: 25000, esiRate: 0.75, esiWageCeiling: 21000, overtimeHoursPerDay: 8, overtimeRateMultiplier: 2,
+  bonusRate: 8.33, bonusWageCeiling: 21000, epfRate: 12, epfWageCeiling: 25000, esiRate: 0.75, esiWageCeiling: 21000, overtimeHoursPerDay: 8, overtimeRateMultiplier: 2,
 };
 const WAGE_LINE = { employeeId, employeeName: 'Bikash', parentName: '', dailySalary: 800, paidDays: 26, epfoApplicable: true, esicApplicable: true };
 
@@ -334,6 +334,20 @@ test('a register without overtime keeps the same figures as before', () => {
   assert.equal(row.totalWages, 22532.64);
   assert.equal(row.esi, 156);
   assert.equal(row.grossPayment, 19881);
+});
+
+test('bonus uses wages up to the bonus ceiling and stays fixed above it', () => {
+  const under = wageRegisterRow({ ...WAGE_LINE, dailySalary: 500, paidDays: 26 }, WAGE_RATES);
+  assert.equal(under.wages, 13000);
+  assert.equal(under.bonus, 1082.9);
+
+  const atCeiling = wageRegisterRow({ ...WAGE_LINE, dailySalary: 808, paidDays: 26 }, WAGE_RATES);
+  assert.equal(atCeiling.wages, 21008);
+  assert.equal(atCeiling.bonus, 1749.3);
+
+  const over = wageRegisterRow({ ...WAGE_LINE, dailySalary: 2700, paidDays: 26 }, WAGE_RATES);
+  assert.equal(over.wages, 70200);
+  assert.equal(over.bonus, 1749.3);
 });
 
 test('only admins enter overtime, for this or an earlier month, in valid hours', async (t) => {

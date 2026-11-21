@@ -1641,3 +1641,142 @@ test('named org mobile email details stay on organization despite shared city ad
     Employee.countDocuments = originalCount;
   }
 });
+
+test('Hindi White Road Work organization location count does not match lokesh site', async () => {
+  const whiteId = '507f1f77bcf86cd7994390d1';
+  const northId = '507f1f77bcf86cd7994390d2';
+  const directory = {
+    organizations: [
+      {
+        id: whiteId,
+        name: 'White Road Work',
+        status: 'active',
+        contactName: 'Ramesh Kumar',
+        email: 'ramesh@white.test',
+      },
+      {
+        id: northId,
+        name: 'North Gate Works',
+        status: 'active',
+        contactName: 'Suresh',
+        email: 'suresh@north.test',
+      },
+    ],
+    locations: [
+      {
+        id: '507f1f77bcf86cd7994390e1',
+        organizationId: northId,
+        organizationName: 'North Gate Works',
+        workName: 'lokesh',
+        name: 'Malpura, Raipur, Rajasthan',
+        status: 'active',
+      },
+      {
+        id: '507f1f77bcf86cd7994390e2',
+        organizationId: northId,
+        organizationName: 'North Gate Works',
+        workName: 'Field Work',
+        name: 'Niwai',
+        status: 'active',
+      },
+      {
+        id: '507f1f77bcf86cd7994390e3',
+        organizationId: northId,
+        organizationName: 'North Gate Works',
+        workName: 'Garden Work',
+        name: 'Tonk Road',
+        status: 'active',
+      },
+      {
+        id: '507f1f77bcf86cd7994390e4',
+        organizationId: whiteId,
+        organizationName: 'White Road Work',
+        workName: 'Main Gate',
+        name: 'Site A',
+        status: 'active',
+      },
+      {
+        id: '507f1f77bcf86cd7994390e5',
+        organizationId: whiteId,
+        organizationName: 'White Road Work',
+        workName: 'Back Yard',
+        name: 'Site B',
+        status: 'active',
+      },
+    ],
+  };
+
+  const resolved = resolveOrganizations('व्हाइट रोड वर्क आर्गेनाइजेशन में कितनी लोकेशंस है', directory.organizations);
+  assert.equal(resolved.ambiguous, false);
+  assert.equal(resolved.matches[0]?.id, whiteId);
+
+  const locResolved = resolveLocations('व्हाइट रोड वर्क आर्गेनाइजेशन में कितनी लोकेशंस है', directory.locations);
+  assert.ok(!locResolved.matches.some((item) => item.workName === 'lokesh'));
+
+  const result = await answerDirectoryQuery({
+    user: { id: '1', role: 'admin' },
+    message: 'व्हाइट रोड वर्क आर्गेनाइजेशन में कितनी लोकेशंस है',
+    directory,
+    lang: 'hi',
+  });
+  assert.ok(result);
+  assert.equal(result.intent, INTENTS.ORGANIZATION_LOCATION_LIST);
+  assert.equal(result.data.organizationId, whiteId);
+  assert.match(result.reply, /White Road Work/i);
+  assert.match(result.reply, /2|Main Gate|Back Yard/i);
+  assert.doesNotMatch(result.reply, /North Gate|lokesh|Malpura/i);
+});
+
+test('org resolve narrows by second word then owner, else offers choices', async () => {
+  const orgs = [
+    {
+      id: '507f1f77bcf86cd7994390f1',
+      name: 'White Road Work',
+      contactName: 'Ramesh Kumar',
+      email: 'ramesh@white.test',
+      status: 'active',
+    },
+    {
+      id: '507f1f77bcf86cd7994390f2',
+      name: 'White Gate Care',
+      contactName: 'Amit Patel',
+      email: 'amit@gate.test',
+      status: 'active',
+    },
+  ];
+
+  const bySecond = resolveOrganizations('White Road organization', orgs);
+  assert.equal(bySecond.ambiguous, false);
+  assert.equal(bySecond.matches[0]?.id, '507f1f77bcf86cd7994390f1');
+
+  const byOwner = resolveOrganizations('White Amit organization', orgs);
+  assert.equal(byOwner.ambiguous, false);
+  assert.equal(byOwner.matches[0]?.id, '507f1f77bcf86cd7994390f2');
+
+  const ambiguous = resolveOrganizations('White organization', orgs);
+  assert.equal(ambiguous.ambiguous, true);
+  assert.ok(ambiguous.matches.length >= 2);
+
+  const pick = await answerDirectoryQuery({
+    user: { id: '1', role: 'admin' },
+    message: 'White organization mein kitni locations hai',
+    directory: {
+      organizations: orgs,
+      locations: [
+        {
+          id: '507f1f77bcf86cd7994390f3',
+          organizationId: '507f1f77bcf86cd7994390f1',
+          organizationName: 'White Road Work',
+          workName: 'Yard',
+          name: 'A',
+          status: 'active',
+        },
+      ],
+    },
+    lang: 'hi',
+  });
+  assert.ok(pick);
+  assert.ok(pick.choices?.length >= 2);
+  assert.match(pick.choices[0].label, /Owner:/i);
+  assert.doesNotMatch(pick.reply, /lokesh|North Gate/i);
+});

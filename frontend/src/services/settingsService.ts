@@ -34,6 +34,7 @@ export type WageRegisterSettings = {
 	contractorName: string;
 	note: string;
 	bonusRate: string;
+	bonusWageCeiling: string;
 	epfRate: string;
 	epfWageCeiling: string;
 	esiRate: string;
@@ -73,6 +74,7 @@ export type InvoiceSettings = {
 	epfRate: string;
 	esicRate: string;
 	bonusRate: string;
+	bonusWageCeiling: string;
 	epfWageCeiling: string;
 	overheadRate: string;
 	serviceChargeRate: string;
@@ -133,6 +135,7 @@ export const WAGE_REGISTER_DEFAULTS: WageRegisterSettings = {
 	contractorName: 'M/s.Shreeji Caretaker Company , kankroli , Distt- Rajsamand',
 	note: 'Payment will be made as per central Govt. Minimum wages act. W.e.f-01-04-2026 ( "C" Class City )',
 	bonusRate: '8.33',
+	bonusWageCeiling: '21000',
 	epfRate: '12',
 	epfWageCeiling: '25000',
 	esiRate: '0.75',
@@ -172,6 +175,7 @@ export const INVOICE_DEFAULTS: InvoiceSettings = {
 	epfRate: '13',
 	esicRate: '3.25',
 	bonusRate: '8.33',
+	bonusWageCeiling: '21000',
 	epfWageCeiling: '0',
 	overheadRate: '0',
 	serviceChargeRate: '0',

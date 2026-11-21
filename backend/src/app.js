@@ -1,8 +1,10 @@
 const cors = require('cors');
 const express = require('express');
+const fs = require('fs');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const mongoose = require('mongoose');
+const path = require('path');
 const assistantRoutes = require('./routes/assistantRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -16,37 +18,74 @@ const organizationRoutes = require('./routes/organizationRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
 
+function resolveFrontendDist() {
+  if (process.env.FRONTEND_DIST) {
+    return path.resolve(process.env.FRONTEND_DIST);
+  }
+  return path.resolve(__dirname, '../../frontend/dist');
+}
+
+function isAllowedOrigin(origin, req) {
+  if (!origin) return true;
+
+  const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
+  if (origin === allowedOrigin) return true;
+
+  const requestOrigin = `${req.protocol}://${req.get('host')}`;
+  if (origin === requestOrigin) return true;
+
+  const isLocalDevelopmentOrigin = process.env.NODE_ENV !== 'production'
+    && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  return isLocalDevelopmentOrigin;
+}
+
 function createApp() {
   const app = express();
-  // const allowedOrigin = process.env.CLIENT_URL || 'http://localhost:5173';
-  
-  const allowedOrigin =  'http://localhost:5173';
+  const frontendDist = resolveFrontendDist();
+  const serveFrontend = fs.existsSync(path.join(frontendDist, 'index.html'));
   const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY || '', 10);
   if (trustProxyHops > 0) {
     app.set('trust proxy', trustProxyHops);
   }
 
+  app.disable('x-powered-by');
   app.use(helmet({
-    contentSecurityPolicy: {
-      useDefaults: false,
-      directives: {
-        defaultSrc: ["'none'"],
-        frameAncestors: ["'none'"],
-      },
-    },
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: serveFrontend
+      ? {
+          useDefaults: true,
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+            fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+            imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+            connectSrc: ["'self'"],
+            frameAncestors: ["'none'"],
+            upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+          },
+        }
+      : {
+          useDefaults: false,
+          directives: {
+            defaultSrc: ["'none'"],
+            frameAncestors: ["'none'"],
+          },
+        },
   }));
 
-  app.use(cors({
-    origin(origin, callback) {
-      const isLocalDevelopmentOrigin = process.env.NODE_ENV !== 'production'
-        && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || '');
-      if (!origin || origin === allowedOrigin || isLocalDevelopmentOrigin) {
-        return callback(null, true);
-      }
-      return callback(new Error('Origin is not allowed by CORS.'));
-    },
-    credentials: true,
-  }));
+  app.use((req, res, next) => {
+    cors({
+      origin(origin, callback) {
+        if (isAllowedOrigin(origin, req)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error('Origin is not allowed by CORS.'));
+      },
+      credentials: true,
+    })(req, res, next);
+  });
   const defaultJsonParser = express.json({ limit: '10kb' });
   const bulkAttendanceJsonParser = express.json({ limit: '512kb' });
   const largeJsonPaths = new Set(['/api/attendance/bulk', '/api/attendance/sheet']);
@@ -75,6 +114,16 @@ function createApp() {
   app.use('/api/organizations', organizationRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/tickets', ticketRoutes);
+
+  if (serveFrontend) {
+    app.use(express.static(frontendDist, { index: false, maxAge: '1h' }));
+    // SPA fallback for client routes; API 404s still fall through below.
+    app.get(/^(?!\/api(?:\/|$)).*/, (req, res, next) => {
+      res.sendFile(path.join(frontendDist, 'index.html'), (error) => {
+        if (error) next(error);
+      });
+    });
+  }
 
   app.use((req, res, next) => {
     const error = new Error('Route not found.');

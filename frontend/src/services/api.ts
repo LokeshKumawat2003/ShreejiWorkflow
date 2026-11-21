@@ -20,9 +20,8 @@ export class ApiError extends Error {
 }
 
 const api = axios.create({
-  // baseURL: import.meta.env.VITE_API_URL ?? 'https://shreejiworkflow.onrender.com/api',
-  
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api',
+  // Same-origin `/api` when the backend serves the built frontend; override with VITE_API_URL if needed.
+  baseURL: import.meta.env.VITE_API_URL ?? '/api',
   withCredentials: true,
 });
 

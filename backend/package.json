@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
+    "build:frontend": "npm --prefix ../frontend run build",
     "seed:admin": "node src/scripts/seed-admin.js",
     "seed:demo": "node src/scripts/seed-attendance-demo.js",
     "seed:full": "node src/scripts/seed-full-demo.js",

@@ -9,4 +9,12 @@ export default defineConfig({
   optimizeDeps: {
     include: ['jspdf', 'jspdf-autotable', 'xlsx', 'exceljs'],
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
